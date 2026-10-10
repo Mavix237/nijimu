@@ -27,8 +27,19 @@ export const BODY_SIZE = "clamp(14px, 3.2vw, 15px)";
 export const INSTRUCTION_SIZE = "clamp(14px, 3.2vw, 16px)";
 /** Spoken transcript on the pond. */
 export const PROSE_SIZE = "clamp(13px, 2.4vw, 15px)";
-/** Pill and text-button labels. */
-export const BUTTON_SIZE = "clamp(14px, 2.8vw, 16px)";
+/** Wash behind a word the highlight step has lifted. */
+export const TRANSCRIPT_HIGHLIGHT = "rgba(123, 123, 135, 0.22)";
+/** Exposure Trial Plus, as the pond sets the spoken words. Color stays with the page. */
+export const TRANSCRIPT = {
+  fontFamily: SERIF_DISPLAY,
+  fontSize: PROSE_SIZE,
+  fontWeight: 400,
+  lineHeight: 1.45,
+  letterSpacing: "0.02em",
+  fontFeatureSettings: '"kern" 1',
+  fontKerning: "normal",
+} as const;
+/** Pill and text-button labels. Primary and secondary share this size. */
 export const BUTTON_SIZE_SM = "clamp(13px, 2.6vw, 14px)";
 /** Exposure title — glass panes and pond overlay headings. */
 export const TITLE_SIZE = "clamp(20px, 4.6vw, 24px)";
@@ -40,4 +51,14 @@ export const TITLE = {
   lineHeight: "140%",
   letterSpacing: TITLE_TRACKING,
   fontSynthesis: "none",
+} as const;
+
+/** Current create-flow grid. Change these once to move every screen's rows. */
+export const FLOW_PAGE = {
+  navigationTop: 30,
+  navigationHeight: 76,
+  headingTop: "clamp(132px, 22vh, 176px)",
+  headingWidth: "min(28em, 100%)",
+  actionHeight: 45,
+  actionBottom: "max(40px, env(safe-area-inset-bottom))",
 } as const;

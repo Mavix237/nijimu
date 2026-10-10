@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import type { ArtifactForm } from "../lib/superformula";
+import { formKey, type ArtifactForm } from "../lib/superformula";
 import { prepareFilmPhoto } from "../lib/filmLook";
 import { createEdgePrint } from "./filmStrip";
 import {
@@ -45,6 +45,8 @@ export interface VesselArtifactProps {
   sheetSize?: number;
   /** A press and release without a drag at the apex — the seat is being asked for. */
   onPick?: () => void;
+  /** Called after the first complete frame, so arrivals wait for the actual vessel. */
+  onReady?: () => void;
 }
 
 interface Built { glass: Glass; sheet: Sheet; distance: number }
@@ -85,6 +87,50 @@ export function preloadSeatPhotos(urls: string[]) {
   for (const url of urls) loadSeatPhoto(url).catch(() => undefined);
 }
 
+/**
+ * How far back the eye sits, and how much the gallery canvas has to grow.
+ * The body is framed as before — by its height and a typical radius — so a
+ * round form is not shrunk by one spike. A point that still falls outside
+ * that frame (a star's arm, a gear's tooth) steps the eye back and widens
+ * the canvas by the same amount, so the body stays the size it was and the
+ * whole shape stays inside the canvas.
+ */
+function frameVessel(positions: ArrayLike<number>) {
+  let halfHeight = 0.5;
+  let radial = 0;
+  let n = 0;
+  let bound = 0.5;
+  for (let k = 0; k < positions.length; k += 3) {
+    const x = positions[k];
+    const y = positions[k + 1] - LOOK_Y;
+    const z = positions[k + 2];
+    halfHeight = Math.max(halfHeight, Math.abs(y));
+    radial += Math.hypot(x, z);
+    n++;
+    bound = Math.max(bound, Math.hypot(x, y, z));
+  }
+  const body = Math.max(halfHeight, (radial / Math.max(n, 1)) * 1.45);
+  const reach = Math.max(body, bound);
+  return {
+    distance: (reach * 1.12) / Math.sin((FOV / 2) * (Math.PI / 180)),
+    canvasScale: reach / body,
+  };
+}
+
+const canvasScales = new Map<string, number>();
+
+/** How much this form's gallery canvas grows so its furthest point stays in frame. */
+export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
+  const key = `${formKey(form)}|${morph}`;
+  const hit = canvasScales.get(key);
+  if (hit !== undefined) return hit;
+  const glass = buildGlass(form, morph);
+  const scale = frameVessel(glass.positions).canvasScale;
+  glass.geometry.dispose();
+  canvasScales.set(key, scale);
+  return scale;
+}
+
 /** The glass and its sheet for one memory, built once per key and kept; a new key for the same memory replaces the old build. */
 function buildVessel(key: string, form: ArtifactForm, morph: number, tune: VesselTune, sheetMode: SheetMode, seed: number, sheetSizeGiven?: number): Built {
   const have = builds.get(key);
@@ -105,25 +151,13 @@ function buildVessel(key: string, form: ArtifactForm, morph: number, tune: Vesse
       sag: tune.sag, peel: tune.peel, curl: tune.curl, twist: tune.twist, gap: tune.gap, soft: tune.soft,
     })
     : buildSheet(glass, tune.inset, tune.arc, tune.band, tune.lift, tune.foldScale, seed);
-  // the eye far enough back that the body fills the seat with the gallery's margin — by its height and
-  // a typical radius, not its farthest point, so a flat or spiky form is not shrunk by one spike
-  let halfHeight = 0.5;
-  let radial = 0;
-  let n = 0;
-  const p = glass.positions;
-  for (let k = 0; k < p.length; k += 3) {
-    halfHeight = Math.max(halfHeight, Math.abs(p[k + 1] - LOOK_Y));
-    radial += Math.hypot(p[k], p[k + 2]);
-    n++;
-  }
-  const reach = Math.max(halfHeight, (radial / Math.max(n, 1)) * 1.45);
-  const built = { glass, sheet, distance: (reach * 1.12) / Math.sin((FOV / 2) * (Math.PI / 180)) };
+  const built = { glass, sheet, distance: frameVessel(glass.positions).distance };
   builds.set(key, built);
   return built;
 }
 
 function VesselObject({
-  form, morph, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, cacheKey, sheetSize, onPick,
+  form, morph, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, cacheKey, sheetSize, onPick, onReady,
 }: VesselArtifactProps) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
@@ -212,6 +246,7 @@ function VesselObject({
 
   // the picture, from the shared stock: already there if it was preloaded, else set as it arrives
   const photo = photoUrl ? peekSeatPhoto(photoUrl) : undefined;
+  const photoReady = useRef(!photoUrl || !!photo);
   sheetU.uPhoto.value = photo?.texture ?? BLANK_PHOTO;
   sheetU.uImageAspect.value = photo?.aspect ?? 1.5;
   useEffect(() => {
@@ -219,10 +254,11 @@ function VesselObject({
     let live = true;
     loadSeatPhoto(photoUrl).then((p) => {
       if (!live) return;
+      photoReady.current = true;
       sheetU.uPhoto.value = p.texture;
       sheetU.uImageAspect.value = p.aspect;
       invalidate();
-    }).catch(() => undefined);
+    }).catch(() => { if (live) { photoReady.current = true; invalidate(); } });
     return () => { live = false; };
   }, [photoUrl, photo, sheetU, invalidate]);
 
@@ -241,6 +277,10 @@ function VesselObject({
     return () => { live = false; };
   }, [gl, scene, camera, pass, glassMode, invalidate]);
 
+  const didRender = useRef(false);
+  const readyRef = useRef(onReady);
+  readyRef.current = onReady;
+  const reportReady = () => { if (!didRender.current && photoReady.current) { didRender.current = true; readyRef.current?.(); } };
   const refract = glassMode === "refract";
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
     if (compiledFor.current !== glassMode) return;
@@ -253,6 +293,7 @@ function VesselObject({
     if (!refract) {
       view.layers.enableAll();
       renderer.render(scene, view);
+      reportReady();
       return;
     }
     glassU.uResolution.value.set(pass.target.width, pass.target.height);
@@ -267,6 +308,7 @@ function VesselObject({
     renderer.render(scene, view);
     renderer.autoClear = true;
     view.layers.enableAll();
+    reportReady();
   }, 1);
 
   return <>

@@ -1,12 +1,12 @@
 import { useLocation, useNavigate } from "react-router";
 import { useState, useEffect, useRef } from "react";
-import { BackButton } from "./BackButton";
-import { MATERIAL_PRESETS } from "./SceneViewer";
-import { BubbleViewer, DEFAULT_BUBBLE_MATERIAL } from "./BubbleViewer";
-import { AmbientSurround } from "./AmbientSurround";
-import { OklchColorField, WASH_HEIGHT } from "./OklchColorField";
-import { stripLegacyEvolveFromState } from "../hooks/useOscillatingEvolve";
-import { landmarkDistance, useHandTracking } from "../hooks/useHandTracking";
+import { BackButton } from "../../components/BackButton";
+import { MATERIAL_PRESETS } from "../../components/SceneViewer";
+import { BubbleViewer, DEFAULT_BUBBLE_MATERIAL } from "../../components/BubbleViewer";
+import { AmbientSurround } from "../../components/AmbientSurround";
+import { OklchColorField, WASH_HEIGHT } from "../../components/OklchColorField";
+import { stripLegacyEvolveFromState } from "../../hooks/useOscillatingEvolve";
+import { landmarkDistance, useHandTracking } from "../../hooks/useHandTracking";
 import {
   DEFAULT_OKLCH,
   Oklch,
@@ -14,17 +14,17 @@ import {
   rimFromOklch,
   sampleField,
   uvFromOklch,
-} from "../lib/oklch";
+} from "../../lib/oklch";
 import {
   DEFAULT_BUBBLE_AMBIENTS,
   DEFAULT_BUBBLE_LIGHTS,
-} from "../lib/sceneLights";
-import { asFiniteNumber, loadFormDraft, saveFormDraft } from "../lib/formDraft";
-import { createArtifactForm, formFromState, formKey } from "../lib/superformula";
-import memoryPhotoUrl from "../../assets/memory-photo.jpg";
-import { SERIF } from "../lib/theme";
-import { PageHeader } from "./PageHeader";
-import { PillButton } from "./PillButton";
+} from "../../lib/sceneLights";
+import { asFiniteNumber, loadFormDraft, saveFormDraft } from "../../lib/formDraft";
+import { createArtifactForm, formFromState, formKey } from "../../lib/superformula";
+import memoryPhotoUrl from "../../../assets/memory-photo.jpg";
+import { SERIF } from "../../lib/theme";
+import { PageHeader } from "../../components/PageHeader";
+import { PillButton } from "../../components/PillButton";
 
 export function ShapeColorPage() {
   const location = useLocation();

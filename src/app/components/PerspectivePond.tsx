@@ -1,10 +1,10 @@
 import { Component, useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
-import { CHROME_GRAY } from "../lib/colors";
 import { POND_THOUGHTS, type PondPromptCue } from "../lib/pondPrompts";
 import { POND_TRAIL_SLOTS, POND_TRAIL_LIFETIME, samplePondTrail, type TrailPoint, type TrailAnchor } from "../lib/pondTrail";
 import { POND_DROP_SLOTS } from "../lib/voicePeaks";
+import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamera";
 
 export interface PondTouch { x: number; y: number; serial: number; strength?: number }
 
@@ -249,7 +249,7 @@ const fragmentShader = /* glsl */ `
     float glow = pow(toSun, 12.0);
     // A long path: from the viewer's feet out to where the haze takes it.
     float centre = exp(-(p.x * p.x / 16.0 + pow((p.y + 5.0) / 15.0, 2.0)));
-    float reach = (1.0 - smoothstep(-30.0, -60.0, p.y)) * (.25 + .75 * centre);
+    float reach = (1.0 - smoothstep(45.0, 150.0, -p.y)) * (.25 + .75 * centre);
     color += glow * reach * vec3(.05, .046, .036);
     color += light * reach * (.45 + .55 * fresnel) * vec3(.38, .36, .32);
     // Subtle, water-anchored ribbons of reflected light and shadow — the broad
@@ -267,17 +267,19 @@ const fragmentShader = /* glsl */ `
     // local normals and displaced coordinates, never a global exposure pulse.
     float surfaceTone = (ribbons - .5) * .022 + fibers * .006;
     color += vec3(surfaceTone);
-    float haze = 1.0 - exp(-max(0.0, -p.y - 8.0) * .028);
+    // Keep distant folds legible long enough to establish scale, then lose
+    // them gradually into the sky instead of ending the water nearby.
+    float haze = 1.0 - exp(-max(0.0, -p.y - 12.0) * .012);
     color = mix(color, sky, haze);
     // Screen-space paper grain stays fine at the horizon as well as nearby.
     color += (hash(gl_FragCoord.xy) - .5) * .017;
     // Dissolve into the horizon long before any finite geometry edge.
-    gl_FragColor = vec4(color, 1.0 - smoothstep(140.0, 400.0, -p.y));
+    gl_FragColor = vec4(color, 1.0 - smoothstep(600.0, 1400.0, -p.y));
   }
 `;
 
-const RING_INNER = .604;
-const RING_OUTER = .607;
+const RING_RADIUS = .6055;
+const HALO_REACH = .3;
 const onPond = (p: THREE.Vector3) => p.z > -100 && p.z < 18;
 const RING_FADE_IN = .72;
 const RING_FADE_FULL = .94;
@@ -333,18 +335,24 @@ const ringVertex = /* glsl */ `
 const ringFragment = /* glsl */ `
   uniform float uProgress;
   uniform float uOpacity;
-  uniform vec3 uColor;
+  uniform float uTime;
   varying vec2 vLocal;
   void main() {
     float r = length(vLocal);
     float aa = fwidth(r) * 1.15;
-    float ring = smoothstep(${RING_INNER - .004} - aa, ${RING_INNER}, r)
-      * (1.0 - smoothstep(${RING_OUTER}, ${RING_OUTER + .004} + aa, r));
-    if (ring < .01) discard;
+    float d = abs(r - ${RING_RADIUS});
+    // A white luminous core with two soft falloffs, all on the same floating
+    // surface. The generous geometry leaves room for the light to dissipate.
+    float core = exp(-pow(d / (.012 + aa), 2.0));
+    float glow = exp(-pow(d / .068, 2.0));
+    float aura = exp(-pow(d / .16, 2.0));
+    float edge = 1.0 - smoothstep(.23, ${HALO_REACH}, d);
     float sweep = mod(1.57079632679 - atan(vLocal.y, vLocal.x), 6.28318530718) / 6.28318530718;
     float holding = step(.001, uProgress);
-    float alpha = mix(ring, max(ring * .22, ring * step(sweep, uProgress)), holding);
-    gl_FragColor = vec4(uColor, alpha * .82 * uOpacity);
+    float arc = mix(1.0, mix(.28, 1.0, step(sweep, uProgress)), holding);
+    float breath = .94 + .06 * sin(uTime * 1.4);
+    float alpha = (core * .86 + glow * .42 + aura * .18) * edge * arc * breath;
+    gl_FragColor = vec4(vec3(1.0), min(alpha, .98) * uOpacity);
   }
 `;
 
@@ -362,9 +370,12 @@ interface PondProps {
   /** Prompt ripples and the cursor ring wait until the invitation has settled. */
   lifeReady?: boolean;
   promptRipples?: boolean;
+  /** 0 stands at the pond; 1 is under the surface. The naming rise writes this. */
+  sinkRef?: RefObject<number>;
+  sinkTargetRef?: RefObject<PondSinkTarget | null>;
 }
 
-function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hintRevealRef, promptRefs, cueRef, onReady, lifeReady = true, promptRipples = true }: PondProps) {
+function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hintRevealRef, promptRefs, cueRef, onReady, lifeReady = true, promptRipples = true, sinkRef, sinkTargetRef }: PondProps) {
   const { camera, size, gl } = useThree();
   const time = useRef(0);
   const ready = useRef(false);
@@ -381,6 +392,7 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
   const ndc = useMemo(() => new THREE.Vector2(), []);
   const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
   const point = useMemo(() => new THREE.Vector3(), []);
+  const look = useMemo(() => new THREE.Vector3(), []);
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uDrops: { value: Array.from({ length: POND_DROP_SLOTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
@@ -393,7 +405,6 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
   const ringUniforms = useMemo(() => ({
     uProgress: { value: 0 },
     uOpacity: { value: 0 },
-    uColor: { value: new THREE.Color(CHROME_GRAY) },
     uTime: uniforms.uTime,
     uDrops: uniforms.uDrops,
     uTrails: uniforms.uTrails,
@@ -416,8 +427,8 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
     uniforms.uTime.value = time.current;
     // This is a perspective camera, never a CSS-flattened overhead texture.
     const cameraArrival = reducedMotion ? 1 : arrival;
-    camera.position.set(0, 2.95 - cameraArrival * .15, 10 + (1 - cameraArrival) * .4);
-    camera.lookAt(0, .05, -24);
+    pondCameraPose(cameraArrival, sinkRef?.current ?? 0, sinkTargetRef?.current ?? null, camera.position, look);
+    camera.lookAt(look);
     camera.updateMatrixWorld();
     if (!ready.current) { ready.current = true; onReady(); }
     const cue = cueRef.current;
@@ -516,7 +527,7 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
       <shaderMaterial transparent vertexShader={vertexShader} fragmentShader={fragmentShader} uniforms={uniforms} />
     </mesh>
     <mesh ref={ring} visible={false} renderOrder={3} frustumCulled={false}>
-      <ringGeometry args={[RING_INNER - .012, RING_OUTER + .012, 192, 8]} />
+      <ringGeometry args={[RING_RADIUS - HALO_REACH, RING_RADIUS + HALO_REACH, 192, 16]} />
       <shaderMaterial transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
         vertexShader={ringVertex} fragmentShader={ringFragment} uniforms={ringUniforms} />
     </mesh>
@@ -553,7 +564,7 @@ function StillPond({ onReady, cueRef }: Pick<PondProps, "onReady" | "cueRef">) {
 export function PerspectivePond(props: PondProps) {
   const fallback = <StillPond onReady={props.onReady} cueRef={props.cueRef} />;
   return <PondBoundary fallback={fallback}>
-    <Canvas camera={{ fov: 48, near: .1, far: 2400, position: [0, 2.8, 10] }}
+    <Canvas camera={{ ...POND_LENS, position: [0, 2.2, 10] }}
       dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }} fallback={fallback}
       style={{ position: "absolute", inset: 0 }}>
       <Water {...props} />

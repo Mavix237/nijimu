@@ -1,21 +1,24 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memoryColorOf, vesselTint } from "../lib/vesselTint";
 import { MemoryCarouselPage } from "../components/MemoryCarouselPage";
 import { LIFE_EVENTS } from "../data/memoryData";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import type { ArchiveArtifact } from "../lib/archive";
+import { buildArchive, type ArchiveArtifact } from "../lib/archive";
 import { carouselContainsOffset } from "../lib/carouselLayout";
 import {
   GalleryOverrideContext, type ArtifactSeat, type GalleryOverride, type SeatDepth, type SeatPlace,
 } from "../lib/galleryOverride";
-import { createArtifactForm, type ArtifactCategory } from "../lib/superformula";
+import { pushGalleryPanel, readGalleryPush, useGalleryPush, type GalleryPanel, type GalleryPanelPush } from "../lib/labPush";
+import { createArtifactForm, formKey, type ArtifactCategory } from "../lib/superformula";
 import {
-  ROOM_DEFAULT, VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
+  VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
   type Room, type VesselState, type VesselTune,
 } from "./VesselPreview";
-import { VesselArtifact, preloadSeatPhotos } from "./VesselArtifact";
+import { VesselArtifact, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
+import { LabPushButton } from "./LabPushButton";
 import {
-  DOLLY_IN, DOLLY_MAX, DOLLY_MIN, FIELD_FOCAL, FIELD_ORDER, FIELD_PLACES, blendSeat, easeFlight, fieldSeat, surfacingSeat,
-  type FieldCamera, type FieldSeat,
+  DOLLY_IN, DOLLY_MAX, DOLLY_MIN, FIELD_FOCAL, blendSeat, easeFlight, memoryFieldPlace, fieldSeat, surfacingSeat,
+  type FieldCamera,
 } from "./vesselField";
 import photoA from "../../assets/memory-photo.jpg";
 import photoB from "../../assets/memory-photo-02.png";
@@ -33,8 +36,11 @@ import photoB from "../../assets/memory-photo-02.png";
  *
  * Pressing the vessel at the apex opens it in the lab as an editor for that
  * one memory — its form, glass, sheet, dye, light and photo — and "back to
- * the gallery" returns with the memory drawn as it was left. Edits live in
- * page state for this visit.
+ * the gallery" returns with the memory drawn as it was left. The side panel
+ * is the only thing push sends: those knobs, for the memory that is open.
+ * The memories page already draws this gallery; it reads the same knobs, and
+ * the lab opens on whatever that page is using. The photo is chosen under
+ * the form, so a push leaves it where it is.
  *
  * A second view, the field (the switch at the top right): the same ten hang
  * in the air by distance rather than along the years — near and large, far
@@ -105,7 +111,7 @@ function baseState(i: number): VesselState {
   const e = LIFE_EVENTS[event];
   const seed = draw === undefined ? `vessel|${e.id}` : `vessel|${category}|${draw}`;
   const form = createArtifactForm({ seed, category });
-  const tune = { ...VESSEL_GALLERY_TUNE, sheetSize: fitSheetSize(buildGlass(form, VESSEL_GALLERY_TUNE.morph)) };
+  const tune = { ...VESSEL_GALLERY_TUNE, ...vesselTint(e.feeling), sheetSize: fitSheetSize(buildGlass(form, VESSEL_GALLERY_TUNE.morph)) };
   return {
     tune, mode: "refract", sheetMode: "draped", face: "glass", room: VESSEL_GALLERY_ROOM,
     url: PHOTOS[i] ?? FALLBACK[i % FALLBACK.length], seed: seedOf(e.id), form,
@@ -125,6 +131,12 @@ const BASE: VesselState[] = SEATS.map((_, i) => baseState(i));
  * off the frame); and the apex draws over its neighbours, the order falling
  * off smoothly so a step never swaps two seats while they overlap.
  */
+/** A wider canvas for a form whose points would otherwise leave the seat. The body stays put; the extra is the room the points need. */
+function withCanvasRoom(seat: SeatPlace, room: number): SeatPlace {
+  if (room <= 1.001) return seat;
+  return { ...seat, scale: seat.scale * room, size: seat.size * room, blurPx: seat.blurPx / room };
+}
+
 function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number; h: number }): SeatPlace {
   const order = Math.round(offset * 100 + 140 * Math.max(0, 1 - Math.abs(offset) / 0.8));
   if (offset <= 0) return { ...depth, order };
@@ -159,15 +171,17 @@ const DOLLY_PER_PX = 0.001;
 /** `?speed=0.2` slows the flight between the views, to judge it. */
 const SPEED = Number(new URLSearchParams(window.location.search).get("speed")) || 1;
 
-const COUNT = SEATS.length;
-const VARIANT = SEATS.map((_, i) => ((i * 7919) % 97) / 97);
+const variantOf = (i: number) => ((i * 7919) % 97) / 97;
+const zeros = (n: number) => new Array<number>(n).fill(0);
 
 class FieldDriver {
+  count: number;
   on = false;
   direction: 1 | -1 = 1;
-  share = new Array<number>(COUNT).fill(0);
-  shareFrom = new Array<number>(COUNT).fill(0);
-  delay = new Array<number>(COUNT).fill(0);
+  share: number[];
+  shareFrom: number[];
+  delay: number[];
+  hover: number[];
   whole = 0;
   wholeFrom = 0;
   startedAt = -1e9;
@@ -175,13 +189,33 @@ class FieldDriver {
   camTarget = { x: 0, y: 0 };
   dolly = 0;
   dollyTarget = 0;
-  hover = new Array<number>(COUNT).fill(0);
   hovered = -1;
   /** The seat at the apex, as the gallery last placed it. */
   apex = 0;
   busy = false;
   private cool = 0;
   private last = 0;
+
+  constructor(count: number) {
+    this.count = count;
+    this.share = zeros(count);
+    this.shareFrom = zeros(count);
+    this.delay = zeros(count);
+    this.hover = zeros(count);
+  }
+
+  /** The live gallery can hold more memories than the lab seated. Shares already in flight are kept. */
+  resize(count: number) {
+    if (count === this.count) return;
+    const fit = (arr: number[]) => (count <= arr.length ? arr.slice(0, count) : arr.concat(zeros(count - arr.length)));
+    this.share = fit(this.share);
+    this.shareFrom = fit(this.shareFrom);
+    this.delay = fit(this.delay);
+    this.hover = fit(this.hover);
+    this.count = count;
+    if (this.apex >= count) this.apex = 0;
+    if (this.hovered >= count) this.hovered = -1;
+  }
 
   /** Send the seats to the field or back; `around` is the seat the stagger counts from. */
   set(on: boolean, around: number, now: number) {
@@ -190,7 +224,7 @@ class FieldDriver {
     this.startedAt = now;
     this.shareFrom = this.share.slice();
     this.wholeFrom = this.whole;
-    for (let i = 0; i < COUNT; i++) {
+    for (let i = 0; i < this.count; i++) {
       const ring = Math.min(Math.abs(i - around), STAGGER_MAX);
       // leaving: the outer ones lift first and the one in hand last; coming home: the one in hand first
       this.delay[i] = (on ? STAGGER_MAX - ring : ring) * STAGGER_MS;
@@ -207,7 +241,7 @@ class FieldDriver {
     const t = (now - this.startedAt) * SPEED;
     const target = this.on ? 1 : 0;
     let moving = false;
-    for (let i = 0; i < COUNT; i++) {
+    for (let i = 0; i < this.count; i++) {
       const p = easeFlight((t - this.delay[i]) / FLIGHT_MS);
       this.share[i] = this.shareFrom[i] + (target - this.shareFrom[i]) * p;
       if (p < 1) moving = true;
@@ -221,7 +255,7 @@ class FieldDriver {
     if (Math.abs(this.camTarget.x - this.cam.x) + Math.abs(this.camTarget.y - this.cam.y) > 2e-5) moving = true;
     this.dolly += (this.dollyTarget - this.dolly) * kDolly;
     if (Math.abs(this.dollyTarget - this.dolly) > 1e-4) moving = true;
-    for (let i = 0; i < COUNT; i++) {
+    for (let i = 0; i < this.count; i++) {
       const h = i === this.hovered ? 1 : 0;
       this.hover[i] += (h - this.hover[i]) * kHover;
       if (Math.abs(h - this.hover[i]) > 1e-3) moving = true;
@@ -275,16 +309,109 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 /** The seat's vessel, skipped when nothing about it changed — the field re-renders the gallery every frame. */
 const SeatVessel = memo(VesselArtifact);
 
-/** /lab/gallery — the live dive gallery, seated with vessels. */
-export function VesselGalleryPreview() {
-  // each memory's vessel as the editor left it (or as first drawn), and how many times it has changed —
-  // the count keys the seat's built geometry, so a returned memory is rebuilt once as it now is
-  const [vessels, setVessels] = useState(() => BASE.map((state) => ({ state, version: 0 })));
-  const [editing, setEditing] = useState<number | null>(null);
-  const [returnTo, setReturnTo] = useState<string | undefined>(undefined);
+/** A memory the lab did not seat, drawn as a vessel of the form it already has. */
+function vesselForArchive(item: ArchiveArtifact): VesselState {
+  const morph = Math.min(1, Math.max(0, item.shape.evolve));
+  const form = item.shape.form;
+  const glass = buildGlass(form, morph);
+  const tune = { ...VESSEL_GALLERY_TUNE, ...vesselTint(item.look?.oklch), morph, haze: item.look?.vividness === undefined ? VESSEL_GALLERY_TUNE.haze : 1 - item.look.vividness, sheetSize: fitSheetSize(glass) };
+  glass.geometry.dispose();
+  const room = VESSEL_GALLERY_ROOM;
+  return {
+    tune, mode: "refract", sheetMode: "draped", face: "glass", room,
+    url: item.look?.photoUrl ?? "", seed: seedOf(item.id), form,
+  };
+}
 
-  // the field: its driver lives across renders; `frame` is bumped by the loop so the gallery re-places its seats
-  const driver = useRef(new FieldDriver()).current;
+/** Same archive vessels for the distance step, including the user's pushed edits. */
+export function galleryStateFor(item: ArchiveArtifact): VesselState {
+  const i = SEATS.findIndex(seat => LIFE_EVENTS[seat.event].id === item.id);
+  const base = i < 0 ? vesselForArchive(item) : BASE[i];
+  const panel = readGalleryPush()?.panels.find(row => row.id === item.id)?.panel;
+  return panel ? withPanel(base, panel) : base;
+}
+
+/** A stored tune, filled out with the gallery's where a key is missing. */
+function tuneFromPush(raw: Record<string, number>): VesselTune {
+  const tune = { ...VESSEL_GALLERY_TUNE };
+  for (const key of Object.keys(tune) as (keyof VesselTune)[]) {
+    const v = raw[key];
+    if (typeof v === "number" && Number.isFinite(v)) tune[key] = v;
+  }
+  return tune;
+}
+
+function seatId(i: number): string {
+  return LIFE_EVENTS[SEATS[i].event].id;
+}
+
+/** The knobs on the right. The photo and the seed are not among them. */
+function panelFromState(state: VesselState): GalleryPanel {
+  return {
+    tune: { ...state.tune },
+    mode: state.mode,
+    sheetMode: state.sheetMode,
+    face: state.face,
+    room: { above: state.room.above, below: state.room.below },
+    form: state.form,
+  };
+}
+
+/** The side panel laid over a vessel. Its picture stays the one it had. */
+function withPanel(base: VesselState, panel: GalleryPanel): VesselState {
+  return {
+    ...base,
+    // the look is the panel's; the colour stays the memory's
+    tune: { ...tuneFromPush(panel.tune), ...memoryColorOf(base.tune) },
+    mode: panel.mode,
+    sheetMode: panel.sheetMode,
+    face: panel.face,
+    room: { above: panel.room.above, below: panel.room.below },
+    form: panel.form,
+  };
+}
+
+function panelEquals(state: VesselState, panel: GalleryPanel): boolean {
+  return JSON.stringify(panelFromState(state)) === JSON.stringify(panelFromState(withPanel(state, panel)));
+}
+
+function draftsFromStore() {
+  const push = readGalleryPush();
+  return BASE.map((state, i) => {
+    const panel = push?.panels.find((row) => row.id === seatId(i))?.panel;
+    return { state: panel ? withPanel(state, panel) : state, version: 0, echo: 0 };
+  });
+}
+
+/**
+ * The vessel gallery: the same seats, field and arrival the lab shows.
+ * `items` replaces the archive (the lab's ten). Left out, the memories page
+ * keeps every memory, and `resolve` says which vessel each one is.
+ */
+export function VesselGalleryProvider({
+  items,
+  resolve,
+  cacheKeyFor,
+  revision,
+  onPick,
+  onFocus,
+  children,
+}: {
+  items?: ArchiveArtifact[];
+  resolve: (item: ArchiveArtifact) => VesselState;
+  cacheKeyFor: (item: ArchiveArtifact) => string;
+  /** Bumps when a vessel changes, so the gallery draws the new one. */
+  revision: unknown;
+  onPick?: (item: ArchiveArtifact) => void;
+  onFocus?: (id: string) => void;
+  children: ReactNode;
+}) {
+  const list = useMemo(() => items ?? buildArchive(), [items]);
+  const driver = useRef<FieldDriver | null>(null);
+  if (!driver.current) driver.current = new FieldDriver(list.length);
+  const field = driver.current;
+  field.resize(list.length);
+
   const [fieldOn, setFieldOn] = useState(false);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [frame, setFrame] = useState(0);
@@ -292,26 +419,25 @@ export function VesselGalleryPreview() {
   const run = useCallback(() => {
     if (rafRef.current) return;
     const tick = (now: number) => {
-      const more = driver.tick(now);
+      const more = field.tick(now);
       setFrame((f) => f + 1);
       rafRef.current = more ? requestAnimationFrame(tick) : 0;
     };
     rafRef.current = requestAnimationFrame(tick);
-  }, [driver]);
+  }, [field]);
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
 
   const setField = useCallback((on: boolean, around: number) => {
-    driver.set(on, around, performance.now());
+    field.set(on, around, performance.now());
     setFieldOn(on);
     setHoveredId(null);
     run();
-  }, [driver, run]);
+  }, [field, run]);
 
-  // in the field the eye looks round with the pointer and goes in with the wheel
   useEffect(() => {
     if (!fieldOn) return;
     const move = (e: PointerEvent) => {
-      driver.camTarget = {
+      field.camTarget = {
         x: ((e.clientX / window.innerWidth) * 2 - 1) * PARALLAX_X,
         y: ((e.clientY / window.innerHeight) * 2 - 1) * PARALLAX_Y,
       };
@@ -322,7 +448,7 @@ export function VesselGalleryPreview() {
       if (t?.closest("input, textarea, [contenteditable=true]")) return;
       e.preventDefault();
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
-      driver.dollyTarget = Math.min(DOLLY_MAX, Math.max(DOLLY_MIN, driver.dollyTarget + e.deltaY * unit * DOLLY_PER_PX));
+      field.dollyTarget = Math.min(DOLLY_MAX, Math.max(DOLLY_MIN, field.dollyTarget + e.deltaY * unit * DOLLY_PER_PX));
       run();
     };
     window.addEventListener("pointermove", move);
@@ -331,7 +457,198 @@ export function VesselGalleryPreview() {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("wheel", wheel);
     };
-  }, [fieldOn, driver, run]);
+  }, [fieldOn, field, run]);
+
+  const indexOf = useCallback((item: ArchiveArtifact) => list.findIndex((it) => it.id === item.id), [list]);
+  const listRef = useRef(list);
+  listRef.current = list;
+  const pickRef = useRef(onPick);
+  pickRef.current = onPick;
+  const focusRef = useRef(onFocus);
+  focusRef.current = onFocus;
+  const resolveRef = useRef(resolve);
+  resolveRef.current = resolve;
+  const keyRef = useRef(cacheKeyFor);
+  keyRef.current = cacheKeyFor;
+  const pickers = useRef(new Map<string, () => void>());
+
+  const onFieldPick = useCallback((item: ArchiveArtifact) => {
+    const i = indexOf(item);
+    if (i < 0) return;
+    field.apex = i;
+    setField(false, i);
+    focusRef.current?.(item.id);
+  }, [indexOf, field, setField]);
+  const onFieldHover = useCallback((id: string | null) => {
+    field.hovered = id === null ? -1 : list.findIndex((it) => it.id === id);
+    setHoveredId(id);
+    run();
+  }, [field, list, run]);
+
+  const tunes = useRef(new Map<string, VesselTune>());
+  const tuneFor = useCallback((item: ArchiveArtifact, haze: number) => {
+    const own = resolveRef.current(item).tune;
+    const h = 1 - (1 - own.haze) * (1 - haze);
+    const q = Math.round(h * 100);
+    if (q === Math.round(own.haze * 100)) return own;
+    const key = `${keyRef.current(item)}|${q}`;
+    let t = tunes.current.get(key);
+    if (!t) {
+      t = { ...own, haze: q / 100 };
+      tunes.current.set(key, t);
+    }
+    return t;
+  }, []);
+
+  const renderArtifact = useCallback((item: ArchiveArtifact, seat: ArtifactSeat) => {
+    const s = resolveRef.current(item);
+    let pick = pickers.current.get(item.id);
+    if (!pick) {
+      const id = item.id;
+      pick = () => {
+        const found = listRef.current.find((it) => it.id === id);
+        if (found) pickRef.current?.(found);
+      };
+      pickers.current.set(item.id, pick);
+    }
+    return (
+      <SeatVessel
+        cacheKey={keyRef.current(item)}
+        form={s.form}
+        morph={s.tune.morph}
+        photoUrl={s.url || undefined}
+        seed={s.seed}
+        tune={tuneFor(item, seat.haze ?? 0)}
+        room={s.room}
+        glassMode={s.mode}
+        sheetMode={s.sheetMode}
+        face={s.face}
+        sheetSize={s.tune.sheetSize}
+        focused={seat.focused}
+        still={seat.still}
+        frameloop={field.busy ? "always" : seat.frameloop}
+        onPick={pickRef.current ? pick : undefined}
+      />
+    );
+  }, [tuneFor, field]);
+
+  const adjustSeat = useCallback((curve: SeatDepth, offset: number, viewport: { w: number; h: number }, item: ArchiveArtifact): SeatPlace => {
+    const i = indexOf(item);
+    const onCurve = adjustCurveSeat(curve, offset, viewport);
+    const state = resolveRef.current(item);
+    const room = vesselCanvasScale(state.form, state.tune.morph);
+    if (i < 0) return withCanvasRoom(onCurve, room);
+    if (Math.abs(offset) < 0.5) field.apex = i;
+    const share = field.share[i] ?? 0;
+    const place = memoryFieldPlace(i, item.look?.vividness);
+    const seated = carouselContainsOffset(offset) && onCurve.opacity > 0.02;
+    const placed = share <= 0
+      ? seated ? onCurve : surfacingSeat(place, field.cam, viewport)
+      : blendSeat(
+        seated
+          ? { ...onCurve, haze: 0, order: onCurve.order ?? Math.round(offset * 100), depth: FIELD_FOCAL / Math.max(onCurve.scale, 1e-3) }
+          : surfacingSeat(place, field.cam, viewport),
+        fieldSeat(place, field.cam, viewport, field.hover[i] ?? 0),
+        share, viewport, variantOf(i), field.direction,
+      );
+    return withCanvasRoom(placed, room);
+  }, [indexOf, field]);
+
+  const toggle = useCallback(() => setField(!field.on, field.apex), [setField, field]);
+  const chrome = useMemo(() => <FieldToggle on={fieldOn} onToggle={toggle} />, [fieldOn, toggle]);
+  // The curve only has ten seats in view. The lab's ten can all stay mounted.
+  // A longer archive — the memories page — leaves the rest unmounted until the
+  // field is open, so their canvases don't crowd out the pond's.
+  const fieldLive = list.length <= 10 || fieldOn || field.whole > 0.001 || field.busy;
+
+  const override = useMemo<GalleryOverride>(() => ({
+    ...(items ? { items } : {}),
+    renderArtifact, adjustSeat, wash: false, chrome,
+    arrival: "plain",
+    ...(fieldLive ? { field: { on: fieldOn, progress: field.whole, hovered: hoveredId, onHover: onFieldHover, onPick: onFieldPick } } : {}),
+  }), [items, renderArtifact, adjustSeat, chrome, fieldOn, hoveredId, onFieldHover, onFieldPick, field, frame, revision, fieldLive, list.length]);
+
+  return <GalleryOverrideContext.Provider value={override}>{children}</GalleryOverrideContext.Provider>;
+}
+
+/** /memory — the gallery lab's vessels, with whatever side panel was last pushed. */
+export function LiveVesselGallery({
+  panels,
+  pushedAt,
+  onFocus,
+  children,
+}: {
+  panels?: GalleryPanelPush[];
+  pushedAt: number;
+  onFocus?: (id: string) => void;
+  children: ReactNode;
+}) {
+  const byId = useMemo(() => new Map((panels ?? []).map((row) => [row.id, row.panel])), [panels]);
+  const seated = useMemo(() => {
+    const map = new Map<string, VesselState>();
+    SEATS.forEach((seat, i) => {
+      const id = LIFE_EVENTS[seat.event].id;
+      const panel = byId.get(id);
+      map.set(id, panel ? withPanel(BASE[i], panel) : BASE[i]);
+    });
+    return map;
+  }, [byId]);
+  const extras = useRef(new Map<string, { key: string; state: VesselState }>());
+  const resolve = useCallback((item: ArchiveArtifact) => {
+    const known = seated.get(item.id);
+    if (known) return known;
+    const panel = byId.get(item.id);
+    const key = `${formKey(item.shape.form)}|${item.shape.evolve}|${item.look?.photoUrl ?? ""}|${item.look?.vividness ?? ""}|${JSON.stringify(item.look?.oklch)}|${panel ? pushedAt : ""}`;
+    const hit = extras.current.get(item.id);
+    if (hit?.key === key) return hit.state;
+    const base = vesselForArchive(item);
+    const state = panel ? withPanel(base, panel) : base;
+    extras.current.set(item.id, { key, state });
+    return state;
+  }, [seated, byId, pushedAt]);
+  const cacheKeyFor = useCallback((item: ArchiveArtifact) => (
+    byId.has(item.id) ? `${item.id}|${pushedAt}` : seated.has(item.id) ? `${item.id}|base` : `${item.id}|own`
+  ), [byId, pushedAt, seated]);
+  useEffect(() => {
+    const urls = [...BASE.map((state) => state.url), ...buildArchive().map((item) => item.look?.photoUrl ?? "")].filter(Boolean);
+    preloadSeatPhotos(urls);
+  }, []);
+  return (
+    <VesselGalleryProvider resolve={resolve} cacheKeyFor={cacheKeyFor} revision={pushedAt} onFocus={onFocus}>
+      {children}
+    </VesselGalleryProvider>
+  );
+}
+
+
+/** /lab/gallery — the live dive gallery, seated with vessels. */
+export function VesselGalleryPreview() {
+  // each memory as the memories page has it, then as the editor leaves it.
+  // version rebuilds the seat; echo remounts the open panel when the page's knobs change under it.
+  const [vessels, setVessels] = useState(draftsFromStore);
+  const [editing, setEditing] = useState<number | null>(null);
+  const [returnTo, setReturnTo] = useState<string | undefined>(undefined);
+  const live = useGalleryPush();
+  const seenAt = useRef<number | null>(null);
+  useEffect(() => {
+    const at = live?.at ?? 0;
+    if (seenAt.current === null) {
+      seenAt.current = at;
+      return;
+    }
+    if (!live || seenAt.current === at) return;
+    seenAt.current = at;
+    setVessels((all) => {
+      let changed = false;
+      const next = all.map((v, i) => {
+        const panel = live.panels.find((row) => row.id === seatId(i))?.panel;
+        if (!panel || panelEquals(v.state, panel)) return v;
+        changed = true;
+        return { state: withPanel(v.state, panel), version: v.version + 1, echo: v.echo + 1 };
+      });
+      return changed ? next : all;
+    });
+  }, [live]);
 
   const items = useMemo<ArchiveArtifact[]>(() => SEATS.map(({ event }, i) => {
     const e = LIFE_EVENTS[event];
@@ -340,133 +657,63 @@ export function VesselGalleryPreview() {
       id: e.id,
       year: e.year,
       event: e.event,
+      transcript: e.transcript,
+      highlightedWords: e.highlightedWords,
       colorIndex: e.color % COLOR_PALETTE.length,
       shape: { form: s.form, fluidity: 0.7, evolve: s.tune.morph, bumpAmount: 0 },
       look: { photoUrl: s.url },
     };
   }), [vessels]);
-  const indexOf = useCallback((item: ArchiveArtifact) => items.findIndex((it) => it.id === item.id), [items]);
-
-  // a press at the apex opens the editor; in the field it picks the memory and gathers the years round it
-  const pickRef = useRef<(i: number) => void>(() => undefined);
-  pickRef.current = (i) => { setReturnTo(items[i].id); setEditing(i); };
-  const pickHandlers = useMemo(() => SEATS.map((_, i) => () => pickRef.current(i)), []);
-  const onFieldPick = useCallback((item: ArchiveArtifact) => {
-    const i = indexOf(item);
+  const resolve = useCallback((item: ArchiveArtifact) => {
+    const i = items.findIndex((it) => it.id === item.id);
+    return vessels[i]?.state ?? vessels[0].state;
+  }, [items, vessels]);
+  const cacheKeyFor = useCallback((item: ArchiveArtifact) => {
+    const i = items.findIndex((it) => it.id === item.id);
+    return `${item.id}|${vessels[i]?.version ?? 0}`;
+  }, [items, vessels]);
+  const onPick = useCallback((item: ArchiveArtifact) => {
+    const i = items.findIndex((it) => it.id === item.id);
     if (i < 0) return;
     setReturnTo(item.id);
-    driver.apex = i;
-    setField(false, i);
-  }, [indexOf, driver, setField]);
-  const onFieldHover = useCallback((id: string | null) => {
-    driver.hovered = id === null ? -1 : items.findIndex((it) => it.id === id);
-    setHoveredId(id);
-    run();
-  }, [driver, items, run]);
-
-  /* The vessel's tune with the seat's distance folded into its haze, kept per
-     hundredth so a seat whose distance has not changed gets the same object
-     and its canvas is left alone. */
-  const tunes = useRef(new Map<string, VesselTune>());
-  const tuneFor = useCallback((i: number, haze: number) => {
-    const own = vessels[i].state.tune;
-    const h = 1 - (1 - own.haze) * (1 - haze);
-    const q = Math.round(h * 100);
-    if (q === Math.round(own.haze * 100)) return own;
-    const key = `${i}|${vessels[i].version}|${q}`;
-    let t = tunes.current.get(key);
-    if (!t) {
-      t = { ...own, haze: q / 100 };
-      tunes.current.set(key, t);
-    }
-    return t;
-  }, [vessels]);
-
-  const renderArtifact = useCallback((item: ArchiveArtifact, seat: ArtifactSeat) => {
-    const i = indexOf(item);
-    if (i < 0) return null;
-    const s = vessels[i].state;
-    return (
-      <SeatVessel
-        cacheKey={`${item.id}|${vessels[i].version}`}
-        form={s.form}
-        morph={s.tune.morph}
-        photoUrl={s.url}
-        seed={s.seed}
-        tune={tuneFor(i, seat.haze ?? 0)}
-        room={s.room}
-        glassMode={s.mode}
-        sheetMode={s.sheetMode}
-        face={s.face}
-        sheetSize={s.tune.sheetSize}
-        focused={seat.focused}
-        still={seat.still}
-        // while the seats fly or the eye moves every canvas draws, since its distance is changing under it
-        frameloop={driver.busy ? "always" : seat.frameloop}
-        onPick={pickHandlers[i]}
-      />
-    );
-  }, [indexOf, vessels, tuneFor, driver, pickHandlers]);
-
-  /* Where a seat is: the curve's answer (drawn back on the near side), or —
-     by its share of the field — on the arc between that and its place in the
-     air. A memory with no seat on the curve surfaces from deeper instead. */
-  const adjustSeat = useCallback((curve: SeatDepth, offset: number, viewport: { w: number; h: number }, item: ArchiveArtifact): SeatPlace => {
-    const i = indexOf(item);
-    const onCurve = adjustCurveSeat(curve, offset, viewport);
-    if (i < 0) return onCurve;
-    if (Math.abs(offset) < 0.5) driver.apex = i;
-    const share = driver.share[i];
-    const place = FIELD_PLACES[FIELD_ORDER[i]];
-    const seated = carouselContainsOffset(offset) && onCurve.opacity > 0.02;
-    // a memory off the curve's range stays mounted but out of sight, deep in the field it would surface from
-    if (share <= 0) return seated ? onCurve : surfacingSeat(place, driver.cam, viewport);
-    const to = fieldSeat(place, driver.cam, viewport, driver.hover[i]);
-    const from: FieldSeat = seated
-      ? { ...onCurve, haze: 0, order: onCurve.order ?? Math.round(offset * 100), depth: FIELD_FOCAL / Math.max(onCurve.scale, 1e-3) }
-      : surfacingSeat(place, driver.cam, viewport);
-    return blendSeat(from, to, share, viewport, VARIANT[i], driver.direction);
-  }, [indexOf, driver]);
-
-  const toggle = useCallback(() => setField(!driver.on, driver.apex), [setField, driver]);
-  const chrome = useMemo(() => <FieldToggle on={fieldOn} onToggle={toggle} />, [fieldOn, toggle]);
-
-  // re-provided on every frame of the loop (`frame` stands for the driver's state): the seats' places
-  // and the field's progress live in the driver, and the gallery re-places its seats when this changes
-  const override = useMemo<GalleryOverride>(() => ({
-    items, renderArtifact, adjustSeat, wash: false, chrome,
-    // the gallery's own arrival tints the seats cyan through its sepia + hue-rotate for 1.8 s; the glass is clear
-    arrival: "plain",
-    field: { on: fieldOn, progress: driver.whole, hovered: hoveredId, onHover: onFieldHover, onPick: onFieldPick },
-  }), [items, renderArtifact, adjustSeat, chrome, fieldOn, hoveredId, onFieldHover, onFieldPick, driver, frame]);
-
+    setEditing(i);
+  }, [items]);
   if (editing !== null) {
     const i = editing;
     const s = vessels[i].state;
+    const stored = live?.panels.find((row) => row.id === items[i].id)?.panel;
+    const onThePage = stored ? withPanel(BASE[i], stored) : BASE[i];
     return (
-      <VesselPreview
-        key={items[i].id}
-        initial={s}
-        photos={PHOTOS}
-        yaw={-s.tune.anchorAngle}
-        backLabel="back to the gallery"
-        onBack={() => setEditing(null)}
-        onChange={(next) => setVessels((all) => {
-          const cur = all[i].state;
-          const same = (Object.keys(next) as (keyof VesselState)[]).every((k) => cur[k] === next[k]);
-          return same ? all : all.map((v, k) => (k === i ? { state: next, version: v.version + 1 } : v));
-        })}
-      />
+      <>
+        <VesselPreview
+          key={`${items[i].id}|${vessels[i].echo}`}
+          initial={s}
+          photos={PHOTOS}
+          yaw={-s.tune.anchorAngle}
+          backLabel="back to the gallery"
+          onBack={() => setEditing(null)}
+          onChange={(next) => setVessels((all) => {
+            const cur = all[i].state;
+            const same = (Object.keys(next) as (keyof VesselState)[]).every((k) => cur[k] === next[k]);
+            return same ? all : all.map((v, k) => (k === i ? { ...v, state: next, version: v.version + 1 } : v));
+          })}
+        />
+        <LabPushButton
+          mark={JSON.stringify(panelFromState(s))}
+          liveMark={JSON.stringify(panelFromState(onThePage))}
+          onPush={() => pushGalleryPanel(items[i].id, panelFromState(s))}
+        />
+      </>
     );
   }
 
   return (
-    <GalleryOverrideContext.Provider value={override}>
+    <VesselGalleryProvider items={items} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={vessels} onPick={onPick} onFocus={setReturnTo}>
       <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: "#e4e4e6" }}>
         <div aria-label="memory gallery" style={{ position: "absolute", inset: 0 }}>
           <MemoryCarouselPage galleryFocusId={returnTo} galleryCarried={returnTo !== undefined} />
         </div>
       </main>
-    </GalleryOverrideContext.Provider>
+    </VesselGalleryProvider>
   );
 }

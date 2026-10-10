@@ -7,34 +7,25 @@ export type Oklch = { l: number; c: number; h: number };
 /*
  * The field the color step picks from. Hue runs across, lightness down.
  *
- * It is struck from the landing palette (colors.ts): slate, mist, sky, sage,
- * ocean — blue-greys between 0.6 and 0.88 light with chroma under 0.06 — and
- * a little warmth in sand and rose. The field used to run to 0.118 chroma at
- * near-white, which is pastel candy next to that; it now stays inside the
- * palette's own range, and darkens toward slate at the bottom rather than
- * staying bright.
+ * Every hue is there, evenly — rose, sand, olive, sea, sky, slate, violet and
+ * round to rose — so it reads as a whole spectrum. Its tone is the
+ * homescreen's: the blobs there (colors.ts) are dusty, between 0.61 (ocean)
+ * and 0.89 (cloud) light with chroma 0.01–0.055, so the field runs from a pale
+ * cloud-light top to an ocean-deep bottom, gathering colour as it darkens,
+ * never brighter or purer than those blobs by much.
  */
 export const FIELD = {
-  lTop: 0.94,
-  lBottom: 0.72,
-  cMin: 0.012,
-  cMax: 0.058,
+  lTop: 0.88,
+  lBottom: 0.62,
+  cMin: 0.022,
+  cMax: 0.068,
 };
 
-/*
- * Where the hues sit across the width. The palette lives mostly in blue-grey,
- * so that family gets almost half the field; the greens and yellows that read
- * as candy against it are passed through in a fifth. Monotonic in u, with the
- * hue unwrapped past 360 so it can be inverted.
- */
+/* Where the hues sit across the width: evenly, from rose round to rose.
+   Monotonic in u, with the hue unwrapped past 360 so it can be inverted. */
 const HUE_STOPS: ReadonlyArray<readonly [number, number]> = [
-  [0, 350], // rose
-  [0.2, 400], // sand
-  [0.3, 480], // olive — passed through
-  [0.4, 540], // sea
-  [0.65, 595], // sky, ocean
-  [0.85, 640], // slate, periwinkle
-  [1, 710], // back to rose
+  [0, 10], // rose
+  [1, 370], // round to rose
 ];
 
 export function hueAt(u: number): number {
@@ -58,13 +49,13 @@ function uOfHue(h: number): number {
   return 1;
 }
 
-/** Greens and yellows carry less chroma than the blue-greys they sit beside;
-    at equal chroma they are what reads as neon. */
+/** Yellow-greens carry a little less chroma than the rest; at equal chroma
+    they are what reads as neon beside the dusty blues and roses. */
 function chromaScale(h: number): number {
   const d = Math.abs(wrapHue(h) - 110);
   const dist = Math.min(d, 360 - d);
-  const t = clamp01(1 - dist / 80);
-  return 1 - 0.45 * t * t * (3 - 2 * t);
+  const t = clamp01(1 - dist / 70);
+  return 1 - 0.25 * t * t * (3 - 2 * t);
 }
 
 export const DEFAULT_OKLCH: Oklch = { l: 0.84, c: 0.032, h: 248 };

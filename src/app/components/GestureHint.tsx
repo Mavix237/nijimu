@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import shapePalmUrl from "../../assets/gesture-shape-palm.png";
 import shapePrayerUrl from "../../assets/gesture-shape-prayer.png";
 import feelingHandUrl from "../../assets/gesture-feeling-horizontal.png";
@@ -5,14 +6,17 @@ import distanceOpenUrl from "../../assets/gesture-distance-open.png";
 import distanceFistUrl from "../../assets/gesture-distance-fist.png";
 import colorPinchUrl from "../../assets/gesture-color-pinch.png";
 
-export type GestureHintKind = "shape" | "feeling" | "distance" | "color";
+export type GestureHintKind = "shape" | "rhythm" | "feeling" | "distance" | "color";
 
 export function GestureHint({
   kind,
   active,
+  style,
 }: {
   kind: GestureHintKind;
   active: boolean;
+  /** Overrides the default seat under the copy, so a screen can set it above its camera. */
+  style?: CSSProperties;
 }) {
   return (
     <div
@@ -32,6 +36,7 @@ export function GestureHint({
         /* `active` means a real hand is driving the gesture — hide the hint. */
         opacity: active ? 0 : 0.92,
         transition: "opacity 0.9s ease",
+        ...style,
       }}
     >
       {/* key remounts the frames so tab switches always restart a visible cycle */}
@@ -42,6 +47,8 @@ export function GestureHint({
             <img className="nijimu-gesture-shape-left" src={shapePalmUrl} alt="" />
             <img className="nijimu-gesture-shape-right" src={shapePalmUrl} alt="" />
           </>
+        ) : kind === "rhythm" ? (
+          <img className="nijimu-gesture-rhythm" src={distanceOpenUrl} alt="" />
         ) : kind === "feeling" ? (
           <img className="nijimu-gesture-feeling" src={feelingHandUrl} alt="" />
         ) : kind === "color" ? (
@@ -60,6 +67,9 @@ export function GestureHint({
           width: 100%;
           height: 100%;
         }
+        .nijimu-gesture-rhythm { width: 70px; height: 80px; transform-origin: 50% 90%; animation: nijimuGestureRhythm 3s ease-in-out infinite; }
+        @keyframes nijimuGestureRhythm { 0%, 100% { transform: rotate(-35deg); } 50% { transform: rotate(35deg); } }
+        @media (prefers-reduced-motion: reduce) { .nijimu-gesture-rhythm { animation: none; } }
         .nijimu-gesture-hint img {
           position: absolute;
           left: 0;

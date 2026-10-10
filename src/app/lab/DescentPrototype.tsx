@@ -1,9 +1,20 @@
+import { FlowPageGrid } from "../components/FlowPageGrid";
+import { vesselTint } from "../lib/vesselTint";
+import { holdSurfaceFrame } from "../lib/surfaceHandoff";
+import { SINK_WASH } from "../lib/pondCamera";
+import { DistanceConstellation } from "./DistanceConstellation";
+import { FIELD_FOCAL, memoryDepth } from "./vesselField";
+import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
+import { RHYTHM_MAX, withRhythm, rhythmValue, palmRoll, rhythmFromRoll } from "../lib/memoryRhythm";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
-import { CAROUSEL_PATH } from "../lib/routes";
+import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
+import { PuddleTranscriptPage } from "../components/PuddleTranscriptPage";
+import { PondRecordingOverlay } from "../components/PondRecordingOverlay";
+import { BackButton } from "../components/BackButton";
 import { saveMemory } from "../lib/memoryStore";
 import {
   createGestureGate,
@@ -13,13 +24,15 @@ import {
   useHandTracking,
 } from "../hooks/useHandTracking";
 import { GestureHint } from "../components/GestureHint";
+import { ShutterCamera } from "../components/ShutterCamera";
 import { MATERIAL_PRESETS } from "../components/SceneViewer";
 import { draftColorIndex } from "../components/NamingRim";
 import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, TITLE } from "../lib/theme";
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
-import { POND_DROP_SLOTS } from "../lib/voicePeaks";
+import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
 import { POND_WAVES_GLSL } from "../components/PerspectivePond";
+import { PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { PillButton } from "../components/PillButton";
 import { OklchColorField } from "../components/OklchColorField";
@@ -27,10 +40,10 @@ import { CAPTION_TITLE_GAP, CAPTION_TITLE_STYLE, CAPTION_YEAR_STYLE } from "../c
 import { MODEL_SPACE } from "../components/SceneViewer";
 import { buildPhotoUv } from "../components/MemoryPhotoLayer";
 import { createArtifactGeometry } from "../hooks/useArtifactGeometry";
-import { computeMeshNormals, type ArtifactForm } from "../lib/superformula";
+import { computeMeshNormals, formFromState, type ArtifactForm } from "../lib/superformula";
 import { assignMemoryShape, isMemoryAssignment, type MemoryAssignment } from "../lib/memoryShape";
 import { requestMemoryAssessment } from "../lib/assessMemory";
-import { DEFAULT_OKLCH, oklchToHex, sampleField, uvFromOklch, type Oklch } from "../lib/oklch";
+import { DEFAULT_OKLCH, meshCoreFromOklch, oklchToHex, sampleField, uvFromOklch, type Oklch } from "../lib/oklch";
 import { FILM_LOOK_GLSL, filmLookUniforms, prepareFilmPhoto } from "../lib/filmLook";
 import { SHEET_GLSL, STRIP_FACE_GLSL, STRIP_GLSL, STRIP_MM, createEdgePrint, sheetUniforms } from "./filmStrip";
 import {
@@ -71,9 +84,9 @@ import photoB from "../../assets/memory-photo-02.png";
 
 type Phase =
   | "choose" | "falling" | "floating" | "descending"
-  | "shape" | "distance" | "color"
+  | "shape" | "rhythm" | "distance" | "color"
   | "wrapping" | "rising" | "naming" | "saved";
-type Step = "shape" | "distance" | "color";
+type Step = "shape" | "rhythm" | "distance" | "color";
 
 const POND_CAMERA = new THREE.Vector3(0, 2.8, 10);
 const POND_LOOK = new THREE.Vector3(0, 0.05, -24);
@@ -94,7 +107,10 @@ const SETTLE_S = 0.9;
 const HOLD_S = 1.1;
 const DESCENT_S = 6.2;
 const FORM_AT = new THREE.Vector3(0, -5, -1.2);
-const FORM_REVEAL_S: [number, number] = [3.9, 7];
+const FORM_REVEAL_S: [number, number] = [3.9, 5.2];
+/** The form comes from below; the eye settles first so its last ascent is clear. */
+const FORM_ASCENT_S: [number, number] = [4.2, 8.2];
+const FORM_ASCENT_HEIGHT = 2.4;
 /** The turn the form opens at: the sheet hangs on the vessel's −z wall (anchorAngle 180),
     and the view looks down −z, so a half turn puts the picture toward the eye. */
 const OPEN_YAW = Math.PI;
@@ -115,8 +131,8 @@ const VESSEL_TUNE: VesselTune = {
 const VESSEL_ROOM: Room = { above: "#e6e7ea", below: "#ffffff" };
 /** How far the water gives way to paper while the form is being handled. */
 const WATER_WASH = 1.0;
-/** The wash comes in as the form surfaces out of the water, seconds into the descent. */
-const WASH_IN_S: [number, number] = [4.6, 9.0];
+/** Complete the pale background before the form finishes its underwater ascent. */
+const WASH_IN_S: [number, number] = [1.8, 5.5];
 
 /* The wrap: the view draws back and tilts up so the film overhead and the
    form below are both in frame, and the form lifts a little toward the light;
@@ -272,15 +288,19 @@ const PREVIEW_PHOTO = PHOTOS[Math.min(PHOTOS.length - 1, Math.max(0, Math.floor(
 const PREVIEW_MORPH = unitParam("morph");
 const PREVIEW_FROST = unitParam("frost");
 
-/** The water's body, seen from inside it: pale toward the surface, deep below.
-    uWash gives it up almost entirely while the form is handled: the landing
-    page's paper tones, a trace of the water left in them, soft clouds at very
-    low chroma — and uTint lets the chosen color settle into those clouds. */
+/** The water's body, seen from inside it. It is the pond's own sky and the
+    water a shade under that sky — the same pair the surface uses — only
+    darker with depth. The hue stays, and the chroma does not grow. uWash
+    gives it up almost entirely while the form is handled: the landing page's
+    paper tones, a trace of the water left in them, soft clouds at very low
+    chroma — and uTint lets the chosen color settle into those clouds. */
 const VOLUME_GLSL = /* glsl */ `
   uniform float uWash;
   uniform vec3 uTint;
   uniform float uTintAmount;
   uniform float uClock;
+  uniform float uShapePush;
+  uniform vec3 uShapeRay;
   float washHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float washNoise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
@@ -289,9 +309,21 @@ const VOLUME_GLSL = /* glsl */ `
                mix(washHash(i + vec2(0, 1)), washHash(i + vec2(1, 1)), f.x), f.y);
   }
   vec3 volumeColor(vec3 dir) {
-    vec3 deep = vec3(.30, .39, .40);
-    vec3 mid = vec3(.55, .64, .63);
-    vec3 high = vec3(.80, .86, .84);
+    // A broad, uneven lens presses the colour field as the form changes.
+    // No travelling fronts or light rings: only the existing colour moves.
+    vec3 d = dir - uShapeRay;
+    float lens = exp(-dot(d * vec3(.85, 1.15, 1.0), d * vec3(.85, 1.15, 1.0)) / .7);
+    vec3 drift = vec3(
+      washNoise(dir.xz * 2.0 + uClock * .055) - .5,
+      washNoise(dir.yz * 2.6 - uClock * .045 + 4.7) - .5,
+      0.0);
+    dir = normalize(dir + (d * .16 + drift * .10) * lens * uShapePush);
+    vec3 sky = vec3(.888, .902, .897);
+    vec3 pond = sky * vec3(.90, .93, .93);
+    vec3 high = mix(pond, sky, .35);
+    vec3 mid = pond * .97;
+    // The floor of the water, only a step under the pond — not a dark well.
+    vec3 deep = pond * .92;
     vec3 c = mix(deep, mid, smoothstep(-.9, .1, dir.y));
     c = mix(c, high, smoothstep(.1, .9, dir.y));
     // the paper: #c8c9ce low, #ededee high, as the landing gradient
@@ -315,7 +347,9 @@ const waterVertex = /* glsl */ `
 
 /* Above: the pond's surface shading, the same as PerspectivePond. Below:
    Snell's window — the sky only reaches the eye inside ~48° of straight up;
-   beyond it the surface mirrors the depths. */
+   beyond it the surface mirrors the depths, in the pond's own hue. The two
+   meet across the crossing, so the water does not change colour as the eye
+   goes through. */
 const waterFragment = /* glsl */ `
   ${POND_WAVES_GLSL}
   ${VOLUME_GLSL}
@@ -333,47 +367,54 @@ const waterFragment = /* glsl */ `
     vec3 n = normalize(vec3((h - hx) / .02, 1.0, (h - hz) / .02));
     vec3 eye = normalize(cameraPosition - vWorld);
     vec3 sky = vec3(.888, .902, .897);
-    if (cameraPosition.y >= 0.0) {
-      vec3 reflection = reflect(-eye, n);
-      float fresnel = pow(1.0 - max(0.0, dot(n, eye)), 3.0);
-      vec3 deep = sky * vec3(.76, .80, .80);
-      vec3 color = mix(deep, sky, .24 + fresnel * .66);
-      float clouds = noise(reflection.xz * 3.0 + WIND * uTime * .04);
-      color += (clouds - .5) * .06;
-      color += (n.x * .6 + n.z) * .14;
-      vec3 sunDir = normalize(vec3(0.0, .24, -1.0));
-      float toSun = max(0.0, dot(reflection, sunDir));
-      float light = pow(toSun, 220.0);
-      float glow = pow(toSun, 12.0);
-      float centre = exp(-(p.x * p.x / 16.0 + pow((p.y + 5.0) / 15.0, 2.0)));
-      float reach = (1.0 - smoothstep(-30.0, -60.0, p.y)) * (.25 + .75 * centre);
-      color += glow * reach * vec3(.05, .046, .036);
-      color += light * reach * (.45 + .55 * fresnel) * vec3(.38, .36, .32);
-      vec2 drift = flow * vec2(.38, .65) + WIND * uTime * .06;
-      float bend = noise(drift * .7) * 2.0 - 1.0;
-      float ribbons = noise(vec2(drift.x * .7, drift.y * 2.4 + bend * 1.3));
-      vec2 fibersUV = vec2(flow.x * 1.8, flow.y * 24.0 + bend * 5.0 + WIND.y * uTime * .6);
-      float fiberAA = 1.0 - smoothstep(.3, 1.3, length(fwidth(fibersUV)));
-      float fibers = (noise(fibersUV) - .5) * fiberAA;
-      color += vec3((ribbons - .5) * .022 + fibers * .006);
-      float haze = 1.0 - exp(-max(0.0, -p.y - 8.0) * .028);
-      color = mix(color, sky, haze);
-      color += (hash(gl_FragCoord.xy) - .5) * .017;
-      gl_FragColor = vec4(color, 1.0 - smoothstep(140.0, 400.0, -p.y));
+    vec3 reflection = reflect(-eye, n);
+    float fresnel = pow(1.0 - max(0.0, dot(n, eye)), 3.0);
+    vec3 deep = sky * vec3(.76, .80, .80);
+    vec3 above = mix(deep, sky, .24 + fresnel * .66);
+    float aboveClouds = noise(reflection.xz * 3.0 + WIND * uTime * .04);
+    above += (aboveClouds - .5) * .06;
+    above += (n.x * .6 + n.z) * .14;
+    vec3 sunDir = normalize(vec3(0.0, .24, -1.0));
+    float toSun = max(0.0, dot(reflection, sunDir));
+    float light = pow(toSun, 220.0);
+    float glow = pow(toSun, 12.0);
+    float centre = exp(-(p.x * p.x / 16.0 + pow((p.y + 5.0) / 15.0, 2.0)));
+    float reach = smoothstep(-60.0, -30.0, p.y) * (.25 + .75 * centre);
+    above += glow * reach * vec3(.05, .046, .036);
+    above += light * reach * (.45 + .55 * fresnel) * vec3(.38, .36, .32);
+    vec2 drift = flow * vec2(.38, .65) + WIND * uTime * .06;
+    float bend = noise(drift * .7) * 2.0 - 1.0;
+    float ribbons = noise(vec2(drift.x * .7, drift.y * 2.4 + bend * 1.3));
+    vec2 fibersUV = vec2(flow.x * 1.8, flow.y * 24.0 + bend * 5.0 + WIND.y * uTime * .6);
+    float fiberAA = 1.0 - smoothstep(.3, 1.3, length(fwidth(fibersUV)));
+    float fibers = (noise(fibersUV) - .5) * fiberAA;
+    above += vec3((ribbons - .5) * .022 + fibers * .006);
+    float haze = 1.0 - exp(-max(0.0, -p.y - 8.0) * .028);
+    above = mix(above, sky, haze);
+    above += (hash(gl_FragCoord.xy) - .5) * .017;
+    float aboveAlpha = 1.0 - smoothstep(140.0, 400.0, -p.y);
+    // Above the crossing the frame is the pond, and nothing else.
+    if (cameraPosition.y > .12) {
+      gl_FragColor = vec4(above, aboveAlpha);
       return;
     }
     vec3 up = -eye;
     float cosUp = max(0.0, dot(up, n));
     float window = smoothstep(.60, .74, cosUp);
-    float clouds = noise((p + n.xz * 3.0) * .35 + vec2(uTime * .02, 0.0));
-    vec3 through = sky * 1.04 + (clouds - .5) * .06;
-    vec3 mirrored = volumeColor(vec3(up.x, -up.y, up.z)) * .92;
-    vec3 color = mix(mirrored, through, window);
-    color += smoothstep(.56, .66, cosUp) * (1.0 - smoothstep(.66, .78, cosUp)) * .05;
+    float belowClouds = noise((p + n.xz * 3.0) * .35 + vec2(uTime * .02, 0.0));
+    vec3 through = sky * 1.04 + (belowClouds - .5) * .06;
+    vec3 mirrored = volumeColor(vec3(up.x, -up.y, up.z)) * .98;
+    vec3 below = mix(mirrored, through, window);
+    below += smoothstep(.56, .66, cosUp) * (1.0 - smoothstep(.66, .78, cosUp)) * .05;
     float dist = length(cameraPosition - vWorld);
-    color = mix(color, volumeColor(up), 1.0 - exp(-dist * .045));
-    color += (hash(gl_FragCoord.xy) - .5) * .017;
-    gl_FragColor = vec4(color, 1.0);
+    below = mix(below, volumeColor(up), 1.0 - exp(-dist * .045));
+    below += (hash(gl_FragCoord.xy) - .5) * .017;
+    // Still the pond as the eye meets the surface; the quieter body only once it is under.
+    float submerge = 1.0 - smoothstep(-1.15, .12, cameraPosition.y);
+    // The near plane must never cut a hard colour boundary through the view.
+    // Let the continuous full-frame volume take over before the surface clips.
+    float nearCover = smoothstep(.15, .75, dist);
+    gl_FragColor = vec4(mix(above, below, submerge), mix(aboveAlpha, 1.0, submerge) * nearCover);
   }
 `;
 
@@ -542,11 +583,13 @@ const motesFragment = /* glsl */ `
    angle and fades toward at a distance. Under the water the body's high and
    mid tones; while the form is handled, the paper the water washes to; in the
    air above, the sky. The colour pick reaches them as the water's tint does. */
-const ROOM_WATER_ABOVE = new THREE.Color(0.80, 0.86, 0.84);
-const ROOM_WATER_BELOW = new THREE.Color(0.55, 0.64, 0.63);
+const ROOM_SKY = new THREE.Color(0.888, 0.902, 0.897);
+const POND_DEEP = ROOM_SKY.clone().multiply(new THREE.Color(0.90, 0.93, 0.93));
+/** The body's high and mid, the same water the volume darkens — the pond's hue, not a stronger teal. */
+const ROOM_WATER_ABOVE = POND_DEEP.clone().lerp(ROOM_SKY, 0.35);
+const ROOM_WATER_BELOW = POND_DEEP.clone().multiplyScalar(0.97);
 const ROOM_PAPER_ABOVE = new THREE.Color(0.93, 0.93, 0.934);
 const ROOM_PAPER_BELOW = new THREE.Color(0.784, 0.788, 0.808);
-const ROOM_SKY = new THREE.Color(0.888, 0.902, 0.897);
 const ROOM_SURFACE = new THREE.Color(0.86, 0.89, 0.88);
 
 /* The touch. While the form is being handled the frame is drawn once more
@@ -570,6 +613,10 @@ const touchFragment = /* glsl */ `
   uniform float uAspect;
   uniform float uTime;
   uniform float uAmount;
+  uniform float uArrivalBlur;
+  uniform float uSurfaceLight;
+  uniform vec2 uViewport;
+  uniform vec2 uArrivalCenter;
   varying vec2 vUv;
   float touchHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float touchNoise(vec2 p) {
@@ -602,6 +649,9 @@ const touchFragment = /* glsl */ `
     }
     shift = shift / aspect * uAmount;
     near *= uAmount;
+    // Fade displacement at the frame edge instead of stretching its last texel.
+    vec2 edge = smoothstep(vec2(0.0), vec2(.04), vUv) * smoothstep(vec2(0.0), vec2(.04), 1.0 - vUv);
+    shift *= edge.x * edge.y;
     vec4 c = texture2D(tScene, vUv + shift);
     // the light splits by a hair where the water is thickest
     float split = near * .1;
@@ -609,9 +659,55 @@ const touchFragment = /* glsl */ `
     c.b = texture2D(tScene, vUv + shift * (1.0 - split)).b;
     // and the gathered water catches a touch more light
     c.rgb += near * .02;
+    // The approaching memory is seen through a depth of water. Soften the
+    // rendered silhouette as well as its materials; the page chrome stays crisp.
+    if (uArrivalBlur > .05 && length((vUv - uArrivalCenter) * aspect) < .65) {
+      vec4 soft = vec4(0.0);
+      float weight = 0.0;
+      for (int y = -3; y <= 3; y++) {
+        for (int x = -3; x <= 3; x++) {
+          vec2 tap = vec2(float(x), float(y));
+          float w = exp(-dot(tap, tap) / 4.5);
+          vec2 uv = vUv + shift + tap * (uArrivalBlur / 3.0) / uViewport;
+          soft += texture2D(tScene, clamp(uv, .5 / uViewport, 1.0 - .5 / uViewport)) * w;
+          weight += w;
+        }
+      }
+      float mask = 1.0 - smoothstep(.38, .65, length((vUv - uArrivalCenter) * aspect));
+      c = mix(c, soft / weight, mask);
+    }
+    // The illuminated silhouette spills softly into the surrounding water.
+    if (uSurfaceLight > .001) {
+      float bloom = 0.0;
+      float weight = 0.0;
+      for (int y = -3; y <= 3; y++) {
+        for (int x = -3; x <= 3; x++) {
+          vec2 tap = vec2(float(x), float(y));
+          float w = exp(-dot(tap, tap) / 4.5);
+          vec3 light = texture2D(tScene, clamp(vUv + tap * 10.0 / uViewport, .5 / uViewport, 1.0 - .5 / uViewport)).rgb;
+          bloom += smoothstep(.94, .98, min(light.r, min(light.g, light.b))) * w;
+          weight += w;
+        }
+      }
+      c.rgb = mix(c.rgb, vec3(1.0), bloom / weight * uSurfaceLight * .7);
+    }
     gl_FragColor = c;
   }
 `;
+
+/** The same silhouette brightens into the surface light; its coverage never fades out. */
+function surfaceShader(fragment: string, body: boolean) {
+  return `uniform float uSurfaceLight;\n${fragment.replace("void main()", "void surfaceBase()")}
+    void main() {
+      surfaceBase();
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, ${body ? "vec3(0.975, 0.982, 0.98)" : "vec3(0.890196, 0.917647, 0.913725)"}, uSurfaceLight);
+      ${body ? "gl_FragColor.a = mix(gl_FragColor.a, min(1.0, gl_FragColor.a * 4.0), uSurfaceLight);" : ""}
+    }`;
+}
+const surfaceGlassFragment = surfaceShader(glassRefractFragment, true);
+const surfaceSheetFragment = surfaceShader(sheetFragment, true);
+const surfaceWaterFragment = surfaceShader(waterFragment, false);
+const surfaceVolumeFragment = surfaceShader(volumeFragment, false);
 
 /** What the window holds before a photo: a single pale texel. */
 const BLANK_PHOTO = (() => {
@@ -627,6 +723,10 @@ interface FallRequest {
 
 /** What the page hands the stage, frame by frame, without re-rendering it. */
 interface StageState {
+  photoReady: boolean;
+  surfaceLight: number;
+  captureSurface?: () => void;
+  voicePulses: VoiceRippleSpot[];
   request: FallRequest | null;
   holding: boolean;
   /** The sculpting step the page is on, if any. */
@@ -648,13 +748,12 @@ interface StageProps {
   /** Assigned by the page when the run starts, so the page can save it. */
   form: ArtifactForm;
   /** "wrap" opens on the wrap, the shot before it taken as done. */
-  from: "wrap" | null;
+  from: "wrap" | "color" | null;
   /** The wrap's knobs, read every frame; the panel writes them. */
   tune: RefObject<WrapTune>;
   transport: RefObject<Transport>;
   crossingRef: RefObject<HTMLDivElement | null>;
   glowRef: RefObject<HTMLDivElement | null>;
-  hintRef: RefObject<HTMLDivElement | null>;
   /** The button laid over the hanging strip; kept on it as it sways. */
   pickRef: RefObject<HTMLButtonElement | null>;
   captionRef: RefObject<HTMLDivElement | null>;
@@ -678,11 +777,15 @@ function useKept<T>(make: () => T): T {
   return kept.current;
 }
 
-function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, hintRef, pickRef, captionRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onRewound }: StageProps) {
+function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onRewound }: StageProps) {
   const { camera, size, gl, scene } = useThree();
   const time = useRef(0);
   const jumped = useRef(false);
   const dropIndex = useRef(0);
+  const voiceRay = useMemo(() => new THREE.Raycaster(), []);
+  const voiceNdc = useMemo(() => new THREE.Vector2(), []);
+  const voicePlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
+  const voicePoint = useMemo(() => new THREE.Vector3(), []);
   const fall = useRef<{
     at: number; pos: THREE.Vector3; quat: THREE.Quaternion; right: THREE.Vector3;
     width: number; height: number;
@@ -702,12 +805,15 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
   const risen = useRef(false);
   const broke = useRef(false);
   const film = useRef<THREE.Mesh>(null);
+  const photoAt = useRef<number | null>(null);
   /** The vessel: glass, sheet and mist under one transform. */
   const form = useRef<THREE.Group>(null);
   const glassMesh = useRef<THREE.Mesh>(null);
   const mist = useRef<THREE.Group>(null);
   const particles = useRef<THREE.Points>(null);
   const smooth = useRef({ morph: 0, frost: 0, wash: 0, dye: 0, spin: 0 });
+  const distanceAnchor = useRef(new THREE.Vector3());
+  const distanceDepth = useRef(FIELD_FOCAL);
   const written = useRef(-1);
   const touches = useRef([
     { at: new THREE.Vector2(-10, -10), wake: new THREE.Vector2(), press: 0 },
@@ -727,6 +833,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
      Growth is written on the CPU, as BubbleViewer does; the glass is this
      geometry, and the sheet inside follows it (below). */
   const artifact = useMemo(() => createArtifactGeometry(artifactForm), [artifactForm]);
+  const previousM2 = useRef(artifactForm.side.m);
   const normals = useMemo(() => new Float32Array(artifact.rest.normals.length), [artifact]);
   const vesselMorphed = useRef(false);
   useEffect(() => { written.current = -1; vesselMorphed.current = false; }, [artifact]);
@@ -796,10 +903,13 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
   }));
   const under = useMemo(() => ({ value: 0 }), []);
   const water = useMemo(() => ({
+    uSurfaceLight: { value: 0 },
     uWash: { value: 0 },
     uTint: { value: new THREE.Color("#a4b6be") },
     uTintAmount: { value: 0 },
     uClock: { value: 0 },
+    uShapePush: { value: 0 },
+    uShapeRay: { value: new THREE.Vector3(0, 0, -1) },
   }), []);
   const surfaceUniforms = useMemo(() => ({ ...waves, ...water }), [waves, water]);
   const volumeUniforms = useMemo(() => ({
@@ -860,18 +970,21 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     const u = createSheetUniformSet(filmUniforms.uEdgePrint.value);
     u.uReveal.value = 0;
     u.uDevelop.value = PRINT_EARLY ? 1.45 : 0;
-    return u;
+    return { ...u, uSurfaceLight: { value: 0 } };
   });
   const glassU = useMemo(() => {
     const u = createGlassUniformSet(refract.target.texture);
     u.uReveal.value = 0;
-    return u;
+    return { ...u, uSurfaceLight: { value: 0 } };
   }, [refract]);
   const vesselTune = useMemo(() => ({ ...VESSEL_TUNE }), []);
   const vesselKey = useMemo(() => keyFrom(VESSEL_TUNE.keyAzimuth, VESSEL_TUNE.keyElevation), []);
   const vesselPatches = useMemo(() => seedDirections(filmUniforms.uSeed.value, 3, 1.1), [filmUniforms]);
   const writeVessel = (haze: number, above: THREE.Color, below: THREE.Color) => {
     vesselTune.haze = haze;
+    Object.assign(vesselTune, vesselTint(stage.current.oklch));
+    vesselTune.memoryTintAmount *= water.uTintAmount.value;
+    vesselTune.memoryFlash *= water.uTintAmount.value;
     const seed = filmUniforms.uSeed.value;
     const air = [above.r, above.g, above.b] as const;
     writeSheetUniforms(sheetU, {
@@ -905,6 +1018,10 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
         uAspect: { value: 1 },
         uTime: { value: 0 },
         uAmount: { value: 0 },
+        uArrivalBlur: { value: 0 },
+        uSurfaceLight: { value: 0 },
+        uViewport: { value: new THREE.Vector2(1, 1) },
+        uArrivalCenter: { value: new THREE.Vector2(.5, .5) },
       },
       depthTest: false,
       depthWrite: false,
@@ -924,6 +1041,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     touch.target.setSize(w, h);
     refract.target.setSize(w, h);
     touch.material.uniforms.uAspect.value = size.width / size.height;
+    touch.material.uniforms.uViewport.value.set(size.width, size.height);
   }, [touch, refract, gl, size]);
   /* Three binds a material's uniform holders once, when its program is first
      acquired, and never reads `material.uniforms` again. A Fast Refresh (any
@@ -956,7 +1074,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
   }, [gl, scene, camera]);
   useFrame(({ gl: renderer, scene, camera: view }) => {
     const body = form.current;
-    if (body && body.visible) {
+    if ((body && body.visible) || stage.current.step === "distance") {
       glassU.uResolution.value.set(refract.target.width, refract.target.height);
       view.layers.set(0);
       renderer.setRenderTarget(refract.target);
@@ -976,6 +1094,13 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     }
     renderer.setRenderTarget(null);
     renderer.render(touch.scene, touch.camera);
+    // Read immediately after drawing, before WebGL releases its drawing buffer.
+    if (stage.current.captureSurface) {
+      const done = stage.current.captureSurface;
+      stage.current.captureSurface = undefined;
+      holdSurfaceFrame(renderer.domElement, false);
+      done();
+    }
   }, 1);
 
   /* On confirm, with ?cloud=1: the point cloud. The print itself needs nothing
@@ -1051,11 +1176,11 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     waves.uTime.value = t;
     tr.shot = wrapAt.current === null ? 0 : t - wrapAt.current;
 
-    /* ?from=wrap: the first frame is set up as the end of the color step —
+    /* Resume color / ?from=wrap: the first frame is set up as the end of the color step —
        the photo developed and the strip afloat, the descent long over, the
-       form surfaced with its shape and mist, the water washed — and the wrap
-       is begun on it. Everything timed from these marks reads as finished. */
-    if (from === "wrap" && !jumped.current && s.request && film.current && form.current) {
+       form surfaced with its shape and mist, the water washed — and only the lab wrap
+       begins a new animation on it. Everything timed from these marks reads as finished. */
+    if (from !== null && !jumped.current && s.request && film.current && form.current) {
       jumped.current = true;
       const longAgo = t - 60;
       const request = s.request;
@@ -1087,13 +1212,17 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       smooth.current.frost = s.frost;
       writeMorph(s.morph);
       water.uTintAmount.value = 1;
-      s.wrap = true;
+      s.wrap = from === "wrap";
     }
 
     /* The camera, in order: still on the pond; down the descent path; drawn
        back for the wrap; up the rise path; still again, on the named memory. */
     const { cameraAt, lookAt, formAt } = scratch;
     formAt.copy(FORM_AT);
+    if (descentAt.current !== null && wrapAt.current === null && riseAt.current === null) {
+      const ascent = smoothProgress(t - descentAt.current, FORM_ASCENT_S[0], FORM_ASCENT_S[1]);
+      formAt.y -= (1 - ascent) * FORM_ASCENT_HEIGHT;
+    }
     filmUniforms.uBelow.value = knobs.filmBelow;
     // the wrap's framing is live from the panel; the rise sets out from wherever it is
     scratch.wrapCamera.set(0, knobs.cameraY, knobs.cameraZ);
@@ -1133,7 +1262,9 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       const u = flowProgress(k, 0, 1);
       cameraAt.copy(DESCENT_PATH.getPoint(u));
       lookAt.copy(DESCENT_LOOK.getPoint(u));
-      if (k >= 1 && !reachedBottom.current) { reachedBottom.current = true; onUnder(); }
+      if (t - descentAt.current >= Math.max(DESCENT_S, FORM_ASCENT_S[1]) && !reachedBottom.current) {
+        reachedBottom.current = true; onUnder();
+      }
     }
     // the orbit: once the wrap has begun, the view can be turned about its look point to watch from another
     // side; it is let go over the rise's crossing to the pond view, so the named memory is seen from the pond
@@ -1153,9 +1284,25 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       const r = offset.length();
       cameraAt.set(lookAt.x + r * Math.cos(elevation) * Math.sin(heading), lookAt.y + r * Math.sin(elevation), lookAt.z + r * Math.cos(elevation) * Math.cos(heading));
     }
+    // Open the lens for the constellation while holding the current artifact's
+    // apparent size. A matching dolly changes perspective, never mesh scale.
+    const lens = camera as THREE.PerspectiveCamera;
+    lens.fov += ((s.step === "distance" ? 72 : 48) - lens.fov) * (1 - Math.exp(-4 * dt));
+    if (Math.abs(lens.fov - 48) < .001) lens.fov = 48;
+    lens.updateProjectionMatrix();
+    const lensDolly = Math.tan(THREE.MathUtils.degToRad(24)) / Math.tan(THREE.MathUtils.degToRad(lens.fov / 2));
+    cameraAt.sub(lookAt).multiplyScalar(lensDolly).add(lookAt);
     camera.position.copy(cameraAt);
     camera.lookAt(lookAt);
     camera.updateMatrixWorld();
+    // Recording uses this same water, including its voice-driven ripples.
+    for (const pulse of s.voicePulses.splice(0)) {
+      voiceNdc.set(pulse.x * 2 - 1, 1 - pulse.y * 2);
+      voiceRay.setFromCamera(voiceNdc, camera);
+      if (voiceRay.ray.intersectPlane(voicePlane, voicePoint) && voicePoint.z > -100 && voicePoint.z < 18) {
+        drop(voicePoint.x, voicePoint.z, t, pulse.strength);
+      }
+    }
 
     /* The water lets go of its color while the form is being handled, and
        takes it back as the form leaves. The color pick weathers it faintly. */
@@ -1163,9 +1310,15 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     const ease = (from: number, to: number, rate: number) => from + (to - from) * (1 - Math.exp(-rate * dt));
     // in with the form as it surfaces at the end of the descent; out again over the rise
     const washIn = descentAt.current === null ? 0 : smoothProgress(t - descentAt.current, WASH_IN_S[0], WASH_IN_S[1]);
-    sm.wash = ease(sm.wash, riseAt.current !== null ? 0 : WATER_WASH * washIn, riseAt.current !== null ? 0.55 : 1.4);
+    // Follow the shot's easing directly: another lag here delayed the light
+    // background until after the form had finished surfacing.
+    sm.wash = riseAt.current !== null ? ease(sm.wash, 0, .55) : WATER_WASH * washIn;
     water.uWash.value = sm.wash;
     water.uClock.value = t;
+    water.uSurfaceLight.value = s.surfaceLight;
+    touch.material.uniforms.uSurfaceLight.value = s.surfaceLight;
+    glassU.uSurfaceLight.value = s.surfaceLight;
+    sheetU.uSurfaceLight.value = s.surfaceLight;
     const colorStep = s.step === "color" || wrapAt.current !== null;
     sm.dye = ease(sm.dye, colorStep ? 1 : 0, 1.6);
     // the pick reaches the water as a faint, light tint — a cloud's worth, not a dye
@@ -1176,7 +1329,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     volumeUniforms.uCameraWorld.value.copy(camera.matrixWorld);
 
     const camY = camera.position.y;
-    under.value = 1 - smoothProgress(camY, -0.35, 0.05);
+    under.value = 1 - smoothProgress(camY, -1.15, 0.12);
     // the film is passed through on the way down and left behind: it thins away under the eye and stays gone
     if (film.current && descentAt.current !== null) {
       filmGone.current = Math.max(filmGone.current, smoothProgress(-camY, FILM_GONE_DEPTH[0], FILM_GONE_DEPTH[1]));
@@ -1228,8 +1381,11 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
        front of the view and hangs there, empty, turning a little on the air.
        The photo develops into its window; a beat later the hand opens. */
     const mesh = film.current;
-    if (mesh && fall.current === null) {
-      filmUniforms.uDissolve.value = 1.2 * (1 - smoothProgress(t, EMERGE_S[0], EMERGE_S[1]));
+    if (!s.photoReady) photoAt.current = null;
+    else if (photoAt.current === null) photoAt.current = t;
+    if (mesh) mesh.visible = s.photoReady && filmGone.current < .999;
+    if (mesh && s.photoReady && fall.current === null) {
+      filmUniforms.uDissolve.value = 1.2 * (1 - smoothProgress(t - (photoAt.current ?? t), EMERGE_S[0], EMERGE_S[1]));
       camera.getWorldDirection(scratch.forward);
       scratch.v.set(0, 1, 0).applyQuaternion(camera.quaternion);
       mesh.position.copy(camera.position).addScaledVector(scratch.forward, CHOOSE_DEPTH)
@@ -1322,12 +1478,6 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       }
     }
 
-    const hint = hintRef.current;
-    if (hint && f) {
-      scratch.v.set(FILM_AT.x, 0, FILM_AT.z + f.height / 2 + 0.35).project(camera);
-      hint.style.transform = `translate(-50%, 0) translate(${((scratch.v.x * 0.5 + 0.5) * size.width).toFixed(1)}px, ${((-scratch.v.y * 0.5 + 0.5) * size.height).toFixed(1)}px)`;
-    }
-
     /* The form. Its three signals follow the page's values with a little lag,
        the way the gesture pages smooth MediaPipe; growth is written to the
        geometry only when it has actually moved. The distance step is the
@@ -1337,15 +1487,29 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     if (body) {
       const reveal = descentAt.current === null ? 0
         : smoothProgress(t - descentAt.current, FORM_REVEAL_S[0], FORM_REVEAL_S[1]);
+      // Focus follows the climb, independently of the user's saved distance.
+      // It reaches exactly zero at the final seat, before shaping starts.
+      const arrivalHaze = descentAt.current === null || wrapAt.current !== null || riseAt.current !== null ? 0
+        : 1 - smoothProgress(t - descentAt.current, FORM_ASCENT_S[0], FORM_ASCENT_S[1]);
+      touch.material.uniforms.uArrivalBlur.value = reveal > .001 ? 28 * arrivalHaze : 0;
+      scratch.v.copy(formAt).project(camera);
+      touch.material.uniforms.uArrivalCenter.value.set(scratch.v.x * .5 + .5, scratch.v.y * .5 + .5);
       body.visible = reveal > 0.001;
+      const previousMorph = sm.morph;
       sm.morph = ease(sm.morph, s.morph, 7);
+      const morphVelocity = s.step === "shape" && dt > 0 ? (sm.morph - previousMorph) / dt : 0;
+      const rhythmVelocity = s.step === "rhythm" && dt > 0 ? (artifactForm.side.m - previousM2.current) / dt : 0;
+      previousM2.current = artifactForm.side.m;
+      water.uShapePush.value = ease(water.uShapePush.value, THREE.MathUtils.clamp(morphVelocity * 1.8 + rhythmVelocity * .08, -1, 1), 4);
+      water.uShapeRay.value.copy(formAt).sub(camera.position).normalize();
       sm.frost = ease(sm.frost, s.frost, 7);
+      const visibleHaze = Math.max(sm.frost, arrivalHaze);
       if (Math.abs(sm.morph - written.current) > 0.0015) writeMorph(sm.morph);
       const air = 1 - smoothProgress(-formAt.y, -0.2, 0.3);
       const { roomAbove, roomBelow } = scratch;
       roomAbove.copy(ROOM_WATER_ABOVE).lerp(ROOM_PAPER_ABOVE, sm.wash).lerp(ROOM_SKY, air);
       roomBelow.copy(ROOM_WATER_BELOW).lerp(ROOM_PAPER_BELOW, sm.wash).lerp(ROOM_SURFACE, air);
-      const dye = water.uTintAmount.value * 0.4;
+      const dye = water.uTintAmount.value * 0.06;
       roomAbove.lerp(water.uTint.value, dye);
       roomBelow.lerp(water.uTint.value, dye);
       // the refraction's bend and smear are fractions of the screen, tuned with the vessel
@@ -1356,18 +1520,28 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       const sizeK = Math.min(1.5, Math.max(0.15, onScreen / LAB_ON_SCREEN));
       vesselTune.bend = VESSEL_TUNE.bend * sizeK;
       vesselTune.glassSoft = VESSEL_TUNE.glassSoft * sizeK;
-      writeVessel(sm.frost, roomAbove, roomBelow);
+      writeVessel(visibleHaze, roomAbove, roomBelow);
+      distanceDepth.current = memoryDepth(sm.frost);
       sheetU.uReveal.value = reveal;
       glassU.uReveal.value = reveal;
       glassU.uTime.value = t;
-      if (mist.current) mist.current.visible = sm.frost * (VESSEL_TUNE.hazeMist + VESSEL_TUNE.hazeGlow) > 0.002;
+      if (mist.current) mist.current.visible = visibleHaze * (VESSEL_TUNE.hazeMist + VESSEL_TUNE.hazeGlow) > 0.002;
       // one slow drift throughout, quieting as it comes to rest on the surface (a change of rhythm at the naming read as a jolt)
       const calm = riseAt.current === null ? 0 : smoothProgress((t - riseAt.current) / RISE_S, 0.6, 1);
       const bob = Math.sin(t * 0.6) * (0.05 - 0.02 * calm);
       body.position.set(formAt.x, formAt.y + bob, formAt.z);
+      distanceAnchor.current.copy(body.position);
+      // Hold the handled memory at the same apparent size. The constellation
+      // moves past it as the chosen gallery depth increases.
+      body.traverse(child => {
+        if (child instanceof THREE.Mesh && child.layers.isEnabled(FRONT_LAYER)) {
+          child.userData.normalOrder ??= child.renderOrder;
+          child.renderOrder = s.step === "distance" ? 100 - FIELD_FOCAL * 2 + (child === glassMesh.current ? -.1 : 0) : child.userData.normalOrder;
+        }
+      });
       // for the wrap the form fills out — about twice its volume — and stays that size up through the rise
       const grown = wrapAt.current === null ? 0 : flowProgress(t - wrapAt.current, 0, WRAP_MOVE_S);
-      body.scale.setScalar(0.9 * (0.86 + 0.14 * reveal) * (1 + knobs.grow * grown));
+      body.scale.setScalar(0.9 * (1 + knobs.grow * grown));
       // while it is handled, wrapped and rising it holds with the picture toward the eye, as the gallery
       // seats it (a slow turn would carry the picture away); once named it turns slowly
       if (!risen.current) {
@@ -1431,12 +1605,12 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     <mesh frustumCulled={false} renderOrder={-10}>
       <planeGeometry args={[2, 2]} />
       <shaderMaterial name="volume" transparent depthTest={false} depthWrite={false}
-        vertexShader={volumeVertex} fragmentShader={volumeFragment} uniforms={volumeUniforms} />
+        vertexShader={volumeVertex} fragmentShader={surfaceVolumeFragment} uniforms={volumeUniforms} />
     </mesh>
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -900]} renderOrder={0}>
       <planeGeometry args={[2000, 2000]} />
       <shaderMaterial name="surface" transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
-        vertexShader={waterVertex} fragmentShader={waterFragment} uniforms={surfaceUniforms} />
+        vertexShader={waterVertex} fragmentShader={surfaceWaterFragment} uniforms={surfaceUniforms} />
     </mesh>
     <mesh ref={film} renderOrder={2} frustumCulled={false}>
       <planeGeometry args={[1, 1, 64, 48]} />
@@ -1452,20 +1626,21 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     <group ref={form} visible={false} rotation={[0, OPEN_YAW, 0]}>
       <mesh ref={glassMesh} geometry={artifact.geometry} renderOrder={4} frustumCulled={false} layers={FRONT_LAYER}>
         <shaderMaterial name="glass-back" transparent depthWrite={false} side={THREE.BackSide}
-          vertexShader={glassVertex} fragmentShader={glassRefractFragment} uniforms={glassU} />
+          vertexShader={glassVertex} fragmentShader={surfaceGlassFragment} uniforms={glassU} />
       </mesh>
       <mesh geometry={vessel.sheet.geometry} renderOrder={5} frustumCulled={false}>
         <shaderMaterial name="sheet" transparent depthWrite={false} side={THREE.DoubleSide}
-          vertexShader={sheetVertex} fragmentShader={sheetFragment} uniforms={sheetU} />
+          vertexShader={sheetVertex} fragmentShader={surfaceSheetFragment} uniforms={sheetU} />
       </mesh>
       <mesh geometry={artifact.geometry} renderOrder={6} frustumCulled={false} layers={FRONT_LAYER}>
         <shaderMaterial name="glass-front" transparent depthWrite={false} side={THREE.FrontSide}
-          vertexShader={glassVertex} fragmentShader={glassRefractFragment} uniforms={glassU} />
+          vertexShader={glassVertex} fragmentShader={surfaceGlassFragment} uniforms={glassU} />
       </mesh>
       <group ref={mist} visible={false}>
         <Mist geometry={artifact.geometry} uniforms={glassU} layer={FRONT_LAYER} renderOrder={7} on />
       </group>
     </group>
+    <DistanceConstellation stage={stage} anchor={distanceAnchor} depth={distanceDepth} sceneTexture={refract.target.texture} edgePrint={filmUniforms.uEdgePrint.value} />
     {CLOUD && particleGeometry && (
       <points ref={particles} geometry={particleGeometry} material={particleMaterial} renderOrder={6} frustumCulled={false} />
     )}
@@ -1486,10 +1661,15 @@ const STEP_COPY: Record<Step, { title: string; lines: [string, string]; drag: st
     lines: ["each memory already has a shape.", "open your hands, and let these words find theirs."],
     drag: "or drag across to grow it",
   },
+  rhythm: {
+    title: "rhythm",
+    lines: ["let its contours find their rhythm.", "tilt an open palm left or right, like turning a dial."],
+    drag: "or drag across to change its rhythm",
+  },
   distance: {
     title: "distance",
-    lines: ["time blurs the edges, not the feeling.", "a faded memory can hold more."],
-    drag: "or drag across to let it mist over",
+    lines: ["time blurs the edges, not the feeling.", "let this memory settle nearer, or farther away."],
+    drag: "or drag across to move it deeper into the constellation",
   },
   color: {
     title: "color",
@@ -1803,18 +1983,38 @@ function Timeline({ transport, tune, onChange, onFocus }: {
   );
 }
 
-function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport> }) {
+function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport> }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [transcript] = useState(() => typeof location.state?.transcript === "string" ? location.state.transcript : "");
-  const [memoryId] = useState(() => typeof location.state?.memoryId === "string" ? location.state.memoryId : crypto.randomUUID());
-  const supplied = useRef(isMemoryAssignment(location.state?.memoryAssignment, transcript) ? location.state.memoryAssignment as MemoryAssignment : null);
-  const [assignment, setAssignment] = useState(() => supplied.current ?? assignMemoryShape(null, memoryId, "fallback", undefined, transcript));
-  const [assessmentPending, setAssessmentPending] = useState(!supplied.current && !!transcript.trim());
+  const [resume] = useState(() => location.state?.resumeStep === "color" ? location.state : null);
+  const from = resume ? "color" : FROM;
+  const restoredForm = useMemo(() => resume ? formFromState(resume) : null, [resume]);
+  const recording = !lab && location.pathname === RECORD_START_PATH;
+  const prelude = recording || (!lab && location.pathname === TRANSCRIPT_PATH);
+  const [reducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  // The route can receive a completed transcription while this same scene is
+  // mounted. Read its latest words and ID when moving from highlighting to film.
+  const transcript = typeof location.state?.transcript === "string" && location.state.transcript.trim() ? location.state.transcript : SAMPLE_TRANSCRIPT;
+  const [fallbackId] = useState(() => crypto.randomUUID());
+  const memoryId = typeof location.state?.memoryId === "string" ? location.state.memoryId : fallbackId;
+  const highlightedWords = Array.isArray(location.state?.highlightedWords) ? location.state.highlightedWords.filter((word: unknown) => typeof word === "string") : [];
+  const highlightedIndices = Array.isArray(location.state?.highlightedWordIndices) ? location.state.highlightedWordIndices.filter((index: unknown) => typeof index === "number") : [];
+  const supplied = useMemo(() =>
+    isMemoryAssignment(location.state?.memoryAssignment, transcript) && location.state.memoryAssignment.source !== "fallback"
+      ? location.state.memoryAssignment as MemoryAssignment
+      : sampleAssignment(transcript) ?? (isMemoryAssignment(location.state?.memoryAssignment, transcript) ? location.state.memoryAssignment as MemoryAssignment : null),
+    [location.state?.memoryAssignment, transcript]);
+  const [assignment, setAssignment] = useState<MemoryAssignment>(() => isMemoryAssignment(resume?.assignment, transcript) ? resume.assignment : supplied ?? assignMemoryShape(null, memoryId, "fallback", undefined, transcript));
+  const [assessmentPending, setAssessmentPending] = useState(!prelude && !supplied && !!transcript.trim());
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
-  const assignmentLocked = useRef(!!supplied.current || FROM !== null);
+  const assignmentLocked = useRef(from !== null);
   useEffect(() => {
+    if (prelude) { setAssessmentPending(false); return; }
     if (!transcript.trim() || assignmentLocked.current) { setAssessmentPending(false); return; }
+    if (supplied) { setAssignment(supplied); setAssessmentPending(false); setAssessmentError(null); return; }
+    setAssessmentPending(true);
+    setAssessmentError(null);
+    setAssignment(assignMemoryShape(null, memoryId, "fallback", undefined, transcript));
     const controller = new AbortController();
     void requestMemoryAssessment(transcript, controller.signal).then(result => {
       if (controller.signal.aborted || assignmentLocked.current) return;
@@ -1822,48 +2022,65 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
       setAssessmentError(result.error); setAssessmentPending(false);
     });
     return () => controller.abort();
-  }, [transcript, memoryId]);
-  const form = assignment.form;
+  }, [prelude, transcript, memoryId, supplied]);
+  const [editedM2, setEditedM2] = useState<number | null>(null);
+  const form = useMemo(() => editedM2 === null ? restoredForm ?? assignment.form : withRhythm(restoredForm ?? assignment.form, editedM2), [restoredForm, assignment.form, editedM2]);
+  const m2 = form.side.m;
+  const m2Ref = useRef(m2);
+  m2Ref.current = m2;
   const stage = useRef<StageState>({
+    photoReady: !prelude,
+    surfaceLight: 0,
+    voicePulses: [],
     request: null, holding: false, step: null,
-    morph: FROM ? PREVIEW_MORPH : 0, frost: FROM ? PREVIEW_FROST : 0,
-    oklch: DEFAULT_OKLCH, hands: [], wrap: false, rise: false,
+    morph: resume ? clamp01(resume.shape?.evolve ?? .5) : FROM ? PREVIEW_MORPH : 0, frost: resume ? 1 - clamp01(resume.look?.vividness ?? 1) : FROM ? PREVIEW_FROST : 0,
+    oklch: resume?.look?.oklch ?? DEFAULT_OKLCH, hands: [], wrap: false, rise: false,
   });
+  stage.current.photoReady = !prelude;
   const hostRef = useRef<HTMLDivElement>(null);
   const crossingRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
-  const hintRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pickRef = useRef<HTMLButtonElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [phase, setPhase] = useState<Phase>(FROM === "wrap" ? "wrapping" : "choose");
+  const [phase, setPhase] = useState<Phase>(resume ? "color" : FROM === "wrap" ? "wrapping" : "choose");
   const [loading, setLoading] = useState<string | null>(null);
   const [lifted, setLifted] = useState<string | null>(null);
   const [morph, setMorph] = useState(stage.current.morph);
   const [frost, setFrost] = useState(stage.current.frost);
   // opening on the wrap, the still is on the film before the stage mounts
-  const [ready, setReady] = useState(FROM === null);
+  const [ready, setReady] = useState(from === null);
   useEffect(() => {
-    if (FROM === null) return;
+    if (from === null) return;
     let live = true;
-    void loader.loadAsync(PREVIEW_PHOTO).then((texture) => {
+    const url = resume ? resume.look?.photoUrl : PREVIEW_PHOTO;
+    if (!url) {
+      stage.current.request = { texture: BLANK_PHOTO };
+      setReady(true);
+      return;
+    }
+    void loader.loadAsync(url).then((texture) => {
       if (!live) return;
       stage.current.request = { texture };
-      setLifted(PREVIEW_PHOTO);
+      setLifted(url);
+      setReady(true);
+    }).catch(() => {
+      if (!live) return;
+      stage.current.request = { texture: BLANK_PHOTO };
       setReady(true);
     });
     return () => { live = false; };
   }, []);
-  const [colorUv, setColorUv] = useState(() => uvFromOklch(DEFAULT_OKLCH));
+  const [colorUv, setColorUv] = useState(() => uvFromOklch(stage.current.oklch));
   const [colorHeld, setColorHeld] = useState(false);
   const [handsDetected, setHandsDetected] = useState(0);
   const [memoryName, setMemoryName] = useState("");
   const [year, setYear] = useState("");
   const drag = useRef<{ x: number; from: number } | null>(null);
 
-  const step: Step | null = phase === "shape" || phase === "distance" || phase === "color" ? phase : null;
+  const step: Step | null = phase === "shape" || phase === "rhythm" || phase === "distance" || phase === "color" ? phase : null;
   stage.current.step = step;
   const stepRef = useRef(step);
   stepRef.current = step;
@@ -1875,6 +2092,7 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
   const setSignal = (value: number) => {
     const v = clamp01(value);
     if (stepRef.current === "shape") { stage.current.morph = v; setMorph(v); }
+    else if (stepRef.current === "rhythm") setEditedM2(rhythmValue(v * RHYTHM_MAX));
     else if (stepRef.current === "distance") { stage.current.frost = v; setFrost(v); }
   };
   const colorUvRef = useRef(colorUv);
@@ -1890,10 +2108,12 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
   const handsFrom = useRef<"camera" | "pointer" | null>(null);
   const morphGate = useRef(createGestureGate(0.015));
   const frostGate = useRef(createGestureGate(0.015));
+  const rhythmDial = useRef<{ angle: number; value: number; at: number } | null>(null);
   useEffect(() => {
     // fresh baselines each step, so a hand already in frame does not jump the form
     morphGate.current = createGestureGate(0.015);
     frostGate.current = createGestureGate(0.015);
+    rhythmDial.current = null;
     colorHeldRef.current = false;
     pinchFrames.current = 0;
     setColorHeld(false);
@@ -1901,9 +2121,9 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
     handsFrom.current = null;
   }, [step]);
 
-  /* The same three gestures as ShapeGrowPage: two palms apart for shape, one
-     palm opening for distance, a fingertip over the field for color (pinch to
-     hold). The camera opens when the form surfaces; the drag below stays as
+  /* Two palms apart for shape, a palm roll for rhythm, one palm opening for
+     distance, a fingertip over the field for color (pinch to hold).
+     The camera opens when the form surfaces; the drag below stays as
      the fallback when it is refused or no hand is seen. */
   const tracking = useHandTracking({
     enabled: CAMERA_ENABLED && step !== null,
@@ -1922,6 +2142,22 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
         if (hands.length < 2) return;
         const distance = landmarkDistance(handCenter(hands[0]), handCenter(hands[1]));
         if (morphGate.current.update(distance)) setSignal(distanceToMorph(distance));
+      } else if (tab === "rhythm") {
+        const hand = hands[0];
+        if (!hand) return;
+        // Fold the hand to release the dial; opening it again re-anchors at
+        // the current value, so tracking loss and either hand cannot jump it.
+        if (handOpenness(hand) < landmarkDistance(hand[0], hand[9], true) * .75) { rhythmDial.current = null; return; }
+        const video = videoRef.current;
+        const angle = palmRoll(hand, video?.videoHeight ? video.videoWidth / video.videoHeight : 1);
+        if (angle === null) return;
+        const now = performance.now();
+        if (!rhythmDial.current) { rhythmDial.current = { angle, value: m2Ref.current, at: now }; return; }
+        // Geometry and cloth are rebuilt only for deliberate quarter-step
+        // edits, capped at ten per second while the hand is moving.
+        if (now - rhythmDial.current.at < 100) return;
+        rhythmDial.current.at = now;
+        setEditedM2(rhythmFromRoll(rhythmDial.current.value, angle, rhythmDial.current.angle));
       } else if (tab === "distance") {
         const openness = handOpenness(hands[0]);
         // open palm frosts the glass; a fist clears it
@@ -1944,6 +2180,7 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
       }
     },
     onNoHands: () => {
+      rhythmDial.current = null;
       setHandsDetected(0);
       if (handsFrom.current === "camera") { handsFrom.current = null; stage.current.hands = []; }
       if (colorHeldRef.current) { colorHeldRef.current = false; pinchFrames.current = 0; setColorHeld(false); }
@@ -1952,19 +2189,61 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
   const handsNeeded = step === "shape" ? 2 : 1;
   const gestureLive = tracking.isTracking && handsDetected >= handsNeeded;
 
+  const [leaving, setLeaving] = useState(false);
+  const exitRaf = useRef(0);
+  const exitStarted = useRef(false);
+  useEffect(() => () => {
+    cancelAnimationFrame(exitRaf.current);
+    stage.current.captureSurface = undefined;
+  }, []);
   const continueStep = () => {
-    if (phase === "shape") setPhase("distance");
+    if (exitStarted.current) return;
+    if (phase === "shape") setPhase("rhythm");
+    else if (phase === "rhythm") setPhase("distance");
     else if (phase === "distance") setPhase("color");
-    else if (phase === "color") { stage.current.wrap = true; setPhase("wrapping"); }
+    else if (phase === "color") {
+      // The last step leaves the water the way the naming pond expects:
+      // the eye is still under, and the memory comes up with it to be named.
+      const oklch = stage.current.oklch;
+      const matPresetIndex = Math.min(
+        Math.round((((oklch.h % 360) + 360) % 360) / 360 * (MATERIAL_PRESETS.length - 1)),
+        MATERIAL_PRESETS.length - 1,
+      );
+      const go = () => navigate(NAMING_PATH, {
+        state: {
+          memoryId,
+          transcript,
+          highlightedWords,
+          assignment,
+          form,
+          morphProgress: stage.current.morph,
+          oklch,
+          matColor: meshCoreFromOklch(oklch),
+          matPresetIndex,
+          rise: true,
+          look: { ...(lifted ? { photoUrl: lifted } : {}), oklch, vividness: 1 - stage.current.frost },
+          shape: { form, fluidity: 0, evolve: stage.current.morph, bumpAmount: 0 },
+        },
+      });
+      exitStarted.current = true;
+      if (reducedMotion) { go(); return; }
+      setLeaving(true);
+      const start = performance.now();
+      const tick = (now: number) => {
+        const p = Math.min(1, (now - start) / 1400);
+        stage.current.surfaceLight = p * p * (3 - 2 * p);
+        if (p < 1) exitRaf.current = requestAnimationFrame(tick);
+        else stage.current.captureSurface = () => { exitRaf.current = requestAnimationFrame(go); };
+      };
+      exitRaf.current = requestAnimationFrame(tick);
+    }
   };
   const currentYear = new Date().getFullYear();
   const yearSettled = year.length === 4 && Number(year) <= currentYear;
   const canSave = phase === "naming" && memoryName.trim() !== "" && yearSettled;
   const savedThisRun = useRef(false);
 
-  /* Saved the way the naming rim saves, plus what the rim drops: the photo,
-     the pick and the frost. The archive carries them; the gallery does not
-     draw them yet. */
+  /* The lab's save path keeps the same complete artifact as the naming rim. */
   const save = () => {
     if (!canSave || savedThisRun.current) return;
     savedThisRun.current = true;
@@ -1978,7 +2257,7 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
       title: memoryName.trim(),
       year,
       transcript,
-      highlightedWords: Array.isArray(location.state?.highlightedWords) ? location.state.highlightedWords.filter((word: unknown) => typeof word === "string") : [],
+      highlightedWords,
       assignment,
       shape: { form, matPresetIndex, fluidity: 0, evolve: stage.current.morph, bumpAmount: 0 },
       colorIndex: draftColorIndex(matPresetIndex),
@@ -2001,6 +2280,8 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
   };
 
   const setHolding = (holding: boolean) => {
+    // Do not freeze the placeholder while the full transcript is still being read.
+    if (holding && assessmentPending) return;
     // Resolve once before descent. A late API result must never replace a handled form.
     if (holding) { assignmentLocked.current = true; setAssessmentPending(false); }
     stage.current.holding = holding;
@@ -2020,13 +2301,15 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
   };
 
   return (
-    <main ref={hostRef} style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden",
-      background: "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}
+    <main ref={hostRef} style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
+      pointerEvents: leaving ? "none" : undefined,
+      background: resume ? SINK_WASH : "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}
       onPointerMove={pointerAsHand}
       onPointerLeave={pointerOut}>
       {ready && <Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
+        onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
         dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
-        <Stage stage={stage} form={form} from={FROM} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} hintRef={hintRef} pickRef={pickRef} captionRef={captionRef}
+        <Stage stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef}
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
           onDescend={() => setPhase("descending")}
@@ -2040,28 +2323,51 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
       <div ref={crossingRef} aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0,
         background: "rgba(232, 238, 236, 0.35)" }} />
 
-      <p style={{ ...META, position: "absolute", top: 26, left: 28, margin: 0, zIndex: 20 }}>lab — descent</p>
-      {(phase === "choose" || phase === "floating") && <div style={{ ...META, position: "absolute", top: 52, left: 28, zIndex: 20, maxWidth: 260 }}>
-        <Link to="/lab/meaning" state={{ transcript }} style={{ color: "inherit" }}>{transcript ? "read this memory again" : "begin with a recorded memory"}</Link>
-        {assessmentPending && <p>reading the memory… holding to descend will keep the current neutral form.</p>}
+      <PageHeader layout="absolute" carousel={lab ? false : undefined} />
+      {recording && <>
+        <BackButton onClick={() => navigate(MEMORY_POND_PATH)} />
+        <PondRecordingOverlay reducedMotion={reducedMotion}
+          onVoicePulse={pulse => { stage.current.voicePulses.push(pulse); }} />
+      </>}
+      {prelude && !recording && <>
+        <BackButton onClick={() => navigate(RECORD_START_PATH, { state: location.state })} />
+        <PuddleTranscriptPage />
+      </>}
+      {!prelude && <>
+      {lab && <p style={{ ...META, position: "absolute", top: 26, left: 28, margin: 0, zIndex: 20 }}>lab — descent</p>}
+      {!lab && (phase === "choose" || phase === "floating") && (
+        <BackButton onClick={() => navigate(TRANSCRIPT_PATH, {
+          state: {
+            transcript,
+            memoryId,
+            ...(!assessmentPending ? { memoryAssignment: assignment } : {}),
+            highlightedWords,
+            highlightedWordIndices: highlightedIndices,
+            ...(location.state?.focus ? { focus: location.state.focus } : {}),
+          },
+        })} />
+      )}
+      {(phase === "choose" || phase === "floating") && (lab || assessmentPending || assessmentError) && <div style={{ ...META, position: "absolute", top: lab ? 52 : 72, left: 28, zIndex: 20, maxWidth: 260 }}>
+        {lab && <Link to="/lab/meaning" state={{ transcript }} style={{ color: "inherit" }}>{transcript ? "read this memory again" : "begin with a recorded memory"}</Link>}
+        {assessmentPending && <p role="status">finding the form of this memory… you can descend when it is ready.</p>}
         {assessmentError && <p>{assessmentError}</p>}
       </div>}
 
-      {/* The camera, a small mirrored window in the corner while the hands steer. */}
+      {/* The camera, a small mirrored window in the corner while the hands steer,
+          seen through a slow shutter (ShutterCamera). The video itself is only
+          for the hand tracker. */}
       <video ref={videoRef} playsInline muted aria-hidden
-        style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96, objectFit: "cover",
+        style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96, opacity: 0, pointerEvents: "none" }} />
+      <ShutterCamera video={videoRef} active={!!step && tracking.isTracking}
+        style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96,
           borderRadius: 10, transform: "scaleX(-1)", zIndex: 20, pointerEvents: "none",
-          opacity: step && tracking.isTracking ? 0.42 : 0, transition: "opacity 700ms ease",
-          filter: "grayscale(1) contrast(0.9)", mixBlendMode: "multiply" }} />
+          opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease",
+          filter: "blur(0.6px)" }} />
 
-      <div style={{ position: "absolute", left: "50%", top: 96, transform: "translateX(-50%)", width: "min(28em, 90vw)",
-        textAlign: "center", pointerEvents: "none", opacity: choosing ? 1 : 0, transition: "opacity 700ms ease",
-        animation: FROM ? "none" : "descentFadeIn 1400ms ease 900ms backwards" }}>
-        <p style={{ ...TITLE, margin: 0, color: CHROME_GRAY }}>a photo that holds this memory</p>
-        <p style={{ margin: "10px 0 0", fontFamily: SERIF, fontSize: NOTE_SIZE, lineHeight: 1.45, color: CHROME_GRAY }}>
-          touch the film to choose one. it will rest on the water.
-        </p>
-      </div>
+      <FlowPageGrid heading={
+        <p style={{ ...TITLE, margin: 0, color: CHROME_GRAY }}>imprint a photo with this memory</p>
+      } headingStyle={{ opacity: choosing ? 1 : 0, transition: "opacity 700ms ease",
+        animation: from ? "none" : "descentFadeIn 1400ms ease 900ms backwards" }} />
 
       {/* The strip itself is the picker: an unseen button kept over it by the stage. */}
       <button ref={pickRef} type="button" aria-label="choose a photo for the film"
@@ -2093,6 +2399,7 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
 
       {phase === "floating" && (
         <button type="button" aria-label="hold to go under" aria-describedby="descent-hint"
+          disabled={assessmentPending}
           onPointerDown={(e) => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setHolding(true); }}
           onPointerUp={() => setHolding(false)}
           onPointerCancel={() => setHolding(false)}
@@ -2104,19 +2411,24 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
           style={{ position: "absolute", inset: 0, border: "none", outline: "none", background: "transparent",
             touchAction: "none", cursor: "default", zIndex: 5 }} />
       )}
-      <div ref={hintRef} id="descent-hint" aria-hidden style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none",
-        whiteSpace: "nowrap", fontFamily: SANS, fontSize: INSTRUCTION_SIZE, color: CHROME_GRAY, zIndex: 6,
+      <p id="descent-hint" aria-hidden style={{
+        position: "absolute", left: "50%", top: "50%", margin: 0,
+        transform: "translate(-50%, -50%) translateY(-20vh)",
+        width: "min(28em, 86vw)", textAlign: "center", pointerEvents: "none", zIndex: 6,
+        color: CHROME_GRAY, fontFamily: SERIF, fontWeight: 400, fontSynthesis: "none",
+        fontSize: INSTRUCTION_SIZE, lineHeight: 1.45,
         opacity: phase === "floating" ? 1 : 0, filter: phase === "floating" ? "none" : "blur(6px)",
         transition: "opacity 720ms ease, filter 720ms ease" }}>
-        hold to go under
-      </div>
+        {assessmentPending ? "finding your memory’s form…" : "hold to go under"}
+      </p>
 
-      {/* ── the three steps, under the water ── */}
+      {/* ── the four steps, under the water ── */}
       {step && step !== "color" && (
         <div role="slider" tabIndex={0} aria-label={`${step} — drag across`} aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={Math.round((step === "shape" ? morph : frost) * 100)}
+          aria-valuenow={Math.round((step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : frost) * 100)}
+          aria-valuetext={step === "distance" ? frost >= .98 ? "beyond the constellation" : `${Math.round(frost * 100)}% distant` : undefined}
           onKeyDown={(e) => {
-            const value = step === "shape" ? morph : frost;
+            const value = step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : frost;
             const next = e.key === "Home" ? 0 : e.key === "End" ? 1
               : e.key === "ArrowRight" || e.key === "ArrowUp" ? value + 0.05
               : e.key === "ArrowLeft" || e.key === "ArrowDown" ? value - 0.05 : null;
@@ -2125,7 +2437,7 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic events have no pointer to capture */ }
-            drag.current = { x: e.clientX, from: step === "shape" ? morph : frost };
+            drag.current = { x: e.clientX, from: step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : frost };
           }}
           onPointerMove={(e) => {
             if (!drag.current) return;
@@ -2135,40 +2447,53 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
           onPointerCancel={() => { drag.current = null; }}
           style={{ position: "absolute", inset: 0, zIndex: 5, touchAction: "none", cursor: "ew-resize" }} />
       )}
+      {step === "rhythm" && <div style={{ position: "absolute", bottom: 105, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
+        <input type="range" min={0} max={RHYTHM_MAX} step={.25} value={m2} aria-label="shape rhythm"
+          onChange={e => setEditedM2(rhythmValue(Number(e.target.value)))}
+          style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>fewer folds</span><span>more folds</span></div>
+        {morph < .05 && <div style={{ textAlign: "center", marginTop: 8 }}>
+          <button type="button" onClick={() => setPhase("shape")} style={{ border: 0, background: "none", color: "inherit", font: "inherit", textDecoration: "underline", cursor: "pointer" }}>add some shape to reveal its folds</button>
+        </div>}
+      </div>}
+      {step === "distance" && <div style={{ position: "absolute", bottom: 105, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
+        <input type="range" min={0} max={1} step={0.01} value={frost} aria-label="memory distance"
+          aria-valuetext={frost >= .98 ? "beyond the constellation" : `${Math.round(frost * 100)}% distant`}
+          onChange={e => setSignal(Number(e.target.value))}
+          style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>near & clear</span><span>{frost >= .98 ? "beyond the constellation" : "far & faded"}</span></div>
+      </div>}
       {step === "color" && (
-        <>
+        <div style={{ opacity: leaving ? 0 : 1, transition: "opacity 1400ms ease" }}>
           {/* a pale veil under the wash, so the band reads as light on the paper rather than a strip */}
           <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "30vh", zIndex: 9, pointerEvents: "none",
             background: "linear-gradient(to bottom, rgba(236,237,238,0) 0%, rgba(236,237,238,.55) 45%, rgba(236,237,238,.7) 100%)" }} />
           <OklchColorField u={colorUv.u} v={colorUv.v} held={colorHeld} onPick={({ u, v }) => pickColor(u, v)} />
-        </>
+        </div>
       )}
-      {step && (
-        <>
-          <div style={{ position: "absolute", left: "50%", top: 100, transform: "translateX(-50%)", textAlign: "center",
-            width: "min(28em, 90vw)", pointerEvents: "none", zIndex: 6, animation: "descentStepIn 900ms ease backwards" }}
-            key={step}>
+      {step && <>
+        <FlowPageGrid style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
+          heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK }}>{STEP_COPY[step].title}</p>
             <p style={{ margin: "14px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}
             </p>
             {STEP_COPY[step].drag && (
-              // with the camera on, the gesture hint takes this seat and the words move under it
-              <p style={{ margin: tracking.isTracking ? "118px 0 0" : "26px 0 0", fontFamily: SANS, fontSize: NOTE_SIZE, color: UNDER_INK,
-                opacity: gestureLive ? 0 : 0.7, transition: "opacity 900ms ease, margin 600ms ease" }}>
+              <p style={{ margin: "26px 0 0", fontFamily: SANS, fontSize: NOTE_SIZE, color: UNDER_INK,
+                opacity: gestureLive ? 0 : 0.7, transition: "opacity 900ms ease" }}>
                 {tracking.isTracking ? STEP_COPY[step].drag : STEP_COPY[step].drag.replace(/^or /, "")}
               </p>
             )}
-          </div>
-          {/* GestureHint sits 210px below its parent; from here that is under the copy */}
-          <div style={{ position: "absolute", left: "50%", top: 80, transform: "translateX(-50%)", zIndex: 6,
-            pointerEvents: "none", opacity: tracking.isTracking ? 0.8 : 0, transition: "opacity 900ms ease" }}>
-            <GestureHint kind={step} active={gestureLive} />
-          </div>
-          <PillButton label="continue" trailing="›" onClick={continueStep}
-            style={{ position: "absolute", left: "50%", transform: "translateX(-50%)", bottom: step === "color" ? "calc(24vh + 28px)" : 40, zIndex: 30 }} />
-        </>
-      )}
+          </div>}
+          actions={<PillButton label="continue" trailing="›" onClick={continueStep} />}
+          actionsStyle={{ pointerEvents: leaving ? "none" : "auto" }} />
+        <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
+          opacity: tracking.isTracking && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
+          <GestureHint kind={step} active={gestureLive} style={{
+            top: "auto", left: "auto", right: 28 + 64, bottom: 28 + 96 + 12, transform: "translateX(50%)",
+          }} />
+        </div>
+      </>}
 
       {/* ── the caption: typed while the memory floats, then left as words ── */}
       <div ref={captionRef} style={{ position: "absolute", top: 0, left: 0, zIndex: 8, display: "flex", flexDirection: "column",
@@ -2192,19 +2517,19 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
       {/* once kept, the gallery opens on it — the way the naming rim hands over */}
       {phase === "saved" && (
         <TextButton label="see it among the others"
-          onClick={() => navigate(CAROUSEL_PATH, { state: { galleryOpen: true, galleryFocusId: memoryId, galleryCarried: true } })}
+          onClick={() => navigate(CAROUSEL_PATH, { replace: true, state: { galleryOpen: true, galleryFocusId: memoryId, galleryCarried: true } })}
           style={{ position: "absolute", left: "50%", bottom: 40, transform: "translateX(-50%)", zIndex: 20,
             animation: "descentFadeIn 900ms ease 600ms backwards" }} />
       )}
 
       <style>{`
         @keyframes descentFadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes descentStepIn { from { opacity: 0; transform: translateX(-50%) translateY(10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+        @keyframes descentStepIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .descent-field { background: transparent; border: none; outline: none; padding: 0; }
         .descent-field::placeholder { color: inherit; opacity: .35; font-style: inherit; }
       `}</style>
 
-      {phase !== "choose" && (
+      {lab && phase !== "choose" && (
         <TextButton label="again" onClick={() => {
           // Replay the exact assignment; a second save is a new memory, not a duplicate id.
           navigate(location.pathname + location.search, { replace: true, state: { ...location.state, transcript, memoryId: crypto.randomUUID(), memoryAssignment: assignment } });
@@ -2213,12 +2538,12 @@ function DescentRun({ onAgain, tune, transport }: { onAgain: () => void; tune: R
           style={{ position: "absolute", left: 28, bottom: 28, zIndex: 20, color: phase === "descending" ? "#e8eeec" : "#7b7b87",
             transition: "color 600ms ease" }} />
       )}
+      </>}
     </main>
   );
 }
 
-/** /lab/descent — photo onto the water, and down through it. */
-export function DescentPrototype() {
+function DescentShell({ lab }: { lab: boolean }) {
   const [run, setRun] = useState(0);
   // the knobs outlive a run, so "again" replays with the sliders where they were
   const [tune, setTune] = useState<WrapTune>(WRAP_TUNE_DEFAULT);
@@ -2230,18 +2555,30 @@ export function DescentPrototype() {
   const [focus, setFocus] = useState<string | null>(null);
   return (
     <>
-      <DescentRun key={run} onAgain={() => { transport.current.active = false; setRun((r) => r + 1); }} tune={tuneRef} transport={transport} />
-      <WrapTunePanel tune={tune} onChange={setTune} focus={focus} />
-      <Timeline transport={transport} tune={tune} onChange={setTune} onFocus={setFocus} />
-      <style>{`
-        .wrap-range { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; margin: 0; background: transparent; cursor: pointer; display: block; }
-        .wrap-range::-webkit-slider-runnable-track { height: 1px; background: rgba(123, 123, 135, 0.4); }
-        .wrap-range::-moz-range-track { height: 1px; background: rgba(123, 123, 135, 0.4); }
-        .wrap-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 9px; height: 9px; border-radius: 50%; margin-top: -4px; background: #7b7b87; border: none; }
-        .wrap-range::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: #7b7b87; border: none; }
-        .wrap-range:focus-visible { outline: none; }
-        .wrap-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(123, 123, 135, 0.25); }
-      `}</style>
+      <DescentRun key={run} lab={lab} onAgain={() => { transport.current.active = false; setRun((r) => r + 1); }} tune={tuneRef} transport={transport} />
+      {lab && <>
+        <WrapTunePanel tune={tune} onChange={setTune} focus={focus} />
+        <Timeline transport={transport} tune={tune} onChange={setTune} onFocus={setFocus} />
+        <style>{`
+          .wrap-range { -webkit-appearance: none; appearance: none; width: 100%; height: 16px; margin: 0; background: transparent; cursor: pointer; display: block; }
+          .wrap-range::-webkit-slider-runnable-track { height: 1px; background: rgba(123, 123, 135, 0.4); }
+          .wrap-range::-moz-range-track { height: 1px; background: rgba(123, 123, 135, 0.4); }
+          .wrap-range::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 9px; height: 9px; border-radius: 50%; margin-top: -4px; background: #7b7b87; border: none; }
+          .wrap-range::-moz-range-thumb { width: 9px; height: 9px; border-radius: 50%; background: #7b7b87; border: none; }
+          .wrap-range:focus-visible { outline: none; }
+          .wrap-range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(123, 123, 135, 0.25); }
+        `}</style>
+      </>}
     </>
   );
+}
+
+/** /lab/descent — the shot, with its knobs. */
+export function DescentPrototype() {
+  return <DescentShell lab />;
+}
+
+/** Shared pond for recording, transcript and photo/descent. */
+export function DescentFlow() {
+  return <DescentShell lab={false} />;
 }

@@ -7,8 +7,8 @@ import type { carouselSeat } from "./carouselLayout";
  * its layout, copy and interaction; only what sits on each seat is swapped,
  * and which memories are seated — and, if the preview asks, the colour wash
  * behind the apex is left out and a seat's place on the curve is adjusted.
- * Nothing provides this on the live routes, so they read null and draw as
- * they always have. The lab at /lab/gallery provides it.
+ * /memory and /lab/gallery provide it. Pond naming renders the same vessel
+ * directly, inside its own rise and lighting choreography.
  *
  * A preview may also hold a second arrangement of the same seats — the
  * field, where the memories hang in the air by distance rather than along
@@ -51,7 +51,8 @@ export interface GalleryField {
 }
 
 export interface GalleryOverride {
-  items: ArchiveArtifact[];
+  /** When set, these memories replace the archive. Left out, the gallery keeps its own. */
+  items?: ArchiveArtifact[];
   renderArtifact: (item: ArchiveArtifact, seat: ArtifactSeat) => ReactNode;
   /** false leaves out the memory's colour wash behind the focused seat. */
   wash?: boolean;

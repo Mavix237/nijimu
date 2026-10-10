@@ -563,6 +563,8 @@ function BubbleModel({
 /* ───────── props ───────── */
 
 export interface BubbleViewerProps {
+  /** Only used by the legacy feeling screen to carry its final lit frame. */
+  preserveDrawingBuffer?: boolean;
   /** The artifact's superformula form. */
   form?: ArtifactForm;
   className?: string;
@@ -628,6 +630,7 @@ export const DEFAULT_BUBBLE_MATERIAL = {
 /* ───────── main ───────── */
 
 export function BubbleViewer({
+  preserveDrawingBuffer = false,
   form = DEFAULT_ARTIFACT_FORM,
   className = "",
   style = {},
@@ -741,7 +744,7 @@ export function BubbleViewer({
           background: lightEditMode ? "#c8c8c8" : "transparent",
           touchAction: "none",
         }}
-        gl={{ antialias: true, alpha: true }}
+        gl={{ antialias: true, alpha: true, preserveDrawingBuffer }}
         onCreated={({ gl }) => {
           if (!lightEditMode) gl.setClearColor(0x000000, 0);
         }}

@@ -1,23 +1,23 @@
 import { useLocation, useNavigate } from "react-router";
 import { useState, useEffect, useRef } from "react";
-import { BackButton } from "./BackButton";
-import { SceneViewer } from "./SceneViewer";
+import { BackButton } from "../../components/BackButton";
+import { SceneViewer } from "../../components/SceneViewer";
 import {
   createGestureGate,
   handCenter,
   landmarkDistance,
   useHandTracking,
-} from "../hooks/useHandTracking";
+} from "../../hooks/useHandTracking";
 import {
   getShapeBuildEvolvePhase,
   stripLegacyEvolveFromState,
-} from "../hooks/useOscillatingEvolve";
-import { SANS, SANS_UI, SERIF } from "../lib/theme";
-import { PageHeader } from "./PageHeader";
-import { PillButton } from "./PillButton";
-import { NAMING_PATH } from "../lib/routes";
-import { loadFormDraft } from "../lib/formDraft";
-import { createArtifactForm, formFromState } from "../lib/superformula";
+} from "../../hooks/useOscillatingEvolve";
+import { SANS, SANS_UI, SERIF } from "../../lib/theme";
+import { PageHeader } from "../../components/PageHeader";
+import { PillButton } from "../../components/PillButton";
+import { NAMING_PATH } from "../../lib/routes";
+import { loadFormDraft } from "../../lib/formDraft";
+import { createArtifactForm, formFromState } from "../../lib/superformula";
 
 export function ShapeTexturePage() {
   const location = useLocation();

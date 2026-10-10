@@ -24,8 +24,8 @@ export interface SavedMemory {
   };
   /** Index into COLOR_PALETTE / MEMORY_COLORS for this memory's tint. */
   colorIndex: number;
-  /** What the sculpting steps chose beyond the form. Optional: the curated
-      archive has none, and the gallery does not draw it yet. */
+  /** Photo, tint and distance replayed by the naming vessel and gallery.
+      Optional for older and curated memories. */
   look?: MemoryLook;
   createdAt: string;
 }
@@ -35,7 +35,8 @@ export interface MemoryLook {
   photoUrl?: string;
   /** The color step's pick. */
   oklch?: { l: number; c: number; h: number };
-  /** 1 = clear glass, 0 = fully frosted (the distance step). */
+  /** 1 = near/clear, 0 = fully frosted and beyond the visible constellation.
+   * Shared depth projection lives in vesselField.memoryFieldPlace. */
   vividness?: number;
 }
 
@@ -69,5 +70,7 @@ export function toMemoryEvent(memory: SavedMemory): MemoryEvent {
     year: memory.year,
     event: memory.title,
     color: memory.colorIndex,
+    transcript: memory.transcript,
+    highlightedWords: memory.highlightedWords,
   };
 }

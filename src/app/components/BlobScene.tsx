@@ -1582,7 +1582,7 @@ export function BlobScene({
       {/* Wordmark stays through gallery; the rest of the homescreen chrome dissolves.
           The classic landing overlay carries its own mark, so skip this one there. */}
       {onNewMemory && !classicChrome && (
-        <PageHeader layout="absolute" link={false} style={{ zIndex: 26 }} />
+        <PageHeader layout="absolute" style={{ zIndex: 26 }} />
       )}
 
       <GalleryViewToggle

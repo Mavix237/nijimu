@@ -4,17 +4,126 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Current flow layout and archived screens (2026-10-10)
+
+`FlowPageGrid` owns heading and primary-action rows throughout the current
+recording/highlight/photo/shape/rhythm/distance/feeling flow. `FLOW_PAGE` in
+`src/app/lib/theme.ts` holds navigation height/top, heading top/width, and action
+bottom tokens. Headings start at `clamp(132px, 22vh, 176px)`; continue actions sit
+40px above the bottom (respecting safe-area insets). Naming fields use this same
+heading row above the artifact, below the centered wordmark; they are not
+portaled into navigation. Naming places the vessel in the scene row below the
+fields and Save Memory in the bottom action row, with a reserved action height
+so editing the fields never shifts the vessel. The photo heading is “imprint a photo with this memory”
+and has no subtitle. Keep entrance transforms relative to the grid cell, with
+no old absolute-centering translateX offsets.
+
+The current create flow is `DescentFlow` (`/record/start`, `/record/transcript`,
+`/record/descent`) followed by `PondNamingOverlay` (`/record/name`). Older
+standalone ShapeGrowPage, ShapeColorPage, ShapeTexturePage, and NameMemoryPage
+live in `src/app/archive/shape-flow/`. Home no longer links to those shape steps;
+`/record/shape/:step` redirects to the current descent with carried state.
+The archived naming page remains only the older PuddleScene WebGL-failure
+fallback. Labs and memory-revisit editors remain available.
+
+## Distance and constellation (2026-10-10)
+
+The handling flow is now shape → rhythm → distance → colour. Rhythm changes
+only `ArtifactForm.side.m` (set 2, latitude), 0–16 in quarter steps; its slider
+and full-screen drag are alternatives to a relative open-palm roll gesture.
+`memoryRhythm.ts` owns the edit and angle mapping. Acquiring/reacquiring a hand
+anchors at the current value; closing the hand releases it. Hand edits are
+limited to 10 Hz. The edited form travels through naming/save as the artifact's
+form; the original assessment is retained. A spherical morph hides its folds;
+the UI then offers a return to shape. The neighbour preview uses the gallery's
+existing irregular positions, with depth `2.4 + galleryDepth * 2.8` and added
+haze reduced to 38% (saved haze remains intact). It does not generate rings or
+reshuffle by angle. Only neighbours inside the central artifact's clearance
+are shifted on one axis. Preview travel eases as `22 * haze³` so several
+references remain visible at the midpoint and pass the eye by the endpoint;
+the saved distance mapping is unchanged.
+
+The pond invitation now uses a white luminous halo: a bright core and two soft
+falloffs on a wider floating annulus, with the hold-progress arc retained.
+`PerspectivePond` still shares its wave field with the halo. The settled pond
+camera is lower (2.2 world units), looking farther ahead (z −32), while distant
+water and reflected light extend into a slower haze for an open-ocean horizon.
+These settings live in `pondCamera.ts` and the pond surface shader.
+
+Recording → sample/highlight → photo continuity: `/record/start`,
+`/record/transcript` and `/record/descent` are children of one `DescentFlow`
+route layout. Recording and transcript/highlight chrome render over its live
+pond; changing the route keeps the same Canvas, Stage, camera,
+water clock and wave uniforms. The film's emergence clock starts only when the
+photo step opens. Assessment reads the final transcript on that handoff (never
+the in-progress transcription). The canvas's `data-pond-scene` identifies the
+Three scene for continuity checks. Direct photo entry and the lab still work.
+The recording overlay sends voice pulses to that Stage's wave field. Skipping
+fades the instructions directly, without flashing the recording prompts.
+
+Shape edits gently displace the existing water colour field around the form,
+using a broad, uneven lens in the shared volume shader. Signed morph velocity
+(mouse, keyboard or hands) drives the push, which relaxes when editing stops;
+shape changes no longer generate circular light rings or surface ripples.
+The underwater reveal raises the form 2.4 world units from below over 4.2–8.2
+seconds. Opacity finishes at 5.2 seconds, the camera settles at 6.2, and shape
+controls appear when the ascent finishes, leaving a visible climb against a
+stationary view. The reveal itself does not scale the form.
+During that climb, temporary arrival haze softens the photo, glass edge and
+mist, while a localized Gaussian pass blurs its rendered silhouette. Both
+follow the ascent progress and reach zero at its final seat; the user's
+distance/frost value and saved gallery placement remain independent.
+The Nicole naming rise retains its camera, glow timing and placement; its old
+crystal renderer is replaced with this branch's photo-bearing `VesselArtifact`.
+`namingDraft.ts` carries the exact form, morph, assignment, transcript, photo,
+colour and vividness, and the memory ID survives into naming and saving.
+
+The descent water stays pale: its underwater palette is lifted, and its wash
+runs directly from 1.8–5.5 seconds, finishing before the form finishes rising.
+The surface and full-frame volume share the same submerge interval; the surface
+fades before the camera's near plane can cut a hard colour edge through it.
+
+The descent's distance step shows the existing gallery vessels already inside
+water, with no arrival motion (`DistanceConstellation.tsx`). They share the
+shot's canvas and refraction target, and use `galleryStateFor` for their forms,
+photos and pushed edits. The active memory stays at a constant apparent size
+with a smoothly widened 72° lens and compensating camera dolly. The preview's
+`distancePreviewSeat` distributes neighbours widely around a clear centre,
+starting at least 3 depth units back (the active seat is 1.15); gallery layout
+and saved distance values are unchanged. As frost increases the preview follows
+the active memory's chosen depth, keeping it in place while moving neighbours
+outward and past the camera. It remains in hand for
+colour. A visible range input accompanies
+the full-screen drag and hand gesture. The saved `look.vividness = 1 - frost`
+also determines the memory's actual constellation seat. `vesselField.ts` owns
+`memoryDepth` (1.15 + 22*haze²), `memoryFieldPlace` (preserves world x/y), and
+`fieldVisibility` (fade at depths 8–20). Maximum blur is invisible even at the
+gallery's maximum forward dolly; it remains accessible in the chronological
+view. Memories without a distance choice retain their curated depth. Run
+`node scripts/check-memory-distance.mjs` for the shared depth/projection checks.
+
 ## Transcript-to-form lab (2026-10-04)
+
+Built-in sample reliability (2026-10-10): `src/app/data/sampleMemory.ts` owns
+both the transcript and its saved GPT-4.1-mini assessment, with exact evidence
+quotes validated in the regression script. Empty/direct photo entries use this
+sample; sample text uses its stable seeded assignment without an API request.
+Edited samples and recordings still use normal assessment/validation. An explicit
+valid carried assignment wins; an old fallback does not override the sample.
+
 
 `/lab/meaning` is the new assessment/parameter study. Record a memory or paste the
 whole transcript, inspect four seeded family meshes, run “find its form”, and
 “take it to the water” carries the transcript, memory ID and assignment into
 `/lab/descent`. An unassessed transcript can also be carried there; assessment
-runs while the photo is chosen. Holding to descend freezes the current form,
-including a neutral fallback if the request has not finished. Late replies never
+runs while the photo is chosen. Descent waits for the reading to finish (or fail)
+before holding can freeze the form; an API failure still permits a neutral fallback.
+Going back to the transcript carries a finished assignment so continuing reuses it. Late replies never
 replace a handled form. Naming saves the real transcript and assignment metadata.
-The production recording flow is not rerouted. Direct descent entry still works
-with a neutral form and offers a link to begin with a recorded memory.
+The create flow continues into the same shot after the transcript: highlight,
+then `/record/descent` (no lab knobs). `/lab/meaning` still carries a study into
+`/lab/descent`. Direct descent entry still works with a neutral form and offers
+a link to begin with a recorded memory.
 
 - `shared/memory-assessment.mjs` is the runtime schema/validator, used by server
   and browser; `.d.mts` gives the frontend its types. Scores describe a memory,
@@ -50,12 +159,14 @@ Continue on **`10.3-Echo`**. It was cut from `10.3-mesh-Gielis-superformula` at
 `10.3-mesh-Gielis-superformula` and `main` alone. Chat history does not follow a
 new Cursor account; this section is the handoff.
 
-The live create flow is unchanged. The new shot is a lab at **`/lab/descent`**
-(`src/app/lab/DescentPrototype.tsx`). Open it on the dev server. `?speed=0.3`
-slows the whole shot. It is one canvas and one camera, using the pond's own
-wave field (`POND_WAVES_GLSL` exported from `PerspectivePond.tsx`).
+The create flow after the transcript is this shot, at **`/record/descent`**
+(`DescentFlow` in `src/app/lab/DescentPrototype.tsx`): the same canvas, without
+the knobs, the timeline, or “again”. **`/lab/descent`** (`DescentPrototype`)
+keeps those. Open either on the dev server. `?speed=0.3` slows the whole shot.
+It is one canvas and one camera, using the pond's own wave field
+(`POND_WAVES_GLSL` exported from `PerspectivePond.tsx`).
 
-Intended sequence, built in the lab and not yet wired into the production route:
+The shot, from the empty strip:
 
 1. After recording, stay on the pond. An empty 35mm strip gathers itself out
    of the air in front of the view and hangs there (`CHOOSE_DEPTH`,
@@ -672,7 +783,9 @@ yet judged by the user: the follow's feel and the three new defaults, the
 plain fade of the film, and the vessel's look under the water (body alpha
 over the washed water, the frost patches at .15).
 
-The lab is one shot, not the live route. Do not wire it in until asked.
+The shot is the live create route after the transcript (`/record/descent`).
+`/lab/descent` is the same shot with its knobs. The earlier shape pages stay
+reachable from the landing dock.
 
 Done inside the lab since the first cut:
 
@@ -928,11 +1041,10 @@ Not built / not judged:
  like everything else, but they do not part around a hand).
 - No reduced-motion path for the wrap.
 
-Gaps still inside the lab, in the order they matter:
+Gaps still inside the shot, in the order they matter:
 
-- The lab starts at the empty strip. Recording and the transcript/highlight
-  step stay on the live pond. The agreed order, when this is wired, is
-  record → transcript highlight → photo → film.
+- Recording and the transcript highlight stay on the live pond. Continuing
+  from the highlight opens `/record/descent` on the empty strip.
 - No reduced-motion path. The timeline steps and scrubs the wrap and the
  rise only; nothing before the confirm can be stepped back through
  (`?from=wrap` jumps to the wrap, but only from a fresh load).
@@ -1062,12 +1174,8 @@ that renders `GlobalControls` (background music + profile button) once, so
    └ /memory/pond     MemoryPondPage — hold to record
      └ /record/start      PondRecordingOverlay on MemoryPondPage — records and transcribes
        └ /record/transcript  PuddleTranscriptPage — words + highlight
-         └ /record/build       BuildObjectPage — camera gate
-           └ /record/shape/grow     ShapeGrowPage — form + hand controls
-             └ /record/shape/color   ShapeColorPage
-               └ /record/shape/texture ShapeTexturePage
-                 └ /record/name    naming rim on LandingPage — title + year; this visit only
-                   └ /memory       same gallery, now including the new memory
+         └ /record/descent     the descent shot — photo, film, shape, distance, color, rise, name
+           └ /memory           same gallery, now including the new memory
 ```
 
 **B. Revisit memories:**
@@ -1080,7 +1188,8 @@ that renders `GlobalControls` (background music + profile button) once, so
 
 Landing, carousel, pond, recording, transcript, and naming share a mounted
 `LandingPage` layout; its route children render no separate page themselves.
-The restored build/grow/color/texture pages are live sibling routes in `App.tsx`.
+The descent shot is the create path after the transcript. The earlier
+build/grow/color/texture pages remain sibling routes, opened from the landing dock.
 Other former screens (blob recording, gray transcript, orb / click / process,
 and older sculpt variants) remain in `src/app/archive/record-loop/`.
 
@@ -1222,3 +1331,26 @@ refactor + deployment plans. They explain *why* decisions were made and what's
 intentionally deferred (e.g. merging the 6 ShapeX/EditX editor pages, moving
 flow state off `location.state`, code-splitting the ~1.5 MB bundle). Consult
 them before large structural changes so you don't redo settled decisions.
+
+
+**Surface continuity (2026-10-10).** Both the legacy feeling entry and the current
+`DescentRun` color step now ease their color fields/chrome out over 1.4 seconds
+while the existing silhouette brightens into light. Descent uses local shader
+wrappers and a soft post glow; gallery materials are unchanged. `surfaceHandoff.ts`
+keeps one transient canvas frame across navigation until `VesselArtifact.onReady`
+reports a complete frame (including the photo). The naming wash is behind the
+artifact, and its rise clock waits for that renderer. Back, including the naming
+fallbacks, calls `resumeColorState` and returns to `/record/descent` with
+`resumeStep: "color"`; the stage opens at its handled underwater pose and preserves
+form/m2, morph, photo, color, distance, transcript and original assessment. It does
+not reopen the older `/record/shape/feeling` route or reassess the handled memory.
+
+
+**Partial feeling tint (2026-10-10).** `vesselTint.ts` maps the saved OKLCH pick
+into a faint glass stain (strength .22, chroma × .65). The shared glass shader
+applies it on one broad shoulder and grazing edges, using transmission color
+without adding alpha or whitening the photo. Descent reduces the uniform room
+cast from .4 to .06; naming/gallery use their neutral room plus this same stain.
+Standalone vessel studies default to zero stain. Rhythm's open-palm roll remains
+unchanged; pinch-and-slide, a finger fan, and two-hand twisting were suggested as
+alternatives, pending the user's choice.

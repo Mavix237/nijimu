@@ -3,6 +3,7 @@ import { Canvas, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
 import { META, NOTE_SIZE, SANS, SERIF, TITLE } from "../lib/theme";
+import { PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import {
   FILM_LOOK_DEFAULT,
@@ -270,6 +271,7 @@ export function FilmPreview() {
         <Strip url={url} look={shown} stock={stock} photoOpacity={photoOpacity} edgeFade={edgeFade} seed={seed} />
       </Canvas>
 
+      <PageHeader layout="absolute" carousel={false} />
       <p style={{ ...META, position: "absolute", top: 26, left: 28, margin: 0, zIndex: 20 }}>lab — film</p>
 
       <div style={{ position: "absolute", left: "calc(50% - 130px)", top: 56, transform: "translateX(-50%)", width: "min(30em, 70vw)",

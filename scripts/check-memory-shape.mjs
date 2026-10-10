@@ -14,7 +14,68 @@ function load(path, imports = {}, globals = {}) {
   return module.exports;
 }
 const geometry = load("../src/app/lib/superformula.ts");
+const rhythm = load("../src/app/lib/memoryRhythm.ts");
 const shape = load("../src/app/lib/memoryShape.ts", { "./superformula": geometry, "../../../shared/memory-assessment.mjs": contract });
+const sample = load("../src/app/data/sampleMemory.ts", { "../lib/memoryShape": shape });
+assert.ok(contract.isAssessment(sample.SAMPLE_ASSESSMENT, sample.SAMPLE_TRANSCRIPT));
+const demo = sample.sampleAssignment(sample.SAMPLE_TRANSCRIPT);
+assert.ok(shape.isMemoryAssignment(demo, sample.SAMPLE_TRANSCRIPT));
+assert.ok(demo.family && demo.source !== "fallback");
+assert.equal(sample.sampleAssignment(sample.SAMPLE_TRANSCRIPT + " I feel differently now."), null);
+assert.equal(JSON.stringify(demo), JSON.stringify(sample.sampleAssignment(sample.SAMPLE_TRANSCRIPT)));
+// The imported rise/naming animation carries this branch's memory unchanged.
+const colors = load("../src/app/lib/colors.ts");
+const naming = load("../src/app/lib/namingDraft.ts", { "./colors": colors, "./superformula": geometry });
+const carried = {
+  memoryId: "echo-draft", transcript: sample.SAMPLE_TRANSCRIPT, assignment: demo,
+  highlightedWords: ["summer"], matPresetIndex: 2,
+  shape: { form: demo.form, evolve: .73, fluidity: 0, bumpAmount: 0 },
+  look: { photoUrl: "blob:chosen-photo", vividness: .34, oklch: { l: .8, c: .1, h: 224 } },
+};
+const draft = naming.draftAsSaved({ draftId: carried.memoryId, state: carried });
+assert.equal(draft.id, carried.memoryId);
+assert.equal(draft.assignment, demo);
+assert.equal(draft.shape.form, demo.form);
+assert.equal(draft.shape.evolve, .73);
+assert.equal(draft.look, carried.look, "photo, colour and distance survive the draft transition");
+assert.equal(draft.transcript, carried.transcript);
+// Rhythm is a manual latitude edit, preserving the assessed interpretation.
+const edited = rhythm.withRhythm(demo.form, 9.25);
+assert.equal(edited.side.m, 9.25);
+assert.equal(edited.top, demo.form.top);
+for (const key of ['n1', 'n2', 'n3', 'a', 'b']) assert.equal(edited.side[key], demo.form.side[key]);
+assert.notEqual(edited.side, demo.form.side);
+const editedDraft = naming.draftAsSaved({ draftId: carried.memoryId, state: { ...carried, form: edited, shape: { ...carried.shape, form: edited } } });
+assert.equal(editedDraft.shape.form, edited);
+assert.equal(editedDraft.assignment, demo, 'manual rhythm preserves original assessment metadata');
+const resume = naming.resumeColorState({ ...carried, rise: true, shape: { ...carried.shape, form: edited } });
+assert.equal(resume.resumeStep, 'color', 'Back resumes the current descent color step');
+assert.equal(resume.rise, undefined);
+assert.equal(resume.shape.form, edited, 'Back keeps the manually edited m2');
+assert.equal(resume.shape.evolve, carried.shape.evolve);
+assert.equal(resume.memoryAssignment, demo, 'Back preserves the original transcript assessment');
+assert.equal(resume.look, carried.look, 'Back keeps the chosen photo, color and distance');
+assert.equal(resume.memoryId, carried.memoryId);
+assert.equal(resume.transcript, carried.transcript);
+
+assert.equal(rhythm.rhythmFromRoll(8, 0, 0), 8, 'hand acquisition keeps current value');
+assert.equal(rhythm.rhythmFromRoll(8, Math.PI / 4, 0), 12);
+assert.equal(rhythm.rhythmFromRoll(8, -Math.PI / 4, 0), 4);
+assert.equal(rhythm.rhythmFromRoll(8, -Math.PI + .01, Math.PI - .01), 8, 'angle wrapping does not jump the dial');
+assert.equal(rhythm.palmRoll([]), null);
+for (const category of geometry.ARTIFACT_CATEGORIES) {
+  const base = geometry.baseForm(category);
+  for (const m2 of [0, .25, 4, 9.25, 16]) {
+    const form = rhythm.withRhythm(base, m2);
+    assert.ok(geometry.isArtifactForm(form));
+    const mesh = geometry.getArtifactMesh(form);
+    assert.ok(mesh.positions.every(Number.isFinite), `${category} rhythm ${m2} must remain finite`);
+  }
+}
+const namingArtifact = naming.draftArtifactOf({ draftId: carried.memoryId, state: carried });
+assert.equal(namingArtifact.look, carried.look);
+assert.equal(geometry.formKey(namingArtifact.shape.form), geometry.formKey(demo.form));
+assert.equal(naming.draftShapeOf({ assignment: demo }).form, demo.form, "assignment is retained when only its form is carried");
 const transcript = "I felt joyful and reached toward everyone around me.";
 const assessment = { orientation: 1, comfort: 0.8, intensity: 0.95, discomfort: 0, disruption: 0, mixedness: 0.1, insufficientEvidence: false, summary: "Joyful, intense openness.", beats: [{ quote: "I felt joyful", reading: "joy", orientation: 1, intensity: 0.95 }] };
 assert.ok(contract.isAssessment(assessment, transcript));
@@ -114,7 +175,7 @@ assert.equal((await POST(new Request("http://localhost/api/assess-memory", { met
 assert.equal((await POST(new Request("http://localhost/api/assess-memory", { method: "POST", body: "{" }))).status, 400);
 
 // Browser boundary validates independently and forwards aborts.
-const client = fetch => load("../src/app/lib/assessMemory.ts", { "../../../shared/memory-assessment.mjs": contract }, { fetch, AbortController, setTimeout, clearTimeout });
+const client = fetch => load("../src/app/lib/assessMemory.ts", { "../../../shared/memory-assessment.mjs": contract, "../data/sampleMemory": sample }, { fetch, AbortController, setTimeout, clearTimeout });
 const goodClient = client(async () => Response.json({ assessment, version: contract.ASSESSMENT_VERSION, model: "test" }));
 assert.ok((await goodClient.requestMemoryAssessment(transcript)).assessment);
 const forgedClient = client(async () => Response.json({ assessment: { ...assessment, beats: [{ ...assessment.beats[0], quote: "made up" }] }, version: contract.ASSESSMENT_VERSION }));
@@ -124,3 +185,6 @@ const delayedClient = client((url, { signal }) => new Promise((resolve,reject) =
 const pending = delayedClient.requestMemoryAssessment(transcript, controller.signal); controller.abort();
 assert.equal((await pending).assessment, null);
 console.log("memory assignment: contract, geometry, replay, stale text, provider, HTTP and cancellation checks passed");
+
+const offlineSampleClient = client(async () => { throw new Error("sample must not need network"); });
+assert.ok((await offlineSampleClient.requestMemoryAssessment(sample.SAMPLE_TRANSCRIPT)).assessment);

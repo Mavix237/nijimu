@@ -2,13 +2,12 @@ import { Fragment } from "react";
 import { useNavigate } from "react-router";
 import { CHROME_GRAY } from "../lib/colors";
 import { SANS } from "../lib/theme";
-import { SHAPE_DISTANCE_PATH, SHAPE_FEELING_PATH, SHAPE_GROW_PATH } from "../lib/routes";
 
 /**
  * Shortcuts from the landing field to the editors that open on their own,
  * without walking the create flow. The labs carry their own controls;
- * the gallery lab is the dive gallery seated with vessels. The three shape
- * steps are the live ones; they open on a sample form.
+ * the gallery lab is the dive gallery seated with vessels. The create flow
+ * continues from the transcript into /record/descent. Older standalone shape screens are archived.
  */
 const ENTRIES: { to: string; label: string; hint: string; icon: IconName }[] = [
   { to: "/lab/meaning", label: "sorting algo", hint: "how a memory becomes a form", icon: "shape" },
@@ -16,13 +15,7 @@ const ENTRIES: { to: string; label: string; hint: string; icon: IconName }[] = [
   { to: "/lab/film", label: "film", hint: "the photo's look", icon: "film" },
   { to: "/lab/vessel", label: "vessel", hint: "the glass, with its sliders", icon: "vessel" },
   { to: "/lab/gallery", label: "gallery", hint: "the memories as vessels", icon: "gallery" },
-  { to: SHAPE_GROW_PATH, label: "shape", hint: "the form", icon: "shape" },
-  { to: SHAPE_FEELING_PATH, label: "color", hint: "how it feels", icon: "color" },
-  { to: SHAPE_DISTANCE_PATH, label: "distance", hint: "how much it holds", icon: "distance" },
 ];
-
-/** Where the gap sits: after the labs, before the live steps. */
-const LIVE_FROM = 5;
 
 type IconName = "descent" | "film" | "vessel" | "gallery" | "shape" | "color" | "distance";
 
@@ -111,7 +104,7 @@ export function LabDock() {
         gap: 2,
       }}
     >
-      {ENTRIES.map((entry, i) => (
+      {ENTRIES.map((entry) => (
         <Fragment key={entry.to}>
         <button
           type="button"
@@ -122,7 +115,6 @@ export function LabDock() {
             alignItems: "center",
             gap: 8,
             margin: 0,
-            marginTop: i === LIVE_FROM ? 10 : 0,
             padding: "5px 8px",
             border: "none",
             background: "transparent",

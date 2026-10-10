@@ -66,7 +66,6 @@ export function MemoryCarouselPage({
     }
   }
   const goRecord = () => navigate(RECORD_START_PATH);
-  const goHome = () => navigate("/");
   const goPond = onPondEnter ?? (() => navigate(MEMORY_POND_PATH));
   const goGrid = () => navigate("/memory/scroll");
 
@@ -75,7 +74,7 @@ export function MemoryCarouselPage({
   if (!isPuddleSupported()) {
     return (
       <>
-        {markReady && !hideHeader && <PageHeader layout="absolute" link={false} />}
+        {markReady && !hideHeader && <PageHeader layout="absolute" />}
         <DiveGalleryHost
           naming={naming}
           reducedMotion={inkArrival?.reducedMotion ?? window.matchMedia("(prefers-reduced-motion: reduce)").matches}
@@ -87,7 +86,6 @@ export function MemoryCarouselPage({
             activeIdx: idx,
             phase: "gallery",
             onNavigate: (delta) => setActiveIdx((i) => Math.max(0, Math.min(items.length - 1, i + delta))),
-            onExit: goHome,
             onOverscrollExit: goPond,
             onToggleGrid: goGrid,
             toggleIcon: "plus",
@@ -112,7 +110,6 @@ export function MemoryCarouselPage({
       naming={naming}
       hideAnnotations
       onNewMemory={goRecord}
-      onGalleryExit={goHome}
       onOverscrollExit={goPond}
       onToggleGrid={goGrid}
       toggleIcon="plus"

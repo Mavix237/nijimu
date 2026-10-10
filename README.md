@@ -72,7 +72,8 @@ SANS_UI        = 'SF Pro', system-ui, sans-serif
 ## Memory-to-form study (`/lab/meaning`)
 
 This lab connects a full recorded or typed transcript to the photo/descent lab.
-The live create route is unchanged. Start the app with `pnpm dev`, open
+The create route does the same after highlighting a transcript, at
+`/record/descent`, without the lab knobs. Start the app with `pnpm dev`, open
 `http://localhost:5180/lab/meaning`, record/paste a memory, then **find its form**.
 The four mesh cards and score sliders also work without an API key, explicitly
 labelled as manual studies. **Take it to the water** carries the assignment into

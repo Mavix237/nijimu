@@ -1,10 +1,11 @@
-import { useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import { Link } from "react-router";
 import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
 import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
 import { BackButton } from "./BackButton";
 import { GalleryViewToggle } from "./GalleryViewToggle";
+import { TranscriptTrail } from "./TranscriptTrail";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
 import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
@@ -43,7 +44,7 @@ const NEIGHBOR_IN_STAGGER_MS = 110;
 const NEIGHBOR_OUT_STAGGER_MS = 80;
 /** Caption block centre-ish, as a fraction of viewport height from the top —
     scales with the window instead of sitting a fixed px above the timescale. */
-const CAPTION_TOP_VH = 0.62;
+export const CAPTION_TOP_VH = 0.62;
 /** Extra downward sit of the title + year. Shared by the carousel and the
     naming step — both draw this caption from the same seat. */
 export const CAPTION_DOWN_VH = 0.07;
@@ -154,7 +155,7 @@ export function PuddleDiveGallery({
   onExit,
   onOverscrollExit,
   caption,
-  exitOnBackdropClick = true,
+  exitOnBackdropClick = false,
   onToggleGrid,
   toggleIcon = "view",
   showTimeScale = true,
@@ -172,13 +173,14 @@ export function PuddleDiveGallery({
   reducedMotion: boolean;
   /** Steps to travel around the rim: negative = older (left), positive = newer. */
   onNavigate: (delta: number) => void;
-  onExit: () => void;
+  /** Omit on dedicated galleries: the wordmark is their only home control. */
+  onExit?: () => void;
   /** Leave past the first or last memory — the dedicated carousel uses this
       to open the perspective pond; the G-gallery falls back to onExit. */
   onOverscrollExit?: () => void;
   /** Replace the default title / year caption (used by the naming step). */
   caption?: ReactNode;
-  /** Homescreen G-gallery exits on a blank click; the naming step does not. */
+  /** Explicit opt-in for an embedded gallery that can dismiss on its backdrop. */
   exitOnBackdropClick?: boolean;
   onToggleGrid?: () => void;
   /** The /memory carousel uses a plus that opens the pond after scrolling
@@ -220,6 +222,10 @@ export function PuddleDiveGallery({
   const rimIdxRef = useRef(activeIdx);
   /** Where a press on the backdrop began, so a drag is never read as a click. */
   const backdropDownRef = useRef<{ x: number; y: number } | null>(null);
+  /** The caption block and the timeline, which the transcript trail keeps its words out of. */
+  const captionRef = useRef<HTMLDivElement>(null);
+  const timeScaleRef = useRef<SVGSVGElement>(null);
+  const trailAvoid = useMemo(() => [captionRef, timeScaleRef], []);
   const activeIdxRef = useRef(activeIdx);
   activeIdxRef.current = activeIdx;
   /* The naming year rebuilds the archive around the memory already at the
@@ -315,7 +321,7 @@ export function PuddleDiveGallery({
       if (phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
-      if (e.key === "Escape") { onExit(); return; }
+      if (e.key === "Escape") { onExit?.(); return; }
       if (inField) return;
       if (e.key === "ArrowLeft") { if (hasOlder) onNavigate(-1); }
       else if (e.key === "ArrowRight") hasNewer ? onNavigate(1) : onOverscrollExit?.();
@@ -366,7 +372,7 @@ export function PuddleDiveGallery({
       if (dir < 0 && !hasOlder) {
         leftover = 0;
       } else if (dir > 0 && !hasNewer) {
-        if (rimSettledRef.current) leave();
+        if (rimSettledRef.current) leave?.();
         leftover = 0;
       } else onNavigate(dir);
     };
@@ -394,7 +400,7 @@ export function PuddleDiveGallery({
       const dir = distance > 0 ? 1 : -1;
       if (dir < 0 && !hasOlder) return;
       if (dir > 0 && !hasNewer) {
-        if (rimSettledRef.current) (onOverscrollExit ?? onExit)();
+        if (rimSettledRef.current) (onOverscrollExit ?? onExit)?.();
       } else onNavigate(dir);
     };
     const cancel = () => { start = null; };
@@ -640,7 +646,7 @@ export function PuddleDiveGallery({
   const arrowStyle = (side: "left" | "right"): CSSProperties => ({
     position: "absolute",
     top: geo.apexY,
-    [side]: "clamp(8px, 1.6vw, 26px)",
+    [side]: "clamp(28px, 6vw, 96px)",
     transform: "translateY(-50%)",
     background: "none",
     border: "none",
@@ -668,7 +674,7 @@ export function PuddleDiveGallery({
         // release, so turning an artifact and letting go a little off it lands
         // a click here. That is someone handling a memory, not asking to leave.
         if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
-        if (chromeVisible && exitOnBackdropClick) onExit();
+        if (chromeVisible && exitOnBackdropClick) onExit?.();
       }}
     >
       {/* ═══ BACKGROUND WASH — the memory's color, held around the focused
@@ -705,6 +711,20 @@ export function PuddleDiveGallery({
           willChange: waterEffect ? "background-color, opacity" : undefined,
         }}
       />
+
+      {/* ═══ TRANSCRIPT — the selected memory's words, found by the pointer.
+             Over the wash and under the dome. Not on the naming step, whose
+             memory is still being made, nor in the field, where no memory is
+             selected. ═══ */}
+      {!caption && items[activeIdx] && (
+        <TranscriptTrail
+          memoryId={items[activeIdx].id}
+          transcript={items[activeIdx].transcript}
+          highlightedWords={items[activeIdx].highlightedWords ?? []}
+          visible={yearsVisible && !field?.on}
+          avoid={trailAvoid}
+        />
+      )}
 
       {/* Refraction filter def, shared by whichever artifact holds the apex.
           Mounted only while it has something to do; remounting restarts its
@@ -921,6 +941,7 @@ export function PuddleDiveGallery({
       {/* ═══ TIMESCALE — one line across the foot of the screen ═══ */}
       {showTimeScale && (
         <TimeScale
+          svgRef={timeScaleRef}
           items={items}
           activeIdx={rimAt}
           viewport={viewport}
@@ -933,6 +954,7 @@ export function PuddleDiveGallery({
 
       {/* ═══ CAPTION — between the dome and the timescale ═══ */}
       <div
+        ref={captionRef}
         className="absolute left-0 right-0 text-center"
         style={{
           top: (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h,
@@ -970,11 +992,11 @@ export function PuddleDiveGallery({
             e.stopPropagation();
             onNavigate(-1);
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.7" : "0")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.35" : "0")}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="22" height="40" viewBox="0 0 22 40" fill="none" aria-hidden>
-            <path d="M18 4 L6 20 L18 36" stroke="currentColor" strokeWidth="1.2" />
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(0.65)" }}>
+            <path d="M16 2 L2 12 L16 22 Z" />
           </svg>
         </button>
       )}
@@ -986,11 +1008,11 @@ export function PuddleDiveGallery({
             e.stopPropagation();
             onNavigate(1);
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.7" : "0")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.35" : "0")}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="22" height="40" viewBox="0 0 22 40" fill="none" aria-hidden>
-            <path d="M4 4 L16 20 L4 36" stroke="currentColor" strokeWidth="1.2" />
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(0.65)" }}>
+            <path d="M2 2 L16 12 L2 22 Z" />
           </svg>
         </button>
       )}
@@ -1003,7 +1025,7 @@ export function PuddleDiveGallery({
           pointerEvents: chromeVisible ? "auto" : "none",
         }}
       >
-        <BackButton onClick={onExit} />
+        {onExit && <BackButton onClick={onExit} />}
         {/* a way into the vessel preview (/lab/gallery), beside the arrow; not shown inside the preview itself */}
         {!override && (
           <Link to="/lab/gallery" aria-label="see the memories as vessels"
@@ -1213,6 +1235,7 @@ const TS_LABEL_DROP = 22;
 const TS_YEAR_STEP = 5;
 
 function TimeScale({
+  svgRef,
   items,
   activeIdx,
   viewport,
@@ -1221,6 +1244,7 @@ function TimeScale({
   travelEase,
   enterAnimation,
 }: {
+  svgRef?: Ref<SVGSVGElement>;
   items: DiveGalleryItem[];
   activeIdx: number;
   viewport: { w: number; h: number };
@@ -1276,6 +1300,7 @@ function TimeScale({
 
   return (
     <svg
+      ref={svgRef}
       aria-hidden
       className="absolute inset-0 pointer-events-none"
       width="100%"

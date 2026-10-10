@@ -18,6 +18,10 @@ export interface ArchiveArtifact {
   id: string;
   year: string;
   event: string;
+  /** The words the memory was recorded with. */
+  transcript: string;
+  /** The words lifted out of it in the highlight step. */
+  highlightedWords: string[];
   colorIndex: number;
   shape: {
     form: ArtifactForm;
@@ -68,6 +72,8 @@ function artifactFor(event: MemoryEvent, index: number, saved?: SavedMemory): Ar
     id: event.id,
     year: event.year,
     event: event.event,
+    transcript: event.transcript,
+    highlightedWords: event.highlightedWords,
     colorIndex: event.color % COLOR_PALETTE.length,
     shape: saved
       ? {
@@ -82,7 +88,8 @@ function artifactFor(event: MemoryEvent, index: number, saved?: SavedMemory): Ar
           evolve: rand() * 0.5 + 0.5,
           bumpAmount: index % 2 === 0 ? rand() * 0.03 : 0.03 + rand() * 0.12,
         },
-    ...(saved?.look ? { look: saved.look } : {}),
+    // a curated memory has no look of its own but its colour
+    ...(saved?.look ? { look: saved.look } : event.feeling ? { look: { oklch: event.feeling } } : {}),
   };
 }
 

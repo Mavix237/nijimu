@@ -1,5 +1,5 @@
 import { CSSProperties } from "react";
-import { BODY_SIZE, SANS } from "../lib/theme";
+import { BUTTON_SIZE_SM, SANS } from "../lib/theme";
 
 interface TextButtonProps {
   label: string;
@@ -31,7 +31,7 @@ export function TextButton({
         cursor: disabled ? "default" : "pointer",
         padding: 0,
         fontFamily: SANS,
-        fontSize: BODY_SIZE,
+        fontSize: BUTTON_SIZE_SM,
         fontWeight: 400,
         color: "#7b7b87",
         letterSpacing: 0,

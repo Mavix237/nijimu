@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode } from "react";
-import { BUTTON_SIZE, BUTTON_SIZE_SM, NOTE_SIZE, SANS, SANS_UI } from "../lib/theme";
+import { BUTTON_SIZE_SM, SANS, SANS_UI } from "../lib/theme";
 
 interface PillButtonProps {
   label: string;
@@ -76,7 +76,7 @@ export function PillButton({
       <span
         style={{
           fontFamily: isDark ? SANS_UI : SANS,
-          fontSize: isOutline ? BUTTON_SIZE_SM : BUTTON_SIZE,
+          fontSize: BUTTON_SIZE_SM,
           fontWeight: isDark ? 300 : 400,
           lineHeight: 1.5,
           letterSpacing: 0,
@@ -91,7 +91,7 @@ export function PillButton({
         <span
           style={{
             fontFamily: SANS_UI,
-            fontSize: isOutline ? NOTE_SIZE : BUTTON_SIZE_SM,
+            fontSize: BUTTON_SIZE_SM,
             lineHeight: 0,
             letterSpacing: 0,
             color: textColor,

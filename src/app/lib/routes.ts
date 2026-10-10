@@ -13,7 +13,12 @@ export const RECORD_START_PATH = "/record/start";
 /** Spoken words and highlights — same pond overlay as recording. */
 export const TRANSCRIPT_PATH = "/record/transcript";
 
-/** MediaPipe shape steps — one screen per gesture. */
+/** Photo, film, and the descent — the create shot after the transcript.
+    The same scene as /lab/descent, without the lab's knobs. */
+export const DESCENT_PATH = "/record/descent";
+
+/** Archived MediaPipe shape steps. Kept for the archived implementation only;
+    live bookmarks redirect to DESCENT_PATH and there are no home shortcuts. */
 export const SHAPE_GROW_PATH = "/record/shape/grow";
 export const SHAPE_FEELING_PATH = "/record/shape/feeling";
 export const SHAPE_DISTANCE_PATH = "/record/shape/distance";

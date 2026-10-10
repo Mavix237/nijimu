@@ -1,3 +1,4 @@
+import { resumeColorState } from "../lib/namingDraft";
 import { useNavigate } from "react-router";
 import {
   CSSProperties,
@@ -11,11 +12,12 @@ import {
 } from "react";
 import { buildArchive, insertChronologically, type ArchiveArtifact } from "../lib/archive";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { saveMemory, type SavedMemory } from "../lib/memoryStore";
-import { CAROUSEL_PATH, SHAPE_FEELING_PATH } from "../lib/routes";
+import { saveMemory, type MemoryLook } from "../lib/memoryStore";
+import { draftColorIndex, draftShapeOf } from "../lib/namingDraft";
+export { draftColorIndex, draftShapeOf, draftAsSaved } from "../lib/namingDraft";
+import type { MemoryAssignment } from "../lib/memoryShape";
+import { CAROUSEL_PATH, DESCENT_PATH } from "../lib/routes";
 import {
-  DEFAULT_ARTIFACT_FORM,
-  formFromState,
   formKey,
   getArtifactMesh,
   type ArtifactForm,
@@ -49,15 +51,34 @@ import {
 
 /** What the shape steps hand to the naming step in location.state. */
 export interface NameFlowState {
+  memoryId?: string;
   transcript?: string;
   highlightedWords?: string[];
+  /** The reading that chose the form, kept with the memory when it is named. */
+  assignment?: MemoryAssignment;
   matPresetIndex?: number;
+  /** The glass tint the feeling step settled on — shown until the memory is saved. */
+  matColor?: string;
+  /** The photo, the pick and the frost, when the descent hands them on. */
+  look?: MemoryLook;
   shape?: {
     form?: ArtifactForm;
     fluidity?: number;
     evolve?: number;
     bumpAmount?: number;
   };
+  /** Set by the shape scene: the eye is still under the water and comes up to this step. */
+  rise?: boolean;
+}
+
+/** What a host may take over from the rim: leaving, and what follows a save. */
+export interface NamingRimHandlers {
+  /** Current flow places the save action in its shared bottom row. */
+  actionsInGrid?: boolean;
+  /** Back to the previous step. Defaults to the feeling step with the state as it came. */
+  onExit?: (state: NameFlowState) => void;
+  /** After the memory is in the store. Defaults to opening the gallery on it. */
+  onSaved?: (draftId: string) => void;
 }
 
 /** One visit to the naming step. The id is the memory's final id from the
@@ -71,37 +92,6 @@ const currentYear = new Date().getFullYear();
 
 /** How long the save button takes to leave before the words settle. */
 const SAVE_FADE_MS = 380;
-
-/** The tint the material preset implies, as a palette index. */
-export function draftColorIndex(matPresetIndex: number | undefined): number {
-  return Math.round(((matPresetIndex ?? 0) / 4) * (COLOR_PALETTE.length - 1));
-}
-
-export function draftShapeOf(state: NameFlowState | null): ArchiveArtifact["shape"] {
-  return {
-    form: formFromState(state) ?? DEFAULT_ARTIFACT_FORM,
-    fluidity: state?.shape?.fluidity ?? 0,
-    evolve: state?.shape?.evolve ?? 0.5,
-    bumpAmount: state?.shape?.bumpAmount ?? 0,
-  };
-}
-
-/** The memory as it will be saved, before it has words. The homescreen uses
-    this to give the draft its place on the water ahead of the save. */
-export function draftAsSaved(session: NamingSession): SavedMemory {
-  const { state } = session;
-  const shape = draftShapeOf(state);
-  return {
-    id: session.draftId,
-    title: "",
-    year: "",
-    transcript: state.transcript ?? "",
-    highlightedWords: state.highlightedWords ?? [],
-    shape: { ...shape, matPresetIndex: state.matPresetIndex ?? 0 },
-    colorIndex: draftColorIndex(state.matPresetIndex),
-    createdAt: "",
-  };
-}
 
 function FlickerCaret({
   color = CHROME_GRAY,
@@ -224,7 +214,7 @@ function CaptionField({
           ...style,
           width: fitWidth > 0 ? fitWidth : "auto",
           fieldSizing: "content",
-          maxWidth: "70vw",
+          maxWidth: "min(70vw, var(--naming-field, 70vw))",
           background: "transparent",
           border: "none",
           outline: "none",
@@ -242,6 +232,7 @@ export interface NamingRim {
   items: DiveGalleryItem[];
   activeIdx: number;
   caption: ReactNode;
+  actions: ReactNode;
   /** The neighbours only gather once the memory has a year to stand in. */
   neighborsVisible: boolean;
   /** Back to the previous step. */
@@ -253,8 +244,14 @@ export interface NamingRim {
  * the hook then costs nothing and returns null, so a component can host either
  * the naming rim or the settled gallery without changing shape.
  */
-export function useNamingRim(session: NamingSession | null, reducedMotion: boolean): NamingRim | null {
+export function useNamingRim(
+  session: NamingSession | null,
+  reducedMotion: boolean,
+  handlers: NamingRimHandlers = {},
+): NamingRim | null {
   const navigate = useNavigate();
+  const handlersRef = useRef(handlers);
+  handlersRef.current = handlers;
   const state = session?.state ?? null;
   const draftId = session?.draftId ?? "";
   const [memoryName, setMemoryName] = useState("");
@@ -343,13 +340,16 @@ export function useNamingRim(session: NamingSession | null, reducedMotion: boole
       id: draftId,
       year: rimYear ?? draftYear,
       event: memoryName,
+      transcript: state?.transcript ?? "",
+      highlightedWords: state?.highlightedWords ?? [],
       colorIndex,
       shape: draftShape,
+      look: state?.look,
     };
     if (!rimYear) return { items: [draft], activeIdx: 0 };
     const placed = insertChronologically(archive, draft);
     return { items: placed.items, activeIdx: placed.index };
-  }, [archive, colorIndex, draftId, draftShape, draftYear, memoryName, rimYear]);
+  }, [archive, colorIndex, draftId, draftShape, draftYear, memoryName, rimYear, state?.transcript, state?.highlightedWords, state?.look]);
 
   const canContinue = memoryName.trim() !== "" && yearSettled && !saving;
 
@@ -373,9 +373,15 @@ export function useNamingRim(session: NamingSession | null, reducedMotion: boole
           bumpAmount: shape?.bumpAmount ?? draftShape.bumpAmount,
         },
         colorIndex,
+        ...(state?.assignment ? { assignment: state.assignment } : {}),
+        ...(state?.look ? { look: state.look } : {}),
         createdAt: new Date().toISOString(),
       });
 
+      if (handlersRef.current.onSaved) {
+        handlersRef.current.onSaved(draftId);
+        return;
+      }
       /* The gallery continues the rim that is already on screen: same memory at
          the apex, same neighbours, so only the water and the chrome arrive.
          The naming step is replaced in history: there is no draft to come back to. */
@@ -408,6 +414,23 @@ export function useNamingRim(session: NamingSession | null, reducedMotion: boole
   /* Same DOM shape as StaticCaption — a column, the title in a block with the
      shared gap below it, then the year — so when the fields become words
      nothing shifts. */
+  const actions = fieldsVisible && memoryName.trim() !== "" && yearSettled && (
+        <TextButton
+          label="save memory"
+          onClick={persistAndOpenGallery}
+          disabled={saving}
+          style={{
+            /* out of flow, so its coming and going never moves the words */
+            ...(handlers.actionsInGrid ? {} : { position: "absolute" as const, top: "100%", marginTop: 56 }),
+            opacity: saving ? 0 : 1,
+            filter: saving ? "blur(4px)" : "none",
+            transition: reducedMotion
+              ? "none"
+              : `opacity ${SAVE_FADE_MS}ms ease, filter ${SAVE_FADE_MS}ms ease`,
+          }}
+        />
+      );
+
   const caption = (
     <div
       style={{
@@ -495,24 +518,7 @@ export function useNamingRim(session: NamingSession | null, reducedMotion: boole
           {yearHint}
         </p>
       )}
-      {memoryName.trim() !== "" && yearSettled && (
-        <TextButton
-          label="save memory"
-          onClick={persistAndOpenGallery}
-          disabled={saving}
-          style={{
-            /* out of flow, so its coming and going never moves the words */
-            position: "absolute",
-            top: "100%",
-            marginTop: 56,
-            opacity: saving ? 0 : 1,
-            filter: saving ? "blur(4px)" : "none",
-            transition: reducedMotion
-              ? "none"
-              : `opacity ${SAVE_FADE_MS}ms ease, filter ${SAVE_FADE_MS}ms ease`,
-          }}
-        />
-      )}
+      {!handlers.actionsInGrid && actions}
       <style>{`
         @keyframes nijimu-caret {
           0%, 49% { opacity: 0.7; }
@@ -535,8 +541,14 @@ export function useNamingRim(session: NamingSession | null, reducedMotion: boole
     items,
     activeIdx,
     caption,
+    actions,
     neighborsVisible: yearSettled,
-    exit: () => navigate(SHAPE_FEELING_PATH, { state }),
+    exit: () => {
+      if (saving) return;
+      const flow = state ?? {};
+      if (handlersRef.current.onExit) handlersRef.current.onExit(flow);
+      else navigate(DESCENT_PATH, { state: resumeColorState(flow) });
+    },
   };
 }
 
@@ -549,7 +561,7 @@ export interface DiveGalleryProps {
   activeIdx: number;
   phase: DivePhase;
   onNavigate: (delta: number) => void;
-  onExit: () => void;
+  onExit?: () => void;
   onOverscrollExit?: () => void;
   onToggleGrid?: () => void;
   toggleIcon?: "view" | "plus";

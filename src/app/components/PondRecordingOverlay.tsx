@@ -1,3 +1,4 @@
+import { FlowPageGrid } from "./FlowPageGrid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
@@ -7,6 +8,7 @@ import { beginTranscription } from "../lib/transcribe";
 import svgPathsStop from "../../imports/svg-hpzn3032f5";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PillButton } from "./PillButton";
+import { TextButton } from "./TextButton";
 import { RecordingInstructionsDialog } from "./RecordingInstructionsDialog";
 import { MEMORY_POND_PATH, TRANSCRIPT_PATH } from "../lib/routes";
 import { ArtifactForm, createArtifactForm, formFromState } from "../lib/superformula";
@@ -50,6 +52,7 @@ export function PondRecordingOverlay({
 
   const [buttonIn, setButtonIn] = useState(reducedMotion);
   const [leaving, setLeaving] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const [captureFailed, setCaptureFailed] = useState(false);
   const [openingMicrophone, setOpeningMicrophone] = useState(false);
   // The memory's form is assigned here, before it has words, and travels with
@@ -140,6 +143,7 @@ export function PondRecordingOverlay({
 
   const goToSampleTranscript = () => {
     if (leaving) return;
+    setSkipping(true);
     setLeaving(true);
     setTimeout(() => {
       navigate(TRANSCRIPT_PATH, {
@@ -164,9 +168,12 @@ export function PondRecordingOverlay({
 
   // No first-visit flag: every entry (and failed attempt) gets the same
   // instructions. The microphone opens only after the primary action.
-  if (!recorder.isRecording && !leaving) return <RecordingInstructionsDialog
+  if (!recorder.isRecording && (!leaving || skipping)) return <div
+    style={{ opacity: leaving ? 0 : 1, transition: `opacity ${CHROME_OUT_MS}ms ease`, pointerEvents: leaving ? "none" : undefined }}>
+    <RecordingInstructionsDialog
     busy={openingMicrophone} error={troubleMessage} onStart={startRecording}
-    onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH)} />;
+    onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH)} />
+  </div>;
 
   return (
     <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 30 }}>
@@ -178,16 +185,13 @@ export function PondRecordingOverlay({
         }
       `}</style>
 
-      <p
+      <FlowPageGrid heading={<>
+      <div
         style={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
-          top: 171,
           margin: 0,
           ...TITLE,
           color: CHROME_GRAY,
-          width: "min(28em, 90vw)",
+          width: "100%",
           textAlign: "center",
           ...leaveStyle,
         }}
@@ -200,16 +204,12 @@ export function PondRecordingOverlay({
           sweep={QUESTION_SWEEP_S}
           wrap
         />
-      </p>
+      </div>
 
-      <p
+      <div
         style={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
-          top: 229,
-          margin: 0,
-          width: "min(28em, 82vw)",
+          width: "min(28em, 100%)",
+          margin: "24px auto 0",
           textAlign: "center",
           ...noteStyle,
           ...leaveStyle,
@@ -223,17 +223,13 @@ export function PondRecordingOverlay({
           sweep={NOTE_SWEEP_S}
           wrap
         />
-      </p>
+      </div>
 
       {(recorder.isRecording || troubleMessage) && (
         <p
           style={{
-            position: "absolute",
-            left: "50%",
-            transform: "translateX(-50%)",
-            top: 338,
             margin: 0,
-            whiteSpace: "nowrap",
+            marginTop: 24,
             ...noteStyle,
             ...leaveStyle,
             opacity: leaving ? 0 : troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
@@ -245,30 +241,24 @@ export function PondRecordingOverlay({
         </p>
       )}
 
-      <div style={{ pointerEvents: buttonIn && !leaving ? "auto" : "none", ...fadeStyle(buttonIn) }}>
-        {!recorder.isRecording ? (
+      </>}
+      actionsStyle={{ pointerEvents: buttonIn && !leaving ? "auto" : "none", ...fadeStyle(buttonIn) }} actions={
+        !recorder.isRecording ? (
           <div
             style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              bottom: 110,
               display: "flex",
               flexDirection: "column",
-              alignItems: "stretch",
-              gap: 12,
+              alignItems: "center",
+              gap: 16,
             }}
           >
             <PillButton
               label={captureFailed ? "record again" : "record"}
               onClick={startRecording}
-              style={{ width: "100%" }}
             />
-            <PillButton
+            <TextButton
               label="show sample transcript"
-              variant="outline"
               onClick={goToSampleTranscript}
-              style={{ width: "100%" }}
             />
           </div>
         ) : (
@@ -280,15 +270,9 @@ export function PondRecordingOverlay({
                 <path d={svgPathsStop.p220b0800} fill={CHROME_GRAY} />
               </svg>
             }
-            style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              bottom: 110,
-            }}
           />
-        )}
-      </div>
+        )
+      } />
     </div>
   );
 }

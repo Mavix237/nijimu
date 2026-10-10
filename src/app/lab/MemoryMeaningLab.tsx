@@ -93,7 +93,7 @@ export function MemoryMeaningLab() {
     transcript, memoryId, highlightedWords: [],
     // An unassessed account starts reading while the photo is chosen. An explicit
     // fallback or a completed/manual reading is carried without another API call.
-    ...((reading || error || pending) ? { memoryAssignment: assignment } : {}),
+    ...((reading || error) ? { memoryAssignment: assignment } : {}),
   } });
   return <main style={{ minHeight: "100dvh", background: "#edf0eb", color: INK, padding: "80px clamp(18px, 4vw, 64px) 56px", boxSizing: "border-box" }}>
     <PageHeader layout="absolute" />
@@ -181,7 +181,7 @@ export function MemoryMeaningLab() {
           </label>)}
           <p>moving a slider switches to a manual study. mixedness is retained in the reading; it does not add random spikes.</p>
         </details>
-        <PillButton label={pending ? "continue with a neutral form" : "take it to the water"} onClick={go} disabled={!transcript.trim() || transcribing || recorder.isRecording} trailing="›" />
+        <PillButton label={pending ? "finding your memory’s form…" : "take it to the water"} onClick={go} disabled={pending || !transcript.trim() || transcribing || recorder.isRecording} trailing="›" />
       </section>
     </div>
     <style>{`.meaning-map:focus-visible { outline: 2px solid #657f73; outline-offset: 4px; } .meaning-families { grid-template-columns: repeat(4, minmax(0,1fr)); } .meaning-workspace { grid-template-columns: 1fr 1fr; } @media (max-width: 850px) { .meaning-families { grid-template-columns: repeat(2,minmax(0,1fr)); } .meaning-workspace { grid-template-columns: 1fr; } }`}</style>

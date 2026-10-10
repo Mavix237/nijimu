@@ -1,8 +1,9 @@
 import { CSSProperties, ReactNode } from "react";
 import { CHROME_GRAY } from "../lib/colors";
 import { PAGE_BG } from "./PuddleBackdrop";
-import { BODY_SIZE, BUTTON_SIZE, META, NOTE_SIZE, PROSE_SIZE, SANS, SANS_UI, SERIF, SERIF_CJK, SERIF_DISPLAY, TITLE } from "../lib/theme";
-import { PageHeader } from "./PageHeader";
+import { BODY_SIZE, BUTTON_SIZE_SM, INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SANS_UI, SERIF, SERIF_CJK, TITLE, TRANSCRIPT, TRANSCRIPT_HIGHLIGHT } from "../lib/theme";
+import { CAPTION_TITLE_GAP, CAPTION_TITLE_STYLE, CAPTION_YEAR_STYLE } from "./PuddleDiveGallery";
+import { PAGE_HEADER_MARK, PageHeader } from "./PageHeader";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
 
@@ -51,6 +52,70 @@ function Specimen({
   );
 }
 
+/** The highlight step's wash, inset the way the prompt draws it. */
+function Marked({ children }: { children: ReactNode }) {
+  return (
+    <span style={{ position: "relative", display: "inline-block" }}>
+      <span
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          top: 2,
+          bottom: 2,
+          background: TRANSCRIPT_HIGHLIGHT,
+          zIndex: 0,
+        }}
+      />
+      <span style={{ position: "relative", zIndex: 1 }}>{children}</span>
+    </span>
+  );
+}
+
+/** A short run of the pond transcript, one phrase lifted the way a drag does. */
+function TranscriptSample() {
+  const words = "I keep coming back to that summer. Not to him, exactly — but to who I was when I was around him.".split(/\s+/);
+  const lifted = new Set([5, 6]);
+
+  return (
+    <p
+      style={{
+        ...TRANSCRIPT,
+        width: "100%",
+        margin: 0,
+        color: CHROME_GRAY,
+        textAlign: "center",
+      }}
+    >
+      {words.map((word, index) => (
+        <span
+          key={index}
+          style={{
+            position: "relative",
+            display: "inline-block",
+            marginRight: index < words.length - 1 ? "0.3em" : 0,
+          }}
+        >
+          {lifted.has(index) && (
+            <span
+              style={{
+                position: "absolute",
+                left: -2,
+                right: -2,
+                top: 2,
+                bottom: 2,
+                background: TRANSCRIPT_HIGHLIGHT,
+                zIndex: 0,
+              }}
+            />
+          )}
+          <span style={{ position: "relative", zIndex: 1 }}>{word}</span>
+        </span>
+      ))}
+    </p>
+  );
+}
+
 const StopIcon = ({ fill }: { fill: string }) => (
   <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden>
     <rect x="4" y="4" width="12" height="12" rx="2" fill={fill} />
@@ -85,7 +150,7 @@ export function StyleGuidePage() {
             textTransform: "lowercase",
           }}
         >
-          buttons and labels
+          buttons and type
         </p>
 
         <section style={{ ...SECTION, marginBottom: 72 }}>
@@ -94,7 +159,7 @@ export function StyleGuidePage() {
               fontFamily: SERIF,
               fontSize: NOTE_SIZE,
               fontWeight: 400,
-              color: "#acacac",
+              color: META.color,
               letterSpacing: "0.04em",
               textTransform: "lowercase",
               margin: 0,
@@ -109,22 +174,26 @@ export function StyleGuidePage() {
             <PillButton label="record" onClick={noop} />
           </Specimen>
 
+          <Specimen name="primary, sentence case" note="instruction dialogs">
+            <PillButton label="Allow microphone & record" onClick={noop} transform="none" />
+          </Specimen>
+
           <Specimen name="primary disabled">
             <PillButton label="continue" onClick={noop} disabled trailing="›" />
           </Specimen>
 
           <Specimen name="secondary" note="PillButton outline">
-            <PillButton label="view all memories" onClick={noop} variant="outline" />
-            <PillButton label="polish" onClick={noop} variant="outline" trailing="✦" />
             <PillButton label="show sample transcript" onClick={noop} variant="outline" />
+            <PillButton label="record again" onClick={noop} variant="outline" />
+            <PillButton label="exit to landing page" onClick={noop} variant="outline" />
           </Specimen>
 
           <Specimen name="secondary disabled">
-            <PillButton label="polish" onClick={noop} variant="outline" disabled trailing="✦" />
+            <PillButton label="show sample transcript" onClick={noop} variant="outline" disabled />
           </Specimen>
 
           <Specimen name="dark primary" note="PillButton dark" ground="#1c1c1e">
-            <PillButton label="click to record" onClick={noop} variant="dark" />
+            <PillButton label="record" onClick={noop} variant="dark" />
             <PillButton
               label="stop"
               onClick={noop}
@@ -143,6 +212,8 @@ export function StyleGuidePage() {
 
           <Specimen name="text only" note="TextButton / Switzer">
             <TextButton label="save memory" onClick={noop} />
+            <TextButton label="see it among the others" onClick={noop} />
+            <TextButton label="Skip to sample transcript" onClick={noop} trailing="››" />
             <TextButton label="save memory" onClick={noop} disabled />
           </Specimen>
 
@@ -199,26 +270,27 @@ export function StyleGuidePage() {
               fontFamily: SERIF,
               fontSize: NOTE_SIZE,
               fontWeight: 400,
-              color: "#acacac",
+              color: META.color,
               letterSpacing: "0.04em",
               textTransform: "lowercase",
               margin: 0,
             }}
           >
-            labels
+            type
           </h2>
 
           <Specimen name="wordmark" note="PageHeader">
             <span
               style={{
                 fontFamily: SERIF_CJK,
-                fontSize: 12,
-                letterSpacing: "0.16px",
+                fontSize: PAGE_HEADER_MARK.fontSize,
+                letterSpacing: PAGE_HEADER_MARK.letterSpacing,
+                lineHeight: 1.5,
                 color: CHROME_GRAY,
                 textTransform: "lowercase",
                 display: "flex",
                 alignItems: "center",
-                gap: 12,
+                gap: PAGE_HEADER_MARK.gap,
               }}
             >
               <span>滲む</span>
@@ -226,33 +298,60 @@ export function StyleGuidePage() {
             </span>
           </Specimen>
 
-          <Specimen name="field" note="slider / control">
-            <span
+          <Specimen name="title" note="TITLE, Exposure Trial">
+            <span style={{ ...TITLE, color: CHROME_GRAY }}>
+              What's been lingering on your mind?
+            </span>
+          </Specimen>
+
+          <Specimen name="caption" note="memory name and year">
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", width: "100%" }}>
+              <p style={{ ...CAPTION_TITLE_STYLE, marginBottom: CAPTION_TITLE_GAP }}>the light on a wall</p>
+              <p style={CAPTION_YEAR_STYLE}>2003</p>
+            </div>
+          </Specimen>
+
+          <Specimen name="instruction" note="INSTRUCTION_SIZE">
+            <p
               style={{
-                fontFamily: SANS,
-                fontSize: 12,
-                color: "#8C8C8C",
+                margin: 0,
+                width: "100%",
+                textAlign: "center",
+                fontFamily: SERIF,
+                fontWeight: 400,
+                fontSynthesis: "none",
+                fontSize: INSTRUCTION_SIZE,
+                lineHeight: 1.45,
+                color: CHROME_GRAY,
+              }}
+            >
+              each memory already has a shape.
+              <br />
+              open your hands, and let these words find theirs.
+            </p>
+          </Specimen>
+
+          <Specimen name="highlight" note="BODY_SIZE">
+            <div
+              style={{
+                width: "100%",
+                textAlign: "center",
+                fontFamily: SERIF,
+                fontSize: BODY_SIZE,
+                lineHeight: 1.5,
+                color: CHROME_GRAY,
                 textTransform: "lowercase",
               }}
             >
-              warmth
-            </span>
+              <p style={{ margin: 0 }}>
+                drag to <Marked>highlight</Marked> the words
+              </p>
+              <p style={{ margin: 0 }}>that touch you the most.</p>
+            </div>
           </Specimen>
 
-          <Specimen name="field value">
-            <span
-              style={{
-                fontFamily: SANS,
-                fontSize: 12,
-                color: "#8C8C8C",
-              }}
-            >
-              42%
-            </span>
-          </Specimen>
-
-          <Specimen name="meta" note="uppercase META">
-            <span style={META}>Member Since</span>
+          <Specimen name="transcript" note="TRANSCRIPT, Exposure Trial Plus">
+            <TranscriptSample />
           </Specimen>
 
           <Specimen name="hint" note="NOTE_SIZE">
@@ -268,52 +367,56 @@ export function StyleGuidePage() {
             </span>
           </Specimen>
 
-          <Specimen name="instruction" note="BODY_SIZE">
+          <Specimen name="aside" note="NOTE_SIZE, Switzer">
             <span
               style={{
-                fontFamily: SERIF,
-                fontSize: BODY_SIZE,
-                lineHeight: 1.5,
+                fontFamily: SANS,
+                fontSize: NOTE_SIZE,
+                color: CHROME_GRAY,
+                opacity: 0.7,
+              }}
+            >
+              drag across to grow it
+            </span>
+          </Specimen>
+
+          <Specimen name="field" note="slider / control">
+            <span
+              style={{
+                fontFamily: SANS,
+                fontSize: NOTE_SIZE,
                 color: CHROME_GRAY,
                 textTransform: "lowercase",
               }}
             >
-              drag to highlight the words that touch you the most.
+              warmth
             </span>
           </Specimen>
 
-          <Specimen name="title" note="TITLE">
-            <span
-              style={{
-                ...TITLE,
-                color: CHROME_GRAY,
-              }}
-            >
-              What's been lingering on your mind?
-            </span>
-          </Specimen>
-
-          <Specimen name="display" note="PROSE_SIZE">
-            <span
-              style={{
-                fontFamily: SERIF_DISPLAY,
-                fontSize: PROSE_SIZE,
-                fontWeight: 400,
-                lineHeight: 1.6,
-                letterSpacing: "0.02em",
-                color: "#2D2727",
-              }}
-            >
-              the hallway still smelled like rain
-            </span>
-          </Specimen>
-
-          <Specimen name="button label" note="BUTTON_SIZE">
+          <Specimen name="field value">
             <span
               style={{
                 fontFamily: SANS,
-                fontSize: BUTTON_SIZE,
-                letterSpacing: "0.01em",
+                fontSize: NOTE_SIZE,
+                color: CHROME_GRAY,
+              }}
+            >
+              42%
+            </span>
+          </Specimen>
+
+          <Specimen name="meta" note="uppercase META">
+            <span style={META}>Member Since</span>
+          </Specimen>
+
+          <Specimen name="button label" note="BUTTON_SIZE_SM">
+            <span
+              style={{
+                fontFamily: SANS,
+                fontSize: BUTTON_SIZE_SM,
+                fontWeight: 400,
+                lineHeight: 1.5,
+                letterSpacing: 0,
                 color: "#7b7b87",
                 textTransform: "lowercase",
               }}
@@ -323,14 +426,15 @@ export function StyleGuidePage() {
             <span
               style={{
                 fontFamily: SANS_UI,
-                fontSize: BUTTON_SIZE,
+                fontSize: BUTTON_SIZE_SM,
                 fontWeight: 300,
-                letterSpacing: "0.03em",
+                lineHeight: 1.5,
+                letterSpacing: 0,
                 color: "#7b7b87",
                 textTransform: "lowercase",
               }}
             >
-              click to record
+              record
             </span>
           </Specimen>
         </section>

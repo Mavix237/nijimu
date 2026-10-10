@@ -40,8 +40,43 @@ export const FIELD_PLACES: FieldPlace[] = [
 /** Which place the i-th seated memory takes (a fixed shuffle, so the near places are not all the oldest). */
 export const FIELD_ORDER = [3, 0, 7, 1, 9, 5, 2, 8, 4, 6];
 
+/**
+ * A memory's place in the field. The first ten keep the hand-set places.
+ * Further memories — the live gallery holds more than the lab's ten — sit
+ * on a looser ring, deeper, so they stay in the field without crowding the ten.
+ */
+export function fieldPlace(i: number): FieldPlace {
+  if (i >= 0 && i < FIELD_ORDER.length) return FIELD_PLACES[FIELD_ORDER[i]];
+  const k = Math.max(0, i - FIELD_ORDER.length);
+  const angle = k * 2.399963;
+  const ring = 1 + Math.floor(k / 6);
+  const radius = 0.18 + (k % 5) * 0.035;
+  return {
+    sx: Math.cos(angle) * radius,
+    sy: Math.sin(angle) * radius * 0.7,
+    z: 2.5 + ring * 0.4,
+  };
+}
+
 /** The apex's own distance: a seat this deep is the apex's size. */
 export const FIELD_FOCAL = 1.15;
+
+/** Distance step and constellation share the same deliberately long depth range.
+ * Existing memories without a distance choice retain their curated seats. */
+export function memoryDepth(haze: number): number {
+  const h = Number.isFinite(haze) ? Math.max(0, Math.min(1, haze)) : 0;
+  return FIELD_FOCAL + 22 * h * h;
+}
+export function memoryFieldPlace(i: number, vividness?: number): FieldPlace {
+  const place = fieldPlace(i);
+  if (vividness === undefined || !Number.isFinite(vividness)) return place;
+  const z = memoryDepth(1 - vividness);
+  // Preserve the world position across the view as the memory moves in depth.
+  return { sx: place.sx * place.z / z, sy: place.sy * place.z / z, z };
+}
+export function fieldVisibility(depth: number): number {
+  return 1 - smoothstep(8, 20, depth);
+}
 
 export interface FieldCamera {
   /** Across and up, in fractions of the view (the parallax). */
@@ -96,12 +131,45 @@ export function fieldSeat(place: FieldPlace, cam: FieldCamera, viewport: { w: nu
     y: y * viewport.h,
     size: frame.size * scale,
     scale,
-    opacity: (1 - 0.3 * haze) * nearFade,
+    opacity: (1 - 0.3 * haze) * nearFade * fieldVisibility(depth),
     blurPx: (1.4 * Math.pow(haze, 1.6) + nearBlur) / scale,
     haze,
     order: Math.round((6 - depth) * 100),
     depth,
   };
+}
+
+/** A roomy staging of the gallery around the memory being handled. Positions
+ * are fixed in this preview's world; following the memory moves neighbours
+ * outward and past the eye. The open centre stays clear throughout the dolly. */
+export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDepth: number, viewport: { w: number; h: number }): FieldSeat {
+  // Use the gallery's own irregular arrangement, including saved depth. No
+  // new orbit, angular shuffle or rings: amplify its existing depth spacing.
+  const z = 2.4 + place.z * 2.8;
+  const frame = carouselFrame(viewport.w, viewport.h);
+  const clearance = viewport.h * .225 + frame.size * FIELD_FOCAL / z / 2;
+  let x = place.sx * viewport.w;
+  let y = place.sy * viewport.h;
+  // Only a neighbour inside the handled form's space needs moving. Slide it
+  // along its dominant axis, preserving the other coordinate and the rest
+  // of the gallery arrangement instead of putting every memory on a ring.
+  if (Math.abs(x) < clearance && Math.abs(y) < clearance) {
+    if (Math.abs(x) > Math.abs(y) && viewport.w > viewport.h) x = (Math.sign(x) || 1) * clearance;
+    else y = (Math.sign(y) || 1) * clearance;
+  }
+  const dispersed = {
+    sx: x / viewport.w,
+    sy: y / viewport.h,
+    z,
+  };
+  // Keep depth references in view through the middle of the gesture. The
+  // final half accelerates past them, still clearing the field at full haze.
+  const travel = Math.max(0, chosenDepth - FIELD_FOCAL);
+  const follow = travel * Math.sqrt(Math.min(1, travel / 22));
+  const seat = fieldSeat(dispersed, { x: 0, y: 0, z: follow }, viewport);
+  // The handled form is centred, whereas the chronological gallery's apex is
+  // slightly higher. Keep this preview's empty centre on the actual form.
+  return { ...seat, y: seat.y + viewport.h * .5 - carouselFrame(viewport.w, viewport.h).apexY };
 }
 
 /** The same place, deeper and not yet seen — where a memory that had no seat on the curve surfaces from. */

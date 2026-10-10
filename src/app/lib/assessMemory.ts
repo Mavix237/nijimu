@@ -1,8 +1,10 @@
+import { sampleAssignment, SAMPLE_MODEL, SAMPLE_ASSESSMENT } from "../data/sampleMemory";
 import { ASSESSMENT_VERSION, isAssessment, validTranscript, type MemoryAssessment } from "../../../shared/memory-assessment.mjs";
 export interface AssessmentResult { assessment: MemoryAssessment | null; model?: string; error: string | null }
 /** Full transcript only; photo, audio, and geometry never go to this endpoint. */
 export async function requestMemoryAssessment(transcript: string, signal?: AbortSignal): Promise<AssessmentResult> {
   if (!validTranscript(transcript)) return { assessment: null, error: "Add a memory of up to 5000 characters." };
+  if (sampleAssignment(transcript)) return { assessment: SAMPLE_ASSESSMENT, model: SAMPLE_MODEL, error: null };
   const controller = new AbortController();
   const abort = () => controller.abort();
   if (signal?.aborted) abort();

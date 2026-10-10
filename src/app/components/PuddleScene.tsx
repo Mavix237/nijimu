@@ -16,7 +16,7 @@ import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PuddleDiveGallery, type DiveGalleryItem, type DivePhase } from "./PuddleDiveGallery";
 import { INK_ENTRY, inkGrowth } from "../lib/landingTransition";
 import { DiveGalleryHost, draftAsSaved, type NamingSession } from "./NamingRim";
-import { NameMemoryPage } from "./NameMemoryPage";
+import { NameMemoryPage } from "../archive/shape-flow/NameMemoryPage";
 import { buildArchive } from "../lib/archive";
 
 /*
@@ -1204,7 +1204,7 @@ export function PuddleScene({
     if (galleryOnly) return <PuddleDiveGallery items={galleryItems} activeIdx={galleryAt}
       phase="gallery" reducedMotion={reducedMotionPref} inkArrival={inkArrival} pondDeparture={pondDeparture} hideHeader={hideGalleryHeader}
       onNavigate={delta => setGalleryIdx(i => Math.max(0, Math.min(galleryItems.length - 1, i + delta)))}
-      onExit={() => onGalleryExit?.()} onOverscrollExit={onOverscrollExit}
+      onOverscrollExit={onOverscrollExit}
       onToggleGrid={onToggleGrid} toggleIcon={toggleIcon} />;
     return <BlobScene onNewMemory={onNewMemory} hideAnnotations={hideAnnotations} />;
   }
@@ -1448,7 +1448,7 @@ export function PuddleScene({
             zIndex: 31,
           }}
         >
-          <PageHeader layout="absolute" link={false} />
+          <PageHeader layout="absolute" />
         </div>
       )}
 
@@ -1518,8 +1518,8 @@ export function PuddleScene({
               setGalleryIdx(next);
               diveControlsRef.current?.ripple(next);
             },
-            onExit: () => diveControlsRef.current?.close(),
-            onOverscrollExit: onOverscrollExit ?? (() => diveControlsRef.current?.close()),
+            onExit: galleryOnly ? undefined : () => diveControlsRef.current?.close(),
+            onOverscrollExit: onOverscrollExit ?? (galleryOnly ? undefined : () => diveControlsRef.current?.close()),
             onToggleGrid,
             toggleIcon,
             arrival: galleryCarried ? "carried" : "resolve",
@@ -1529,7 +1529,6 @@ export function PuddleScene({
     </div>
   );
 }
-
 
 
 

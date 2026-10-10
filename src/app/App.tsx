@@ -1,4 +1,4 @@
-import { createBrowserRouter, Outlet, RouterProvider, useLocation, useNavigate } from "react-router";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useNavigate } from "react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CHROME_GRAY } from "./lib/colors";
 import { HomePage } from "./components/HomePage";
@@ -7,11 +7,9 @@ import {
   CAROUSEL_PATH,
   MEMORY_FIELD_PATH,
   MEMORY_POND_PATH,
+  DESCENT_PATH,
   NAMING_PATH,
   RECORD_START_PATH,
-  SHAPE_DISTANCE_PATH,
-  SHAPE_FEELING_PATH,
-  SHAPE_GROW_PATH,
   TRANSCRIPT_PATH,
 } from "./lib/routes";
 import {
@@ -21,7 +19,6 @@ import {
   useLandingReturn,
   type LandingReturnPhase,
 } from "./lib/landingReturn";
-import { ShapeGrowPage } from "./components/ShapeGrowPage";
 import { MemorySavedPage } from "./components/MemorySavedPage";
 import { ProfilePanel } from "./components/ProfilePanel";
 import { MemoryScrollPage } from "./components/MemoryScrollPage";
@@ -31,7 +28,7 @@ import { EditColorPage } from "./components/EditColorPage";
 import { EditTexturePage } from "./components/EditTexturePage";
 import { StyleGuidePage } from "./components/StyleGuidePage";
 import { MemoryMeaningLab } from "./lab/MemoryMeaningLab";
-import { DescentPrototype } from "./lab/DescentPrototype";
+import { DescentFlow, DescentPrototype } from "./lab/DescentPrototype";
 import { FilmPreview } from "./lab/FilmPreview";
 import { VesselPreview } from "./lab/VesselPreview";
 import { VesselGalleryPreview } from "./lab/VesselGalleryPreview";
@@ -107,6 +104,12 @@ function RootLayout() {
   );
 }
 
+// Old bookmarks enter the current, single-canvas flow with their carried draft.
+function ArchivedShapeRedirect() {
+  const { state } = useLocation();
+  return <Navigate to={DESCENT_PATH} state={state} replace />;
+}
+
 const router = createBrowserRouter([
   { path: "/style", Component: StyleGuidePage },
   { path: "/lab/descent", Component: DescentPrototype },
@@ -116,9 +119,9 @@ const router = createBrowserRouter([
     Component: RootLayout,
     children: [
       {
-        /* Landing, the dive carousel, the pond, recording, transcript, and
+        /* Landing, the dive carousel, the pond, and
            naming share one layout: Enter preloads the gallery behind the ink,
-           recording and transcript keep the pond mounted, and saving a memory
+           saving a memory
            turns the naming rim into that same gallery in place. The children
            render nothing themselves; LandingPage reads the path. */
         Component: LandingPage,
@@ -126,17 +129,23 @@ const router = createBrowserRouter([
           { path: "/", element: null },
           { path: CAROUSEL_PATH, element: null },
           { path: MEMORY_POND_PATH, element: null },
-          { path: RECORD_START_PATH, element: null },
-          { path: TRANSCRIPT_PATH, element: null },
           { path: NAMING_PATH, element: null },
         ],
       },
       { path: MEMORY_FIELD_PATH, Component: HomePage },
       { path: "/lab/gallery", Component: VesselGalleryPreview },
       { path: "/lab/meaning", Component: MemoryMeaningLab },
-      { path: SHAPE_GROW_PATH, Component: ShapeGrowPage },
-      { path: SHAPE_FEELING_PATH, Component: ShapeGrowPage },
-      { path: SHAPE_DISTANCE_PATH, Component: ShapeGrowPage },
+      {
+        // Recording, highlighting and photo selection share one living pond.
+        // The parent canvas is retained when only this child route changes.
+        Component: DescentFlow,
+        children: [
+          { path: RECORD_START_PATH, element: null },
+          { path: TRANSCRIPT_PATH, element: null },
+          { path: DESCENT_PATH, element: null },
+        ],
+      },
+      { path: "/record/shape/:step", Component: ArchivedShapeRedirect },
       { path: "/record/saved", Component: MemorySavedPage },
       { path: "/memory/scroll", Component: MemoryScrollPage },
       { path: "/memory/revisit", Component: RevisitMemoryPage },

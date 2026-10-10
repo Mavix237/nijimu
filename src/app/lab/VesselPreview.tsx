@@ -1,8 +1,10 @@
+import { oklchToHex } from "../lib/oklch";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
 import { META, NOTE_SIZE, SANS, SERIF, TITLE } from "../lib/theme";
+import { PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { FILM_LOOK_DEFAULT, FILM_LOOK_GLSL, filmLookUniforms, prepareFilmPhoto, setFilmLook, type FilmLook } from "../lib/filmLook";
 import { SHEET_GLSL, STOCKS, STRIP_FACE_GLSL, STRIP_GLSL, STRIP_MM, createEdgePrint, setStock, sheetUniforms, stockHex } from "./filmStrip";
@@ -114,6 +116,11 @@ export interface VesselTune {
   // refraction (the second glass look)
   envAbove: number; envBelow: number; horizon: number; horizonSoft: number;
   bend: number; glassSoft: number; bodyAlpha: number; thickDark: number; highlight: number;
+  // A saved feeling stains selected walls without adding opacity.
+  memoryTintHue: number; memoryTintChroma: number; memoryTintAmount: number;
+  /* …and its highlights carry that colour (memoryFlash 1, set with the memory's
+     colour; 0 leaves them the flow's own), swelling into it every so often */
+  memoryFlash: number; flashEvery: number; flashGain: number;
   // light
   keyAzimuth: number; keyElevation: number; keyIntensity: number;
   // two catches of the room, sliding slowly over the glass
@@ -167,6 +174,8 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   mono: 0, negative: 0,
   envAbove: 1, envBelow: 0.84, horizon: 0.06, horizonSoft: 0.35,
   bend: 0.75, glassSoft: 0.64, bodyAlpha: 0.85, thickDark: 0.21, highlight: 0.34,
+  memoryTintHue: 0, memoryTintChroma: 0, memoryTintAmount: 0,
+  memoryFlash: 0, flashEvery: 4.5, flashGain: 1.1,
   keyAzimuth: -32, keyElevation: 64, keyIntensity: 1.08,
   flowGain: 1.21, flowSpeed: 0.8, flowSoft: 0.3, flowLift: 0.49, flowRise: 0.35, flowApart: 2.15,
   flowFeather: 0.75, flowSheer: 0.3, flowStock: 1, flowTint: 0.25,
@@ -883,6 +892,8 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform float uThickness;
   uniform float uSeed;
   uniform float uWarmth;
+  uniform vec3 uMemoryTint;
+  uniform float uMemoryTintAmount;
   uniform vec3 uPatch[3];
   /* distance (each already scaled by the haze): the view through the glass smeared
      further, the rim lines and the gathering of alpha at the silhouette letting go,
@@ -931,6 +942,12 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform vec3 uFlowCore;
   uniform vec3 uFlowEdgeA;
   uniform vec3 uFlowEdgeB;
+  /* the memory's colour in the highlights: how much (0 none), that colour at
+     full brightness, the beat between flashes (s) and how far a flash lifts them */
+  uniform float uFlash;
+  uniform vec3 uFlashColor;
+  uniform float uFlashEvery;
+  uniform float uFlashGain;
   /* the surface's fine texture: which (0 none, 1 satin, 2 sandblast, 3 brushed,
      4 ripple, 5 hammered), how far it tilts the surface, its grain (1 as drawn,
      larger finer), and the matte veil it leaves on the glass */
@@ -1057,6 +1074,14 @@ const GLASS_COMMON_GLSL = /* glsl */ `
      Each turns, and its height rises and falls on a slower beat than the turn,
      the two out of step — so a light climbs as it comes round instead of
      staying on one line. The glass lights where it reflects that way. */
+  /* A flash of the memory's colour in light i: a quick swell and a long fall,
+     on its own beat (each light a little slower than the last, and set off by
+     the vessel's seed so a gallery of them never flashes together). */
+  float flashAt(float i) {
+    float period = max(uFlashEvery, .5) * (1.0 + .37 * i);
+    float t = mod(uTime + i * 1.9 + uSeed * 3.1, period);
+    return t < .22 ? smoothstep(0.0, .22, t) : exp(-(t - .22) / .75);
+  }
   vec3 catchLight(vec3 n, vec3 v) {
     if (uFlowGain <= 0.0) return vec3(0.0);
     vec3 refl = normalize(reflect(-v, n));
@@ -1077,7 +1102,10 @@ const GLASS_COMMON_GLSL = /* glsl */ `
       // the core takes the stock's base, the fall-off the light's own end of it
       vec3 rim = i == 0 ? uFlowEdgeA : uFlowEdgeB;
       vec3 tint = mix(rim, uFlowCore, core / max(core + tail * uFlowFeather, 1e-3));
-      sum += tint * spot * (i == 0 ? 1.0 : .82);
+      // the memory's colour: always a little in the light, deepest and brightest at a flash
+      float flash = uFlash * flashAt(float(i));
+      tint = mix(tint, uFlashColor, uFlash * (.4 + .6 * flashAt(float(i))));
+      sum += tint * spot * (1.0 + uFlashGain * flash) * (i == 0 ? 1.0 : .82);
     }
     return sum * uFlowGain * (1.0 - uHazeEdge);
   }
@@ -1136,6 +1164,17 @@ const GLASS_COMMON_GLSL = /* glsl */ `
     }
     return clamp(breath, 0.0, 1.0) * uFrostStrength * (.7 + .3 * gNoise(vModel * 9.0 - uSeed));
   }
+  // A broad stain fixed to the glass: clear through the center and on the
+  // opposite wall, faintly colored on one shoulder and its grazing edges.
+  vec3 feelingTint(vec3 color, float facing) {
+    if (uMemoryTintAmount <= 0.0) return color;
+    vec3 dir = normalize(vModel + vec3(.001));
+    float stainMask = smoothstep(-.15, .65, dot(dir, normalize(vec3(.8, .55, .15)))
+      + (gNoise(vModel * 1.3) - .5) * .25);
+    float coverage = stainMask * (.18 + .82 * pow(clamp(1.0 - facing, 0.0, 1.0), .8)) * uMemoryTintAmount;
+    vec3 dye = uMemoryTint / max(.001, max(uMemoryTint.r, max(uMemoryTint.g, uMemoryTint.b)));
+    return color * mix(vec3(1.0), dye, coverage);
+  }
 `;
 
 /* Thin clear glass, from the descent's formFragment: the rim is light and
@@ -1154,7 +1193,7 @@ export const glassFragment = /* glsl */ `
     // against the paper the rim is a cool grey, as the landing blobs are; the body a paler one
     vec3 rimColor = mix(vec3(.64, .69, .72), vec3(.70, .68, .66), uWarmth);
     vec3 body = mix(vec3(.84, .87, .88), vec3(.87, .86, .85), uWarmth);
-    vec3 color = mix(body, rimColor, fresnel);
+    vec3 color = feelingTint(mix(body, rimColor, fresnel), facing);
     float alpha = (.09 + .6 * fresnel * uRim) * thickness;
     // at a distance the edge lets go: the alpha no longer gathers at the silhouette
     alpha = mix(alpha, .2 * thickness, uHazeEdge * .6);
@@ -1277,7 +1316,7 @@ export const glassRefractFragment = /* glsl */ `
     // at a grazing angle the surface reflects the room instead
     vec3 refl = env(reflect(-v, nt).y);
     float mirror = pow(g, 4.0) * uRim * .6 * (1.0 - uHazeEdge * .7);
-    vec3 color = mix(body, refl, mirror);
+    vec3 color = feelingTint(mix(body, refl, mirror), facing);
     // the live bubble's rim: a dark line just inside the silhouette (its rimPower
     // 3.3) — here the frame itself, darkened, so it still reads as glass
     float rimLine = pow(g, 3.3) * uRim * (1.0 - uHazeEdge * .85);
@@ -1605,6 +1644,8 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uReflect: { value: 0 },
     uGroundY: { value: 0 },
     uReveal: { value: 1 },
+    uMemoryTint: { value: new THREE.Color("#ffffff") },
+    uMemoryTintAmount: { value: 0 },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
     uHazeWash: { value: 0 },
@@ -1636,6 +1677,10 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uFlowCore: { value: new THREE.Vector3(1, 1, 1) },
     uFlowEdgeA: { value: new THREE.Vector3(1, 1, 1) },
     uFlowEdgeB: { value: new THREE.Vector3(1, 1, 1) },
+    uFlash: { value: 0 },
+    uFlashColor: { value: new THREE.Vector3(1, 1, 1) },
+    uFlashEvery: { value: 4.5 },
+    uFlashGain: { value: 1.1 },
     uTexKind: { value: 0 },
     uTexAmount: { value: 0 },
     uTexScale: { value: 1 },
@@ -1720,9 +1765,20 @@ export function flowColors(stock: number, depth: number): { core: Rgb; a: Rgb; b
   return { core: tint(s.base, 0.5), a: tint(s.low, 1), b: tint(s.high, 1) };
 }
 
+/** The memory's colour as a light: its hue, a little deeper than the stain
+ *  (still the homescreen's dusty range), brought to full brightness. */
+export function flashColor(hue: number, stainChroma: number): Rgb {
+  const hex = oklchToHex({ l: .86, c: Math.min(.13, Math.max(.06, (stainChroma / .65) * 1.6)), h: hue });
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+  const top = Math.max(c[0], c[1], c[2], 1e-3);
+  return [c[0] / top, c[1] / top, c[2] / top];
+}
+
 /** The knobs written into a glass's uniforms. */
 export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   const { tune } = w;
+  u.uMemoryTintAmount.value = tune.memoryTintAmount ?? 0;
+  u.uMemoryTint.value.set(oklchToHex({ l: .86, c: tune.memoryTintChroma ?? 0, h: tune.memoryTintHue ?? 0 }));
   u.uHazePhoto.value = tune.haze * tune.hazePhoto;
   u.uHazeEdge.value = tune.haze * tune.hazeEdge;
   u.uHazeWash.value = tune.haze * tune.hazeWash;
@@ -1753,6 +1809,10 @@ export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   u.uFlowCore.value.fromArray(light.core);
   u.uFlowEdgeA.value.fromArray(light.a);
   u.uFlowEdgeB.value.fromArray(light.b);
+  u.uFlash.value = tune.memoryFlash ?? 0;
+  u.uFlashColor.value.fromArray(flashColor(tune.memoryTintHue ?? 0, tune.memoryTintChroma ?? 0));
+  u.uFlashEvery.value = tune.flashEvery ?? 4.5;
+  u.uFlashGain.value = tune.flashGain ?? 1.1;
   u.uTexKind.value = Math.round(tune.texKind);
   u.uTexAmount.value = tune.texAmount;
   u.uTexScale.value = tune.texScale;
@@ -2212,6 +2272,15 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "flowSheer", label: "sheer  (0 only lights what is behind)", min: 0, max: 1, step: 0.01 },
     { key: "flowTint", label: "colour depth", min: 0, max: 1, step: 0.01 },
   ] },
+  // the memory's colour (the colour step's pick; a memory brings its own): a stain on the glass, and the highlights
+  { group: "memory colour", knobs: [
+    { key: "memoryTintHue", label: "hue °", min: 0, max: 360, step: 1 },
+    { key: "memoryTintChroma", label: "chroma", min: 0, max: 0.12, step: 0.001 },
+    { key: "memoryTintAmount", label: "stain  (0 none)", min: 0, max: 1, step: 0.01 },
+    { key: "memoryFlash", label: "in the highlights  (0 none)", min: 0, max: 1, step: 0.01 },
+    { key: "flashEvery", label: "flash every  s", min: 1, max: 12, step: 0.1 },
+    { key: "flashGain", label: "flash strength", min: 0, max: 3, step: 0.01 },
+  ] },
   // the eye: orbiting, so the light on the form changes as it would walking round it
   { group: "camera", knobs: [
     { key: "pitch", label: "pitch °  (down on it … up at it)", min: PITCH_MIN, max: PITCH_MAX, step: 0.5 },
@@ -2517,6 +2586,7 @@ export function VesselPreview({ initial, onChange, onBack, backLabel = "back", y
           yaw0={yawProp === undefined ? undefined : (yawProp * Math.PI) / 180} />
       </Canvas>
 
+      <PageHeader layout="absolute" carousel={false} tone={topLuma < 0.55 ? "dark" : "light"} />
       {onBack
         ? <TextButton label={`← ${backLabel}`} onClick={onBack} style={{ position: "absolute", top: 22, left: 28, zIndex: 20, color: ink }} />
         : <p style={{ ...META, position: "absolute", top: 26, left: 28, margin: 0, zIndex: 20, color: ink }}>lab — vessel</p>}

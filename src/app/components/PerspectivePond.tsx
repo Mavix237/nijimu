@@ -356,6 +356,53 @@ const ringFragment = /* glsl */ `
   }
 `;
 
+// The ring's shadow on the water. The light is above and a little behind, so
+// the shadow falls toward the eye (down the screen) and slightly right, as far
+// as the ring rides above the surface: at rest it sits apart from the ring,
+// soft and faint; a touch brings the ring down onto it, and the two meet sharp.
+const SHADOW_DX = .01;
+const SHADOW_DZ = .035;
+const ringShadowVertex = /* glsl */ `
+  ${POND_WAVES_GLSL}
+  uniform vec3 uCenter;
+  uniform float uTap;
+  varying vec2 vLocal;
+  void main() {
+    vLocal = position.xy;
+    vec2 raw = uCenter.xz + vec2(position.x, -position.y);
+    // carried with the ring, as one piece (see ringVertex)
+    vec3 centre = rippleField(uCenter.xz);
+    vec2 xz = raw + centre.yz * ${RING_DRIFT};
+    vec3 field = rippleField(xz);
+    float swell = mix(swellFrom(centre, uCenter.xz), swellFrom(field, xz), ${RING_TILT});
+    // how high the ring rides, as a share of its resting float
+    float rest = mix(${RING_FLOAT}, ${RING_TOUCH}, uTap) / ${RING_FLOAT};
+    xz += vec2(${SHADOW_DX}, ${SHADOW_DZ}) * rest;
+    vec3 world = vec3(xz.x, swell * ${RING_HEIGHT} + .002, xz.y);
+    gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+  }
+`;
+const ringShadowFragment = /* glsl */ `
+  uniform float uProgress;
+  uniform float uOpacity;
+  uniform float uTap;
+  varying vec2 vLocal;
+  void main() {
+    float r = length(vLocal);
+    float d = abs(r - ${RING_RADIUS});
+    // the higher the ring, the wider and fainter its shade
+    float spread = mix(.07, .028, uTap);
+    float shade = exp(-pow(d / spread, 2.0)) * .8 + exp(-pow(d / (spread * 2.6), 2.0)) * .35;
+    float edge = 1.0 - smoothstep(.23, ${HALO_REACH}, d);
+    // the shadow of what is drawn: while a hold fills the arc, the rest is faint
+    float sweep = mod(1.57079632679 - atan(vLocal.y, vLocal.x), 6.28318530718) / 6.28318530718;
+    float holding = step(.001, uProgress);
+    float arc = mix(1.0, mix(.28, 1.0, step(sweep, uProgress)), holding);
+    float alpha = shade * edge * arc * mix(.07, .1, uTap) * uOpacity;
+    gl_FragColor = vec4(vec3(.24, .28, .3), alpha);
+  }
+`;
+
 interface PondProps {
   arrival: number;
   reducedMotion: boolean;
@@ -384,6 +431,7 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
   const trailAnchor = useRef<TrailAnchor | null>(null);
   const seenTouch = useRef(-1);
   const ring = useRef<THREE.Mesh>(null);
+  const ringShadow = useRef<THREE.Mesh>(null);
   const cursorFade = useRef(0);
   const tapAt = useRef(-99);
   const cursorLast = useMemo(() => new THREE.Vector3(0, .03, -4), []);
@@ -502,6 +550,7 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
     ringUniforms.uOpacity.value = fade;
     ringUniforms.uCenter.value.copy(cursorLast);
     if (mark) mark.visible = fade > .01;
+    if (ringShadow.current) ringShadow.current.visible = fade > .01;
     if (hint) {
       const reveal = hintRevealRef?.current ?? 0;
       const show = arrival * reveal * fade;
@@ -525,6 +574,11 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -900]}>
       <planeGeometry args={[2000, 2000]} />
       <shaderMaterial transparent vertexShader={vertexShader} fragmentShader={fragmentShader} uniforms={uniforms} />
+    </mesh>
+    <mesh ref={ringShadow} visible={false} renderOrder={2} frustumCulled={false}>
+      <ringGeometry args={[RING_RADIUS - HALO_REACH, RING_RADIUS + HALO_REACH, 192, 16]} />
+      <shaderMaterial transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
+        vertexShader={ringShadowVertex} fragmentShader={ringShadowFragment} uniforms={ringUniforms} />
     </mesh>
     <mesh ref={ring} visible={false} renderOrder={3} frustumCulled={false}>
       <ringGeometry args={[RING_RADIUS - HALO_REACH, RING_RADIUS + HALO_REACH, 192, 16]} />

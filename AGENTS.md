@@ -1354,3 +1354,10 @@ cast from .4 to .06; naming/gallery use their neutral room plus this same stain.
 Standalone vessel studies default to zero stain. Rhythm's open-palm roll remains
 unchanged; pinch-and-slide, a finger fan, and two-hand twisting were suggested as
 alternatives, pending the user's choice.
+
+**Highlighted phrases (2026-10-10).** A highlight can be a run of words.
+`PuddleTranscriptPage` saves each run of neighbouring highlighted words as one
+phrase in `highlightedWords` and draws it as one continuous band; the curated
+`HIGHLIGHTS` in `memoryData.ts` mix single words with short phrases.
+`TranscriptTrail` matches each phrase in order in the transcript; finding any
+of its words inks the whole phrase on one line at its first unobstructed cell.

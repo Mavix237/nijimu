@@ -20,6 +20,18 @@
         "5181"
       ],
       "port": 5181
+    },
+    {
+      "name": "dev-alt2",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "exec",
+        "vite",
+        "--port",
+        "5182",
+        "--strictPort"
+      ],
+      "port": 5182
     }
   ]
 }

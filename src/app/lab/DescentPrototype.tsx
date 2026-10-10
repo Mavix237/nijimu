@@ -757,6 +757,8 @@ interface StageProps {
   /** The button laid over the hanging strip; kept on it as it sways. */
   pickRef: RefObject<HTMLButtonElement | null>;
   captionRef: RefObject<HTMLDivElement | null>;
+  /** The hold line, kept beside the strip as it floats. */
+  hintRef: RefObject<HTMLParagraphElement | null>;
   onFallStart: () => void;
   onSettled: () => void;
   onDescend: () => void;
@@ -777,7 +779,7 @@ function useKept<T>(make: () => T): T {
   return kept.current;
 }
 
-function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onRewound }: StageProps) {
+function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onRewound }: StageProps) {
   const { camera, size, gl, scene } = useThree();
   const time = useRef(0);
   const jumped = useRef(false);
@@ -1599,6 +1601,26 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       scratch.v.copy(body.position).add(scratch.forward.set(0, -0.78 * body.scale.x - 0.25, 0)).project(camera);
       caption.style.transform = `translate(-50%, 0) translate(${((scratch.v.x * 0.5 + 0.5) * size.width).toFixed(1)}px, ${((-scratch.v.y * 0.5 + 0.5) * size.height).toFixed(1)}px)`;
     }
+
+    /* The hold line sits beside the photo, level with it, wherever it has floated:
+       to its right, or to its left where the right has no room. */
+    const hint = hintRef.current;
+    const strip = film.current;
+    if (hint && strip?.visible) {
+      strip.updateMatrixWorld();
+      let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        scratch.v.set(sx * FILM_LENGTH * 0.5, sy * FILM_WIDTH * 0.5, 0).applyMatrix4(strip.matrixWorld).project(camera);
+        const x = (scratch.v.x * 0.5 + 0.5) * size.width, y = (-scratch.v.y * 0.5 + 0.5) * size.height;
+        left = Math.min(left, x); right = Math.max(right, x);
+        top = Math.min(top, y); bottom = Math.max(bottom, y);
+      }
+      const gap = 28, w = hint.offsetWidth;
+      const onRight = right + gap + w <= size.width - 24;
+      const x = onRight ? right + gap : Math.max(24, left - gap - w);
+      hint.style.transform = `translate(${x.toFixed(1)}px, ${((top + bottom) / 2).toFixed(1)}px) translateY(-50%)`;
+      hint.style.textAlign = onRight ? "left" : "right";
+    }
   });
 
   return <>
@@ -2043,6 +2065,7 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
   const captionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pickRef = useRef<HTMLButtonElement>(null);
+  const hintRef = useRef<HTMLParagraphElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [phase, setPhase] = useState<Phase>(resume ? "color" : FROM === "wrap" ? "wrapping" : "choose");
@@ -2309,7 +2332,7 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
       {ready && <Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
         onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
         dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
-        <Stage stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef}
+        <Stage stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef}
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
           onDescend={() => setPhase("descending")}
@@ -2398,7 +2421,7 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
       </div>
 
       {phase === "floating" && (
-        <button type="button" aria-label="hold to go under" aria-describedby="descent-hint"
+        <button type="button" aria-label="hold to pass through the picture" aria-describedby="descent-hint"
           disabled={assessmentPending}
           onPointerDown={(e) => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setHolding(true); }}
           onPointerUp={() => setHolding(false)}
@@ -2411,15 +2434,15 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
           style={{ position: "absolute", inset: 0, border: "none", outline: "none", background: "transparent",
             touchAction: "none", cursor: "default", zIndex: 5 }} />
       )}
-      <p id="descent-hint" aria-hidden style={{
-        position: "absolute", left: "50%", top: "50%", margin: 0,
-        transform: "translate(-50%, -50%) translateY(-20vh)",
-        width: "min(28em, 86vw)", textAlign: "center", pointerEvents: "none", zIndex: 6,
+      {/* beside the floating photo: the stage keeps it there (hintRef) */}
+      <p ref={hintRef} id="descent-hint" aria-hidden style={{
+        position: "absolute", left: 0, top: 0, margin: 0,
+        width: "max-content", maxWidth: "min(14em, 40vw)", pointerEvents: "none", zIndex: 6,
         color: CHROME_GRAY, fontFamily: SERIF, fontWeight: 400, fontSynthesis: "none",
         fontSize: INSTRUCTION_SIZE, lineHeight: 1.45,
         opacity: phase === "floating" ? 1 : 0, filter: phase === "floating" ? "none" : "blur(6px)",
         transition: "opacity 720ms ease, filter 720ms ease" }}>
-        {assessmentPending ? "finding your memory’s form…" : "hold to go under"}
+        {assessmentPending ? "finding your memory’s form…" : "hold to pass through the picture"}
       </p>
 
       {/* ── the four steps, under the water ── */}

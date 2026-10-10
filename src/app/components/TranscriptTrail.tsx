@@ -15,7 +15,9 @@ import { SANS } from "../lib/theme";
  * The words the memory's highlight step lifted out are italic and underlined,
  * in the darker ink of the memory's name in the caption, and are not part of the trail's fading: once
  * found, one holds at full ink for a while after the trail has moved on, then
- * washes out — it bleeds and spreads like ink let go in water.
+ * washes out — it bleeds and spreads like ink let go in water. A highlight can
+ * be a run of words ("orange peels"): finding any of its words writes the
+ * whole phrase on one line, in the cell where it begins.
  *
  * The memory's name and year, and the timeline, are blocks the words keep out
  * of: a cell whose word would land on one, or within AVOID_PAD of it, is
@@ -88,6 +90,14 @@ interface Visit {
   key: number;
 }
 
+/** A highlighted phrase found: written whole in the cell where it begins. */
+interface Inked extends Visit {
+  text: string;
+}
+
+/** Where a highlighted word's phrase begins in the transcript, and how many words it runs. */
+type PhraseAt = { start: number; length: number } | null;
+
 const wordStyle = (cell: number): CSSProperties => ({
   position: "absolute",
   left: `${(Math.floor(cell / ROWS) / COLS) * 100}%`,
@@ -112,13 +122,29 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
   const box = useRef<HTMLDivElement>(null);
   const [trail, setTrail] = useState<Visit[]>([]);
   /** Highlighted words found, each on its own clock until it has washed out. */
-  const [inked, setInked] = useState<Visit[]>([]);
+  const [inked, setInked] = useState<Inked[]>([]);
   const last = useRef<number | null>(null);
   const count = useRef(0);
 
   const words = useMemo(() => transcript.split(/[\s.,!?]+/).filter(Boolean), [transcript]);
-  const keys = useMemo(() => new Set(highlightedWords.map(bare).filter(Boolean)), [highlightedWords]);
-  const lifted = (cell: number) => keys.has(bare(words[cell % words.length]));
+  /** Each word's highlighted phrase, found wherever its words run in order;
+      where two overlap ("light", "color of the light") the longer holds. */
+  const phrases = useMemo(() => {
+    const at: PhraseAt[] = words.map(() => null);
+    const plain = words.map(bare);
+    for (const highlight of highlightedWords) {
+      const parts = highlight.split(/[\s.,!?]+/).map(bare).filter(Boolean);
+      if (parts.length === 0) continue;
+      for (let start = 0; start + parts.length <= words.length; start++) {
+        if (!parts.every((part, k) => plain[start + k] === part)) continue;
+        for (let k = 0; k < parts.length; k++) {
+          if ((at[start + k]?.length ?? 0) < parts.length) at[start + k] = { start, length: parts.length };
+        }
+      }
+    }
+    return at;
+  }, [words, highlightedWords]);
+  const lifted = (cell: number) => phrases[cell % words.length] !== null;
 
   // another memory, another set of words: the trail starts over
   useEffect(() => {
@@ -138,22 +164,32 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
       const cell = col * ROWS + row;
       if (cell === last.current) return;
       last.current = cell;
-      const at = wordRect(cell, words[cell % words.length], r);
-      if (avoid?.some((el) => {
+      const blocked = (at: Rect) => !!avoid?.some((el) => {
         const keepOut = avoidRect(el.current);
         return keepOut && overlaps(at, keepOut);
-      })) return;
+      });
+      if (blocked(wordRect(cell, words[cell % words.length], r))) return;
       const visit = { cell, key: count.current++ };
       // a cell come back to moves to the head of the trail rather than drawing twice
       setTrail((t) => [...t.filter((v) => v.cell !== cell), visit].slice(-TRAIL));
-      // found again before it has washed out: it starts its hold over
-      if (keys.has(bare(words[cell % words.length]))) {
-        setInked((k) => [...k.filter((v) => v.cell !== cell), visit]);
+      const phrase = phrases[cell % words.length];
+      if (phrase) {
+        const text = words.slice(phrase.start, phrase.start + phrase.length).join(" ");
+        // the phrase is written where it begins; where that is kept out, at its first word that is not
+        const begins = cell - (cell % words.length - phrase.start);
+        let anchor: number | null = null;
+        for (let at = begins; at < begins + phrase.length && anchor === null; at++) {
+          if (!blocked(wordRect(at, text, r))) anchor = at;
+        }
+        // found again before it has washed out: it starts its hold over
+        if (anchor !== null) {
+          setInked((k) => [...k.filter((v) => v.cell !== anchor), { cell: anchor, key: visit.key, text }]);
+        }
       }
     };
     window.addEventListener("pointermove", onMove);
     return () => window.removeEventListener("pointermove", onMove);
-  }, [visible, words, keys, avoid]);
+  }, [visible, words, phrases, avoid]);
 
   return (
     <div
@@ -192,7 +228,7 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
           </span>
         ),
       )}
-      {words.length > 0 && inked.map(({ cell, key }) => (
+      {words.length > 0 && inked.map(({ cell, key, text }) => (
         <span
           key={key}
           className="trail-ink"
@@ -207,7 +243,7 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
           }}
           onAnimationEnd={() => setInked((k) => k.filter((v) => v.key !== key))}
         >
-          {words[cell % words.length]}
+          {text}
         </span>
       ))}
     </div>

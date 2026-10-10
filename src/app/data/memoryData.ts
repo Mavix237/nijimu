@@ -23,26 +23,27 @@ const TRANSCRIPTS: Record<string, string> = Object.fromEntries(
   ).map(([path, text]) => [String(parseInt(path.split("/").pop()!, 10)), text.trim()]),
 );
 
-// What the curated memories' speaker would have highlighted, by id — a word or
-// a short run of words, each as it appears in that memory's transcript. A run
-// is lifted out (and inked in the gallery's trail) as one phrase.
+// What the curated memories' speaker would have highlighted, by id — the
+// words that carry what the memory is about, each as it appears in that
+// memory's transcript. A run of words is lifted out (and inked in the gallery's
+// trail) as one phrase, so each is short and should read on its own.
 const HIGHLIGHTS: Record<string, string[]> = {
-  "0": ["winter", "orange peels", "radiators", "picked out a name", "three different stories", "mall"],
-  "1": ["little silver digital camera", "corner of the kitchen", "underwater", "keep a corner of a room", "memory card", "empty"],
-  "2": ["fox that lived in a well", "the ending myself", "pencil", "running after it"],
-  "3": ["coats", "collars", "mom's old scarves", "pillow", "how something falls", "weight"],
-  "4": ["train", "a room inside me", "had a door", "one sentence", "on my hand", "rewrote it by losing it"],
-  "5": ["edges", "the window", "four o'clock", "rectangle", "paying attention"],
-  "6": ["poster", "two pixels", "three in the morning", "that kind of bother", "wall", "where it started"],
-  "7": ["apples", "one long strip", "sorry", "nothing to hide behind", "true"],
-  "8": ["radiator", "pale green", "hollow", "already forgotten me", "dried flower"],
-  "9": ["average", "decide alone", "photograph", "in tune", "a quiet voice"],
-  "10": ["fight", "only birthdays", "whole language", "a room in a house", "the key"],
-  "11": ["hands", "shaking", "ten minutes", "standing still", "whoever stops"],
-  "12": ["comment", "color of the light", "just voices", "laughed", "breathing somewhere"],
-  "13": ["three separate lives", "poem", "one beat too long", "white space", "same rhythm", "paying attention"],
-  "14": ["notice", "light", "wall", "a cup with both hands", "without asking"],
-  "15": ["definition", "the whole sky", "tea", "cut his hair in the kitchen", "redefining"],
+  "0": ["my memory too", "orange peels", "three different stories", "how she tells it"],
+  "1": ["underwater", "keep a corner", "worth keeping", "it's empty"],
+  "2": ["never finished it", "the ending myself", "running after it", "that feeling back"],
+  "3": ["completely sure", "collars", "how something falls", "That stayed"],
+  "4": ["a room inside me", "on my hand", "it was gone", "losing it"],
+  "5": ["stopped having edges", "the rectangle", "paying attention", "the whole thing"],
+  "6": ["the thing I do now", "wasn't tired", "that kind of bother", "where it started"],
+  "7": ["performing", "one long strip", "says sorry", "nothing to hide", "what was true"],
+  "8": ["the first place", "already forgotten me", "dried flower", "still up there"],
+  "9": ["an average", "decide alone", "the right one", "a quiet voice"],
+  "10": ["nothing did", "only birthdays", "this whole language", "the key"],
+  "11": ["too quiet", "shaking", "standing still", "whoever stops"],
+  "12": ["just voices", "in a room with", "breathing somewhere", "what to call it"],
+  "13": ["three separate lives", "break a line", "white space", "wasn't three things"],
+  "14": ["notice things", "because they stopped", "both hands", "out loud"],
+  "15": ["the whole sky", "your tea", "cut his hair", "never sits still"],
 };
 
 // Where each curated memory's speaker would have touched the colour field

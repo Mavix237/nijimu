@@ -139,6 +139,9 @@ export interface VesselTune {
   // distance (the distance step: time blurs the edges — the whole thing recedes into the air)
   haze: number; hazeBlur: number; hazePhoto: number; hazeMist: number; hazeSpread: number; hazeWash: number; hazeEdge: number;
   hazeGlow: number; hazeBloom: number; hazeMove: number;
+  /** At a distance the surface frosts (it takes the light softly and diffuses what is behind) at this grain,
+      and the picture's tone flattens by `hazeTone` — apart from the glass's fade into the air. */
+  hazeFrost: number; hazeGrain: number; hazeTone: number; hazeShade: number;
   // the glow's light: the halo under the streaks, and the streaks that run along the edges
   glowBase: number;
   streakN: number; streakGain: number; streakSpeed: number; streakTail: number; streakHead: number;
@@ -186,10 +189,20 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   ground: 0.5, warmth: 0.4,
   haze: unitParam("haze", 0), hazeBlur: 7, hazePhoto: 2.6, hazeMist: 0.5, hazeSpread: 0.16, hazeWash: 0.5, hazeEdge: 0.85,
   hazeGlow: 0.5, hazeBloom: 0.6, hazeMove: 0.6,
+  hazeFrost: 0, hazeGrain: 1, hazeTone: 0.5, hazeShade: 0,
   glowBase: 0.5,
   streakN: 3, streakGain: 1.6, streakSpeed: 0.35, streakTail: 1.4, streakHead: 0.18,
   streakLife: 9, streakDuty: 0.6, streakRound: 0.3, streakUp: 0.4, streakFlicker: 0.35,
 };
+
+/** The distance slider's far end, as a haze: far & faded. */
+export const DISTANCE_FAR = 0.5;
+/** The distance fade, settled on the descent page. `haze` scales it: 0 is clear,
+ *  and DISTANCE_FAR — the far end of the distance slider — is this look at that share. */
+export const DISTANCE_FADE = {
+  hazeFrost: 1.3, hazeGrain: 2.6, hazeShade: 1.35, hazeTone: 1, hazePhoto: 2.7,
+  hazeWash: 0.04, hazeEdge: 0, hazeMist: 0.1, hazeSpread: 0, hazeGlow: 0.35,
+} as const satisfies Partial<VesselTune>;
 
 /* ───────── the backdrop, as the page and the canvas both draw it ───────── */
 
@@ -300,7 +313,7 @@ export const airFor = (t: VesselTune, mode: GlassMode, room: Room) => airOf(back
     the picture is softer, flatter and paler — the diffusion goes toward 1 with the
     photo blur, the tone fades with the wash. */
 export function lookFor(t: VesselTune): FilmLook {
-  const blur = Math.min(1, (t.haze * t.hazePhoto) / 2), fade = t.haze * t.hazeWash;
+  const blur = Math.min(1, (t.haze * t.hazePhoto) / 2), fade = t.haze * t.hazeTone;
   return {
     ...FILM_LOOK_DEFAULT,
     bloom: 0.3 + t.haze * 0.3, halation: 0.1, mottle: 0.25, vignette: 0.1,
@@ -908,6 +921,9 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform float uHazeMist;
   uniform float uHazeSpread;
   uniform float uHazeGlow;
+  uniform float uHazeFrost;
+  uniform float uHazeGrain;
+  uniform float uHazeShade;
   uniform vec3 uAir;
   /* the glow's life: seconds, how much the halo itself moves (0 is still), and
      how much of the halo is there at all under the streaks */
@@ -1089,7 +1105,8 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   vec3 catchLight(vec3 n, vec3 v) {
     if (uFlowGain <= 0.0) return vec3(0.0);
     vec3 refl = normalize(reflect(-v, n));
-    float soft = max(uFlowSoft, 0.02);
+    // a frosted surface spreads each light wider and lower rather than losing it
+    float soft = max(uFlowSoft, 0.02) * (1.0 + 2.5 * uHazeFrost);
     // the feather trades the spot's core for a wide, low tail, so the light has no edge
     float wide = soft * (1.0 + 3.0 * uFlowFeather);
     vec3 sum = vec3(0.0);
@@ -1111,7 +1128,7 @@ const GLASS_COMMON_GLSL = /* glsl */ `
       tint = mix(tint, uFlashColor, uFlash * (.4 + .6 * flashAt(float(i))));
       sum += tint * spot * (1.0 + uFlashGain * flash) * (i == 0 ? 1.0 : .82);
     }
-    return sum * uFlowGain * (1.0 - uHazeEdge);
+    return sum * uFlowGain * (1.0 - uHazeEdge) / (1.0 + 1.5 * uHazeFrost);
   }
   /* A light laid over the glass without clipping to a flat white disc: screened, so
      it brightens what is there and saturates softly. */
@@ -1156,6 +1173,18 @@ const GLASS_COMMON_GLSL = /* glsl */ `
     grad /= freq;
     grad -= n * dot(grad, n);
     return normalize(n - grad * uTexAmount * .9);
+  }
+  /* The distance's frost: a fine sandblast over the surface, on top of any texture. */
+  vec3 hazeFrostNormal(vec3 n) {
+    if (uHazeFrost <= 0.0) return n;
+    vec3 p = vModel * 90.0 * max(uHazeGrain, .1);
+    float h = gNoise(p) * .6 + gNoise(p * 2.3 + 5.1) * .4;
+    vec3 grad = vec3(
+      gNoise(p + vec3(.2, 0.0, 0.0)) * .6 + gNoise((p + vec3(.2, 0.0, 0.0)) * 2.3 + 5.1) * .4 - h,
+      gNoise(p + vec3(0.0, .2, 0.0)) * .6 + gNoise((p + vec3(0.0, .2, 0.0)) * 2.3 + 5.1) * .4 - h,
+      gNoise(p + vec3(0.0, 0.0, .2)) * .6 + gNoise((p + vec3(0.0, 0.0, .2)) * 2.3 + 5.1) * .4 - h) / .2;
+    grad -= n * dot(grad, n);
+    return normalize(n - grad * uHazeFrost * .5);
   }
   // how much frost sits here, 0–1
   float frostAt(vec3 dir) {
@@ -1213,7 +1242,7 @@ export const glassFragment = /* glsl */ `
     color = mix(color, milk, frost * .85);
     alpha = mix(alpha, .5 + .3 * fresnel, frost);
     // the surface's fine texture: a matte veil, and the light caught by its tilt
-    vec3 nt = texNormal(n);
+    vec3 nt = hazeFrostNormal(texNormal(n));
     color = mix(color, milk, uTexMatte * .35);
     alpha += uTexMatte * .15;
 
@@ -1223,6 +1252,8 @@ export const glassFragment = /* glsl */ `
     vec3 flow = catchLight(nt, v);
     color = addLight(color, flow);
     alpha += max(flow.r, max(flow.g, flow.b)) * .65 * uFlowSheer;
+    color *= mix(1.0, .74 + .38 * smoothstep(-.7, .9, dot(n, uKey)), uHazeShade);
+    alpha += uHazeShade * .14;
     color = mix(color, uAir, uHazeWash * .5);
     alpha *= 1.0 - uHazeWash * .25;
     // the luminous edge
@@ -1309,14 +1340,14 @@ export const glassRefractFragment = /* glsl */ `
     vec2 shift = -nv.xy * uBend * (.004 + .05 * g * g) * aspect;
     // the surface's fine texture tilts the view a hair wherever it is, face-on too,
     // so what is behind reads through it as through a satin or a hammered pane
-    vec3 nt = texNormal(n);
+    vec3 nt = hazeFrostNormal(texNormal(n));
     vec3 nvt = normalize((viewMatrix * vec4(nt, 0.0)).xyz);
-    shift -= (nvt.xy - nv.xy) * .025 * aspect;
+    shift -= (nvt.xy - nv.xy) * (.025 + .04 * uHazeFrost) * aspect;
     // the far wall sits behind the sheet, so it must not bend the sheet: no shift there
     shift *= 1.0 - back;
     // at a distance the view through the glass is smeared a little further everywhere,
     // and a matte surface scatters it a little too
-    float smear = uGlassSoft * (.002 + .05 * thick * thick) + uHazePhoto * .004 + uTexMatte * .012;
+    float smear = uGlassSoft * (.002 + .05 * thick * thick) + uHazePhoto * .004 + uTexMatte * .012 + uHazeFrost * .016;
     vec4 frame = behind(clamp(suv + shift, .002, .998), smear);
     vec3 body = mix(env(0.0), frame.rgb / max(frame.a, 1e-3), frame.a);
     // the feet: the glass is thickest low down where it stands
@@ -1360,6 +1391,10 @@ export const glassRefractFragment = /* glsl */ `
     vec3 flow = catchLight(nt, v) * mix(1.0, .35, back);
     color = addLight(color, flow);
     alpha += max(flow.r, max(flow.g, flow.b)) * .55 * uFlowSheer;
+    // a frosted body takes the key as a soft volume: a lit shoulder, a shaded side
+    float shade = uHazeShade * (1.0 - back);
+    color *= mix(1.0, .74 + .38 * smoothstep(-.7, .9, dot(n, uKey)), shade);
+    alpha += shade * .14;
     alpha *= mix(1.0, .55, back);
     // and the body fades toward the air
     color = mix(color, uAir, uHazeWash * .5);
@@ -1665,6 +1700,9 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uHazeMist: { value: 0 },
     uHazeSpread: { value: 0 },
     uHazeGlow: { value: 0 },
+    uHazeFrost: { value: 0 },
+    uHazeGrain: { value: 1 },
+    uHazeShade: { value: 0 },
     uAir: { value: new THREE.Vector3(0.9, 0.9, 0.9) },
     uTime: { value: 0 },
     uGlowMove: { value: 0 },
@@ -1799,6 +1837,9 @@ export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   u.uHazeMist.value = tune.haze * tune.hazeMist;
   u.uHazeSpread.value = tune.hazeSpread;
   u.uHazeGlow.value = tune.haze * tune.hazeGlow;
+  u.uHazeFrost.value = tune.haze * (tune.hazeFrost ?? 0);
+  u.uHazeGrain.value = tune.hazeGrain ?? 1;
+  u.uHazeShade.value = tune.haze * (tune.hazeShade ?? 0);
   u.uGlowMove.value = tune.hazeMove;
   u.uGlowBase.value = tune.glowBase;
   u.uStreakN.value = Math.round(tune.streakN);
@@ -2175,6 +2216,10 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "hazeSpread", label: "mist reach", min: 0, max: 0.5, step: 0.005 },
     { key: "hazeWash", label: "fades into the air", min: 0, max: 1, step: 0.01 },
     { key: "hazeEdge", label: "edges let go  (rim lines, cuts, gloss)", min: 0, max: 1, step: 0.01 },
+    { key: "hazeFrost", label: "frost  (the surface diffuses)", min: 0, max: 3, step: 0.05 },
+    { key: "hazeGrain", label: "frost grain  (larger is finer)", min: 0, max: 3, step: 0.05 },
+    { key: "hazeShade", label: "soft shading  (lit / shaded side)", min: 0, max: 2, step: 0.05 },
+    { key: "hazeTone", label: "photo flattens  (blacks lift)", min: 0, max: 1, step: 0.01 },
   ] },
   // the light at the edges of a receded memory: a halo, and streaks of light that
   // run along one edge at a time and fade behind themselves. All of it scaled by the haze.

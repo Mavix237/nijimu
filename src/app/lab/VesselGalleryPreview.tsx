@@ -12,7 +12,7 @@ import { pushGalleryPanel, readGalleryPush, useGalleryPush, type GalleryPanel, t
 import { entrySignature, galleryLibrary, librarySavedAt, libraryVersion, useGalleryLibrary, type LibraryEntry } from "../lib/galleryLibrary";
 import { formKey } from "../lib/superformula";
 import {
-  VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
+  DISTANCE_FADE, VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
   type Room, type VesselState, type VesselTune,
 } from "./VesselPreview";
 import { VesselArtifact, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
@@ -88,6 +88,7 @@ const SEATS: { event: number }[] = [
  */
 export const VESSEL_GALLERY_TUNE: VesselTune = {
   ...VESSEL_TUNE_DEFAULT,
+  ...DISTANCE_FADE,
   morph: 0.6,
   holeSize: 0.6, holeWidth: 0.75, holeFade: 0.75, holeRim: 0.25,
   mono: 0, negative: 0,

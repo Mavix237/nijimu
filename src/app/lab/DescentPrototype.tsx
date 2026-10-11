@@ -58,7 +58,7 @@ import {
   setCloudUniforms, type CloudTune, type PhaseBlock, type TuneKnob,
 } from "./wrapCloud";
 import {
-  FOV, FRONT_LAYER, Mist, VESSEL_TUNE_DEFAULT, backdropVertex, blitFragment, buildDrapedSheet, buildGlass, buildWallMap,
+  DISTANCE_FADE, DISTANCE_FAR, FOV, FRONT_LAYER, Mist, VESSEL_TUNE_DEFAULT, backdropVertex, blitFragment, buildDrapedSheet, buildGlass, buildWallMap,
   createGlassUniformSet, createSheetUniformSet, fitSheetSize, glassRefractFragment, glassVertex, keyFrom, seedDirections,
   sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms, type Room, type SheetUniformSet, type VesselTune,
 } from "./VesselPreview";
@@ -97,6 +97,13 @@ type Phase =
   | "shape" | "rhythm" | "distance" | "color"
   | "wrapping" | "rising" | "naming" | "saved";
 type Step = DescentStep;
+/** The distance step's farthest place: half of the old full fade. */
+const DISTANCE_MAX = DISTANCE_FAR;
+/** At far & faded the neighbours have moved this far along the gallery's depth range (memoryDepth's share): most have passed the eye. */
+const PREVIEW_TRAVEL = 0.75;
+/** At far & faded the handled memory reads at this share of its near size, by standing farther along the same line of sight. */
+const DISTANCE_FAR_SCALE = 0.9;
+const DISTANCE_RECEDE = 1 / DISTANCE_FAR_SCALE - 1;
 
 const POND_CAMERA = new THREE.Vector3(0, POND_CAMERA_HEIGHT - .15, POND_CAMERA_Z);
 const POND_LOOK = SURFACE_LOOK.clone();
@@ -138,6 +145,7 @@ const VESSEL_TUNE: VesselTune = {
   holeSize: 0.6, holeWidth: 0.75, holeFade: 0.75, holeRim: 0.25,
   mono: 0, negative: 0,
   pitch: 4, turn: 0, ground: 0, haze: 0,
+  ...DISTANCE_FADE,
 };
 /** The room the glass reflects, before the water's colours are written over it each frame. */
 const VESSEL_ROOM: Room = { above: "#e6e7ea", below: "#ffffff" };
@@ -924,7 +932,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   const glassMesh = useRef<THREE.Mesh>(null);
   const mist = useRef<THREE.Group>(null);
   const particles = useRef<THREE.Points>(null);
-  const smooth = useRef({ morph: 0, frost: 0, wash: 0, dye: 0, spin: 0, ceiling: 0, stain: 0 });
+  const smooth = useRef({ morph: 0, frost: 0, wash: 0, dye: 0, spin: 0, ceiling: 0, stain: 0, recede: 0 });
   const distanceAnchor = useRef(new THREE.Vector3());
   const distanceDepth = useRef(FIELD_FOCAL);
   /** Screen-down shift of the handled vessel. Null until the first frame, so a
@@ -1116,8 +1124,10 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   const vesselPatches = useMemo(() => seedDirections(filmUniforms.uSeed.value, 3, 1.1), [filmUniforms]);
   const writeVessel = (haze: number, above: THREE.Color, below: THREE.Color, fog: THREE.Color, arrivalHaze: number) => {
     vesselTune.haze = haze;
-    // Arrival is water obscuring the body, not a luminous halo around it.
+    // Arrival is water obscuring the body, not a luminous halo or a frosted surface.
     vesselTune.hazeGlow = VESSEL_TUNE.hazeGlow * (1 - arrivalHaze);
+    vesselTune.hazeFrost = VESSEL_TUNE.hazeFrost * (1 - arrivalHaze);
+    vesselTune.hazeShade = VESSEL_TUNE.hazeShade * (1 - arrivalHaze);
     Object.assign(vesselTune, vesselTint(stage.current.oklch));
     // the stain comes in with the colour step and stays on the glass after it: the water lets
     // the colour go on release, the memory keeps it
@@ -1762,16 +1772,25 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       vesselTune.bend = VESSEL_TUNE.bend * sizeK;
       vesselTune.glassSoft = VESSEL_TUNE.glassSoft * sizeK;
       writeVessel(visibleHaze, roomAbove, roomBelow, roomAir, arrivalHaze);
-      distanceDepth.current = memoryDepth(sm.frost);
+      // The preview travels on the slider's own share, so its far end leaves only the deepest neighbours
+      distanceDepth.current = memoryDepth(Math.min(1, sm.frost / DISTANCE_MAX) * PREVIEW_TRAVEL);
       sheetU.uReveal.value = reveal;
       glassU.uReveal.value = reveal;
       glassU.uTime.value = t;
-      if (mist.current) mist.current.visible = visibleHaze * (VESSEL_TUNE.hazeMist + VESSEL_TUNE.hazeGlow) > 0.002;
+      if (mist.current) mist.current.visible = visibleHaze * (vesselTune.hazeMist + vesselTune.hazeGlow) > 0.002;
       // one slow drift throughout, quieting as it comes to rest on the surface (a change of rhythm at the naming read as a jolt)
       const calm = riseAt.current === null ? 0 : smoothProgress((t - riseAt.current) / RISE_S, 0.6, 1);
       const bob = Math.sin(t * 0.6) * (0.05 - 0.02 * calm);
       body.position.set(formAt.x, formAt.y + bob, formAt.z);
       distanceAnchor.current.copy(body.position);
+      // Far & faded also steps the memory back along its line of sight, so it keeps its place on screen and
+      // only grows smaller; the constellation stays measured from the seat it left
+      const handling = wrapAt.current === null && riseAt.current === null && !s.release;
+      sm.recede = ease(sm.recede, handling ? Math.min(1, sm.frost / DISTANCE_MAX) : 0, 3);
+      if (sm.recede > 1e-4) {
+        scratch.v.copy(body.position).sub(camera.position);
+        body.position.addScaledVector(scratch.v, DISTANCE_RECEDE * smoothProgress(sm.recede, 0, 1));
+      }
       // Hold the handled memory at the same apparent size. The constellation
       // moves past it as the chosen gallery depth increases.
       body.traverse(child => {
@@ -2368,6 +2387,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const [lifted, setLifted] = useState<string | null>(resume?.look?.photoUrl ?? null);
   const [morph, setMorph] = useState(stage.current.morph);
   const [frost, setFrost] = useState(stage.current.frost);
+  /** How far along the distance slider: 1 is far & faded (frost at DISTANCE_MAX). */
+  const distanceShare = Math.min(1, frost / DISTANCE_MAX);
   const photoLoad = useRef(0);
   const loadedPhotoUrl = useRef<string | null>(null);
   useLayoutEffect(() => {
@@ -2483,7 +2504,12 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     const v = clamp01(value);
     if (stepRef.current === "shape") { stage.current.morph = v; setMorph(v); }
     else if (stepRef.current === "rhythm") setEditedM2(rhythmValue(v * RHYTHM_MAX));
-    else if (stepRef.current === "distance") { stage.current.frost = v; setFrost(v); }
+    else if (stepRef.current === "distance") {
+      // the gestures and the slider give a share of the way; the haze stops at DISTANCE_MAX
+      const frost = v * DISTANCE_MAX;
+      stage.current.frost = frost;
+      setFrost(frost);
+    }
   };
   const colorUvRef = useRef(colorUv);
   const pickColor = (u: number, v: number) => {
@@ -2545,7 +2571,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         const video = videoRef.current;
         const next = distancePush.current.update(hands[0],
           video?.videoHeight ? video.videoWidth / video.videoHeight : 1,
-          performance.now(), stage.current.frost);
+          performance.now(), stage.current.frost / DISTANCE_MAX);
         if (next !== null) setSignal(next);
       } else if (tab === "color") {
         const hand = hands[0];
@@ -2916,10 +2942,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {/* ── the four steps, under the water ── */}
       {step && step !== "color" && (
         <div role="slider" tabIndex={0} aria-label={`${step} — drag across`} aria-valuemin={0} aria-valuemax={100}
-          aria-valuenow={Math.round((step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : frost) * 100)}
-          aria-valuetext={step === "distance" ? frost >= .98 ? "beyond the constellation" : `${Math.round(frost * 100)}% distant` : undefined}
+          aria-valuenow={Math.round((step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : distanceShare) * 100)}
+          aria-valuetext={step === "distance" ? `${Math.round(distanceShare * 100)}% distant` : undefined}
           onKeyDown={(e) => {
-            const value = step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : frost;
+            const value = step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : distanceShare;
             const next = e.key === "Home" ? 0 : e.key === "End" ? 1
               : e.key === "ArrowRight" || e.key === "ArrowUp" ? value + 0.05
               : e.key === "ArrowLeft" || e.key === "ArrowDown" ? value - 0.05 : null;
@@ -2928,7 +2954,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* synthetic events have no pointer to capture */ }
-            drag.current = { x: e.clientX, from: step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : frost };
+            drag.current = { x: e.clientX, from: step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : distanceShare };
           }}
           onPointerMove={(e) => {
             if (!drag.current) return;
@@ -2945,8 +2971,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             label="memory shape" valueText={`${Math.round(morph * 100)}% shaped`} />}
           {step === "rhythm" && <SpectrumSlider value={m2 / RHYTHM_MAX} onChange={setSignal} from="petals" to="bloom"
             label="shape rhythm" valueText={`${Math.round(m2 * 4) / 4} folds`} keyStep={1 / RHYTHM_MAX} />}
-          {step === "distance" && <SpectrumSlider value={frost} onChange={setSignal} from="circle" to="haze"
-            label="memory distance" valueText={frost >= .98 ? "beyond the constellation" : `${Math.round(frost * 100)}% distant`} />}
+          {step === "distance" && <SpectrumSlider value={distanceShare} onChange={setSignal} from="circle" to="haze"
+            label="memory distance" valueText={`${Math.round(distanceShare * 100)}% distant`} />}
         </div>
       )}
       {step === "color" && (

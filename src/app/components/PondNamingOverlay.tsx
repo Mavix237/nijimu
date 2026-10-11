@@ -1,16 +1,16 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { carouselFrame } from "../lib/carouselLayout";
 import { surfaceReturnBlurAt } from "../lib/ascentLight";
 import { POND_SINK, SINK_WASH, SURFACE_LIGHT, SURFACE_LIGHT_OUT_MS, pondSinkWash } from "../lib/pondCamera";
 import { DESCENT_STEP_PATHS } from "../lib/routes";
 import { VesselArtifact, vesselCanvasScale } from "../lab/VesselArtifact";
-import type { Room } from "../lab/VesselPreview";
+import { DISTANCE_FAR, type Room } from "../lab/VesselPreview";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { draftArtifactOf, resumeColorState } from "../lib/namingDraft";
 import { formKey } from "../lib/superformula";
 import { CHROME_GRAY } from "../lib/colors";
-import { FLOW_PAGE, NAMING_PROSE_SIZE, SANS, TRANSCRIPT } from "../lib/theme";
+import { FLOW_PAGE, NAMING_PROSE_SIZE, TRANSCRIPT } from "../lib/theme";
 import { FlowPageGrid } from "./FlowPageGrid";
 import {
   useNamingRim,
@@ -56,19 +56,19 @@ const ARRIVE_SETTLE_VH = 3;
  */
 const NAMING_ROOM: Room = { above: "#f3f3ee", below: "#e6e6e6" };
 const NAMING_LIGHT = { envAbove: 1.09, envBelow: 1.09, thickDark: 0.06, rim: 0.67, highlight: 1, keyIntensity: 1.41 };
+/** The same light for a memory at far & faded: the key gone, the sky dimmer, the rim a little quieter. */
+const NAMING_LIGHT_FAR: NamingLight = { envAbove: 0.9, envBelow: 1.09, thickDark: 0.06, rim: 0.6, highlight: 1, keyIntensity: 0 };
+/** The light at a memory's distance: near & clear is NAMING_LIGHT, far & faded NAMING_LIGHT_FAR, evenly between. */
+function namingLightAt(haze: number): NamingLight {
+  const t = clamp01(haze / DISTANCE_FAR);
+  const out = { ...NAMING_LIGHT };
+  for (const k of Object.keys(out) as (keyof NamingLight)[]) out[k] = NAMING_LIGHT[k] + (NAMING_LIGHT_FAR[k] - NAMING_LIGHT[k]) * t;
+  return out;
+}
 /** The colour gathers around the rim, where the wall turns edge-on, and the face stays clear. */
 const NAMING_STAIN = 0.36;
 
 type NamingLight = typeof NAMING_LIGHT;
-/** The naming page's own light, laid out for tuning: the room it reflects, then the glass. */
-const LIGHT_SLIDERS: { key: keyof NamingLight; label: string; min: number; max: number; step: number; group: "light" | "glass" }[] = [
-  { key: "envAbove", label: "sky light", min: 0, max: 1.5, step: 0.01, group: "light" },
-  { key: "envBelow", label: "water light", min: 0, max: 1.5, step: 0.01, group: "light" },
-  { key: "keyIntensity", label: "key", min: 0, max: 2, step: 0.01, group: "light" },
-  { key: "thickDark", label: "thick dark", min: 0, max: 0.6, step: 0.01, group: "glass" },
-  { key: "rim", label: "rim", min: 0, max: 1, step: 0.01, group: "glass" },
-  { key: "highlight", label: "highlight", min: 0, max: 1, step: 0.01, group: "glass" },
-];
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smooth = (t: number) => { const c = clamp01(t); return c * c * (3 - 2 * c); };
@@ -122,8 +122,7 @@ export function PondNamingOverlay({
   // The vessel, assigned form, photo, morph, colour and distance come from this branch's draft.
   const vessel = useMemo(() => galleryStateFor(draftArtifactOf(session)), [session]);
   const canvasRoom = useMemo(() => vesselCanvasScale(vessel.form, vessel.tune.morph), [vessel]);
-  const [namingLight, setNamingLight] = useState<NamingLight>(NAMING_LIGHT);
-  const [room, setRoom] = useState<Room>(NAMING_ROOM);
+  const namingLight = useMemo(() => namingLightAt(vessel.tune.haze), [vessel]);
   const lit = useMemo(() => ({
     ...vessel.tune, ...namingLight,
     ...(vessel.tune.memoryTintAmount > 0 ? { memoryTintAmount: NAMING_STAIN, memoryTintSpread: 1 } : {}),
@@ -330,7 +329,7 @@ export function PondNamingOverlay({
             cacheKey={`${session.draftId}|naming|${formKey(vessel.form)}|${vessel.tune.morph}`}
             form={vessel.form} morph={vessel.tune.morph}
             photoUrl={vessel.url || undefined} seed={vessel.seed}
-            tune={lit} room={room}
+            tune={lit} room={NAMING_ROOM}
             glassMode={vessel.mode} sheetMode={vessel.sheetMode} face={vessel.face}
             sheetSize={vessel.tune.sheetSize}
             onReady={() => { vesselReady.current = true; }}
@@ -345,11 +344,6 @@ export function PondNamingOverlay({
           transform: `translateY(calc(${fieldDrop}px - ${TEXT_LIFT}))`,
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />
-
-      <NamingLightPanel light={namingLight} room={room}
-        onLight={(key, value) => setNamingLight(prev => ({ ...prev, [key]: value }))}
-        onRoom={(key, value) => setRoom(prev => ({ ...prev, [key]: value }))}
-        onReset={() => { setNamingLight(NAMING_LIGHT); setRoom(NAMING_ROOM); }} />
 
       <div
         ref={washRef}
@@ -366,52 +360,3 @@ export function PondNamingOverlay({
     </div>
   );
 }
-
-/** The naming page's light, live: what settles here is what goes back into the constants. */
-function NamingLightPanel({
-  light, room, onLight, onRoom, onReset,
-}: {
-  light: NamingLight;
-  room: Room;
-  onLight: (key: keyof NamingLight, value: number) => void;
-  onRoom: (key: keyof Room, value: string) => void;
-  onReset: () => void;
-}) {
-  const copy = () => {
-    const nums = (o: Record<string, number>) => Object.entries(o).map(([k, v]) => `${k}: ${v}`).join(", ");
-    const text = `const NAMING_ROOM = { above: "${room.above}", below: "${room.below}" };\nconst NAMING_LIGHT = { ${nums(light)} };\nconst NAMING_STAIN = ${NAMING_STAIN};`;
-    void navigator.clipboard?.writeText(text);
-  };
-  const row = (label: string, control: ReactNode, value: string) => (
-    <label key={label} style={{ display: "grid", gridTemplateColumns: "78px 1fr 42px", alignItems: "center", gap: 8, marginTop: 8 }}>
-      <span>{label}</span>
-      {control}
-      <span style={{ textAlign: "right" }}>{value}</span>
-    </label>
-  );
-  const slider = (value: number, min: number, max: number, step: number, onChange: (v: number) => void) => (
-    <input type="range" min={min} max={max} step={step} value={value}
-      onChange={e => onChange(Number(e.target.value))}
-      style={{ width: "100%", accentColor: CHROME_GRAY, cursor: "ew-resize" }} />
-  );
-  return (
-    <div style={{ position: "absolute", top: 88, right: 24, zIndex: 4, width: 248, pointerEvents: "auto",
-      color: CHROME_GRAY, fontFamily: SANS, fontSize: 12, lineHeight: 1.2 }}>
-      <p style={{ margin: "0 0 2px" }}>light</p>
-      {row("sky", <input type="color" aria-label="sky colour" value={room.above} onChange={e => onRoom("above", e.target.value)} />, room.above)}
-      {row("water", <input type="color" aria-label="water colour" value={room.below} onChange={e => onRoom("below", e.target.value)} />, room.below)}
-      {LIGHT_SLIDERS.filter(s => s.group === "light").map(s => row(s.label, slider(light[s.key], s.min, s.max, s.step, v => onLight(s.key, v)), light[s.key].toFixed(2)))}
-      <p style={{ margin: "16px 0 2px" }}>glass</p>
-      {LIGHT_SLIDERS.filter(s => s.group === "glass").map(s => row(s.label, slider(light[s.key], s.min, s.max, s.step, v => onLight(s.key, v)), light[s.key].toFixed(2)))}
-      <div style={{ display: "flex", gap: 14, marginTop: 14 }}>
-        <button type="button" onClick={copy} style={TEXT_BUTTON}>copy values</button>
-        <button type="button" onClick={onReset} style={TEXT_BUTTON}>reset</button>
-      </div>
-    </div>
-  );
-}
-
-const TEXT_BUTTON: CSSProperties = {
-  border: 0, padding: 0, background: "none", color: "inherit", font: "inherit",
-  textDecoration: "underline", cursor: "pointer",
-};

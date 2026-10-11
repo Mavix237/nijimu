@@ -67,11 +67,15 @@ export function useHandTracking({
     let rafId: number | null = null;
 
     const start = async () => {
+      setError(null);
       try {
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
         });
-        if (cancelled || !videoRef.current) return;
+        if (cancelled || !videoRef.current) {
+          stream.getTracks().forEach(track => track.stop());
+          return;
+        }
 
         const video = videoRef.current;
         video.srcObject = stream;

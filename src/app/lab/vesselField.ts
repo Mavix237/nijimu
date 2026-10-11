@@ -108,6 +108,9 @@ export interface FieldSeat extends SeatPlace {
   order: number;
 }
 
+/** Foreground copy, measured in scene pixels rather than guessed from font sizes. */
+export interface FieldTextBounds { left: number; right: number; top: number; bottom: number }
+
 /**
  * A place in the field, seen from the camera: a pinhole projection for its
  * size and position; its distance sets the haze (the vessel's own, from the
@@ -142,12 +145,16 @@ export function fieldSeat(place: FieldPlace, cam: FieldCamera, viewport: { w: nu
 /** A roomy staging of the gallery around the memory being handled. Positions
  * are fixed in this preview's world; following the memory moves neighbours
  * outward and past the eye. The open centre stays clear throughout the dolly. */
-export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDepth: number, viewport: { w: number; h: number }): FieldSeat {
+export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDepth: number, viewport: { w: number; h: number },
+  foreground?: { bounds: FieldTextBounds; shift: number; radiusRatio: number }): FieldSeat {
   // Use the gallery's own irregular arrangement, including saved depth. No
   // new orbit, angular shuffle or rings: amplify its existing depth spacing.
-  const z = 2.4 + place.z * 2.8;
+  const z = 2.4 + place.z * 4.4;
+  // Compensate for the deeper starting seats, then enlarge their silhouettes
+  // slightly. This is a fixed world size; slider travel only moves the camera.
+  const sizeBoost = 1.15 * z / (2.4 + place.z * 2.8);
   const frame = carouselFrame(viewport.w, viewport.h);
-  const clearance = viewport.h * .225 + frame.size * FIELD_FOCAL / z / 2;
+  const clearance = viewport.h * .225 + frame.size * sizeBoost * FIELD_FOCAL / z / 2;
   let x = place.sx * viewport.w;
   let y = place.sy * viewport.h;
   // Only a neighbour inside the handled form's space needs moving. Slide it
@@ -156,6 +163,20 @@ export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDep
   if (Math.abs(x) < clearance && Math.abs(y) < clearance) {
     if (Math.abs(x) > Math.abs(y) && viewport.w > viewport.h) x = (Math.sign(x) || 1) * clearance;
     else y = (Math.sign(y) || 1) * clearance;
+  }
+  if (foreground) {
+    // Reserve space for the entire silhouette, not just its centre. Adjust the
+    // starting world position once; the resulting seat still travels normally
+    // in depth instead of jumping aside as the slider moves.
+    const radius = frame.size * sizeBoost * FIELD_FOCAL / z * foreground.radiusRatio * 1.2;
+    const pad = radius + 24;
+    const cx = viewport.w * .5 + x;
+    const cy = viewport.h * (.5 + foreground.shift) + y;
+    const b = foreground.bounds;
+    if (cx + pad > b.left && cx - pad < b.right && cy + pad > b.top && cy - pad < b.bottom) {
+      const left = b.left - pad, right = b.right + pad;
+      x = (cx - left < right - cx ? left : right) - viewport.w * .5;
+    }
   }
   const dispersed = {
     sx: x / viewport.w,
@@ -169,7 +190,8 @@ export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDep
   const seat = fieldSeat(dispersed, { x: 0, y: 0, z: follow }, viewport);
   // The handled form is centred, whereas the chronological gallery's apex is
   // slightly higher. Keep this preview's empty centre on the actual form.
-  return { ...seat, y: seat.y + viewport.h * .5 - carouselFrame(viewport.w, viewport.h).apexY };
+  return { ...seat, size: seat.size * sizeBoost, scale: seat.scale * sizeBoost,
+    y: seat.y + viewport.h * .5 - frame.apexY };
 }
 
 /** The same place, deeper and not yet seen — where a memory that had no seat on the curve surfaces from. */

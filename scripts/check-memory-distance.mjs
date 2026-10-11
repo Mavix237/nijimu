@@ -44,14 +44,19 @@ assert.equal(field.memoryDepth(2), field.memoryDepth(1));
 for (const viewport of [{ w: 1280, h: 720 }, { w: 390, h: 844 }]) {
   const depths = Array.from({ length: 16 }, (_, i) => field.distancePreviewSeat(i, field.fieldPlace(i), field.FIELD_FOCAL, viewport).depth);
   const galleryDepths = Array.from({ length: 16 }, (_, i) => field.fieldPlace(i).z);
-  assert.ok(Math.abs((Math.max(...depths) - Math.min(...depths)) / (Math.max(...galleryDepths) - Math.min(...galleryDepths)) - 2.8) < 1e-10, 'preview amplifies the gallery depth distribution');
+  assert.ok(Math.abs((Math.max(...depths) - Math.min(...depths)) / (Math.max(...galleryDepths) - Math.min(...galleryDepths)) - 4.4) < 1e-10, 'preview amplifies the gallery depth distribution');
   const midpoint = Array.from({ length: 16 }, (_, i) => field.distancePreviewSeat(i, field.fieldPlace(i), field.memoryDepth(.5), viewport));
   const visibleMiddle = midpoint.filter(s => s.opacity > .1 && s.x - s.size / 2 >= 0 && s.x + s.size / 2 <= viewport.w && s.y - s.size / 2 >= 0 && s.y + s.size / 2 <= viewport.h);
   assert.ok(visibleMiddle.length >= (viewport.w > viewport.h ? 4 : 2), 'several complete reference artifacts remain visible at the slider midpoint');
+  const beyondMiddle = Array.from({ length: 16 }, (_, i) => field.distancePreviewSeat(i, field.fieldPlace(i), field.memoryDepth(.7), viewport));
+  assert.ok(beyondMiddle.filter(s => s.opacity > .1 && s.x - s.size / 2 >= 0 && s.x + s.size / 2 <= viewport.w && s.y - s.size / 2 >= 0 && s.y + s.size / 2 <= viewport.h).length >= 4,
+    'deeper reference artifacts remain fully visible at 70% distance');
   for (let i = 0; i < 32; i++) {
     const place = field.memoryFieldPlace(i);
     const initial = field.distancePreviewSeat(i, place, field.memoryDepth(0), viewport);
     assert.ok(initial.depth >= 3, 'preview neighbours start well behind the handled artifact');
+    const oldSize = layout.carouselFrame(viewport.w, viewport.h).size * field.FIELD_FOCAL / (2.4 + place.z * 2.8);
+    assert.ok(Math.abs(initial.size / oldSize - 1.15) < 1e-10, 'deeper seats still appear slightly larger at the start');
     const x = initial.x - viewport.w / 2;
     const y = initial.y - viewport.h / 2;
     assert.ok(Math.abs(x - place.sx * viewport.w) < 1e-8 || Math.abs(y - place.sy * viewport.h) < 1e-8, 'gallery coordinates are preserved; clearance moves at most one axis');
@@ -59,6 +64,8 @@ for (const viewport of [{ w: 1280, h: 720 }, { w: 390, h: 844 }]) {
     for (let step = 0; step <= 100; step++) {
       const seat = field.distancePreviewSeat(i, place, field.memoryDepth(step / 100), viewport);
       if (seat.opacity < .001) continue;
+      assert.ok(Math.abs(seat.size * Math.max(.3, seat.depth) - initial.size * initial.depth) < 1e-8,
+        'slider changes perspective without scaling the reference meshes');
       const radius = Math.hypot(seat.x - viewport.w / 2, seat.y - viewport.h / 2);
       assert.ok(radius - seat.size / 2 > viewport.h * .22, 'neighbours leave the central artifact clear throughout the slider');
     }
@@ -67,6 +74,26 @@ for (const viewport of [{ w: 1280, h: 720 }, { w: 390, h: 844 }]) {
   }
 }
 const gesture = load('../src/app/lib/memoryDistanceGesture.ts');
+// Foreground type can wrap differently by viewport. Clear its measured bounds
+// using each vessel's whole silhouette, while retaining a stable world seat.
+for (const viewport of [{ w: 1253, h: 1056 }, { w: 1280, h: 720 }, { w: 390, h: 844 }]) {
+  const width = Math.min(540, viewport.w - 40);
+  const bounds = { left: (viewport.w - width) / 2, right: (viewport.w + width) / 2, top: 132, bottom: viewport.w < 600 ? 370 : 290 };
+  for (const radiusRatio of [.5, .8, 1.2]) for (let i = 0; i < 32; i++) {
+    const place = field.fieldPlace(i);
+    const foreground = { bounds, shift: .01, radiusRatio };
+    const seat = field.distancePreviewSeat(i, place, field.FIELD_FOCAL, viewport, foreground);
+    const radius = seat.size * radiusRatio;
+    const y = seat.y + viewport.h * foreground.shift;
+    assert.ok(seat.x + radius < bounds.left || seat.x - radius > bounds.right || y + radius < bounds.top || y - radius > bounds.bottom,
+      'starting silhouettes never overlap foreground text, including wide forms and wrapped mobile copy');
+    const midway = field.distancePreviewSeat(i, place, field.memoryDepth(.5), viewport, foreground);
+    assert.ok(Math.abs((midway.x - viewport.w / 2) * midway.depth - (seat.x - viewport.w / 2) * seat.depth) < 1e-8,
+      'text avoidance keeps world positions fixed during depth travel');
+    assert.equal(seat.size, field.distancePreviewSeat(i, place, field.FIELD_FOCAL, viewport).size,
+      'text clearance never shrinks the artifact');
+  }
+}
 // A face-on, open hand in height-normalized camera coordinates. Transforming
 // the whole hand models forward/back travel without changing finger spread.
 function palm(scale = 1, aspect = 1, rotation = 0, mirror = 1) {

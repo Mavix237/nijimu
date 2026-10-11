@@ -59,7 +59,7 @@ export function createVoiceRippleBurstPlanner() {
   };
 }
 
-export interface VoiceRippleSpot { x: number; y: number; strength: number }
+export interface VoiceRippleSpot { x: number; y: number; strength: number; soft?: boolean }
 
 /** Screen-space bounds stay in the foreground at either mobile or desktop aspect. */
 export function pickVoiceRippleSpot(previous: VoiceRippleSpot | null, random = Math.random): VoiceRippleSpot {

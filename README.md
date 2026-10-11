@@ -35,6 +35,17 @@ Run `npm run dev` to start the development server.
 The profile has no page of its own: the profile button opens a glass popup over
 whatever page you are on.
 
+The colour page keeps its continuous, curved water field, now blending the
+homescreen palette from rose and sand through mist, sky, sage, ocean, slate,
+purple and night. The hues are strengthened for visibility in the water, with a
+richer purple derived from the homescreen’s grey-violet slate. The field uses
+85% opacity and retains colour as it lightens toward the top;
+pointer and hand input sample the same gradient. The earlier full-spectrum
+version was duplicated into
+[`src/app/archive/color-spectrum-2026-10-10/`](src/app/archive/color-spectrum-2026-10-10/README.md)
+before this change, including the shared scene, colour field and palette helpers.
+It is a source snapshot, not an active page route.
+
 Both the timeline and constellation have a **create** button in the header.
 From the constellation, memories rise at different speeds according to their
 depth to reveal the pond; returning reverses that motion. Reduced motion uses

@@ -5,9 +5,15 @@ import { Oklch, oklchToHex, sampleField } from "../lib/oklch";
 const COLS = 196;
 const ROWS = 72;
 
-/** Shorter wash — 80% of the first 30vh band. */
-export const WASH_HEIGHT = "24vh";
+/** Visible wash height at the centre of its curved edge. */
+export const WASH_HEIGHT = "25vh";
 export const WASH_MIN_PX = 134;
+const MASK_HEIGHT = 512;
+const MASK_EDGE_Y = 108;
+const MASK_CONTROL_Y = 268;
+// At t=.5 the cubic edge sits at .25*end + .75*control. Size the
+// drawing area to leave 25vh of colour below that edge, after masking.
+const VISIBLE_HEIGHT_RATIO = 1 - (MASK_EDGE_Y * .25 + MASK_CONTROL_Y * .75) / MASK_HEIGHT;
 
 /**
  * Bowl contour with the dissolve baked in: fill the curve, then blur
@@ -16,9 +22,9 @@ export const WASH_MIN_PX = 134;
 function bakeCurveMask(): string {
   if (typeof document === "undefined") return "none";
   const w = 1024;
-  const h = 512;
-  const endY = 108;
-  const midY = 268;
+  const h = MASK_HEIGHT;
+  const endY = MASK_EDGE_Y;
+  const midY = MASK_CONTROL_Y;
   const shape = document.createElement("canvas");
   shape.width = w;
   shape.height = h;
@@ -49,6 +55,8 @@ type Props = {
   u: number;
   v: number;
   held?: boolean;
+  sample?: (u: number, v: number) => Oklch;
+  opacity?: number;
   onPick: (next: { u: number; v: number; color: Oklch }) => void;
 };
 
@@ -56,7 +64,7 @@ type Props = {
  * Full-width muted OKLCH wash. Click / drag like a Figma picker —
  * color is computed from UV, not from the blurred pixels.
  */
-export function OklchColorField({ u, v, held = false, onPick }: Props) {
+export function OklchColorField({ u, v, held = false, onPick, sample = sampleField, opacity = 0.6 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const waterRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -88,7 +96,7 @@ export function OklchColorField({ u, v, held = false, onPick }: Props) {
     for (let y = 0; y < ROWS; y++) {
       for (let x = 0; x < COLS; x++) {
         const ny = y / (ROWS - 1);
-        const hex = oklchToHex(sampleField(x / (COLS - 1), ny));
+        const hex = oklchToHex(sample(x / (COLS - 1), ny));
         const i = (y * COLS + x) * 4;
         data[i] = parseInt(hex.slice(1, 3), 16);
         data[i + 1] = parseInt(hex.slice(3, 5), 16);
@@ -125,7 +133,7 @@ export function OklchColorField({ u, v, held = false, onPick }: Props) {
       water.current = null;
       setLiveWater(false);
     };
-  }, []);
+  }, [sample]);
 
   useEffect(() => {
     const wasHeld = heldRef.current;
@@ -160,7 +168,7 @@ export function OklchColorField({ u, v, held = false, onPick }: Props) {
   const pickAt = (clientX: number, clientY: number) => {
     const next = uvAt(clientX, clientY);
     if (!next) return;
-    onPick({ u: next.u, v: next.v, color: sampleField(next.u, next.v) });
+    onPick({ u: next.u, v: next.v, color: sample(next.u, next.v) });
   };
 
   const stirAt = (clientX: number, clientY: number) => {
@@ -204,8 +212,8 @@ export function OklchColorField({ u, v, held = false, onPick }: Props) {
         left: 0,
         right: 0,
         bottom: 0,
-        height: WASH_HEIGHT,
-        minHeight: WASH_MIN_PX,
+        height: `calc(${WASH_HEIGHT} / ${VISIBLE_HEIGHT_RATIO})`,
+        minHeight: WASH_MIN_PX / VISIBLE_HEIGHT_RATIO,
         zIndex: 10,
         cursor: "crosshair",
         touchAction: "none",
@@ -226,7 +234,7 @@ export function OklchColorField({ u, v, held = false, onPick }: Props) {
           filter: "blur(18px) saturate(0.92)",
           transform: "scale(1.04, 1.12)",
           transformOrigin: "center bottom",
-          opacity: 0.6,
+          opacity,
           pointerEvents: "none",
           transition: "transform 80ms linear",
         }}

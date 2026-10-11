@@ -57,17 +57,29 @@ export function GlassPane({
     if (!open) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && !closeDisabled) onCloseRef.current();
+      if (e.key === "Tab") {
+        const controls = Array.from(cardRef.current?.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]',
+        ) ?? []).filter(el => el.getClientRects().length > 0);
+        const first = controls[0], last = controls[controls.length - 1];
+        if (!first) { e.preventDefault(); cardRef.current?.focus(); }
+        else if (!controls.includes(document.activeElement as HTMLElement)
+          || (e.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+          e.preventDefault();
+          (e.shiftKey ? last : first).focus();
+        }
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [open, closeDisabled]);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open || !mounted) return;
     restoreFocusTo.current = document.activeElement as HTMLElement | null;
     cardRef.current?.focus({ preventScroll: true });
     return () => restoreFocusTo.current?.focus?.({ preventScroll: true });
-  }, [open]);
+  }, [open, mounted]);
 
   if (!mounted) return null;
 

@@ -2,9 +2,8 @@ import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { buildArchive } from "../lib/archive";
-import { carouselFrame } from "../lib/carouselLayout";
 import { galleryStateFor } from "./VesselGalleryPreview";
-import { FIELD_FOCAL, distancePreviewSeat, memoryFieldPlace } from "./vesselField";
+import { FIELD_FOCAL, distancePreviewSeat, memoryFieldPlace, type FieldTextBounds } from "./vesselField";
 import { loadSeatPhoto } from "./VesselArtifact";
 import { viewHalfTan } from "../lib/portraitView";
 import {
@@ -15,9 +14,11 @@ import {
 } from "./VesselPreview";
 
 interface Context {
-  stage: RefObject<{ step: string | null }>;
+  stage: RefObject<{ step: string | null; foregroundBounds: FieldTextBounds | null }>;
   anchor: RefObject<THREE.Vector3>;
   depth: RefObject<number>;
+  /** Signed shift of the handled vessel from the view centre, as a fraction of the height. Negative sits higher. */
+  shift: RefObject<number | null>;
   sceneTexture: THREE.Texture;
   edgePrint: THREE.Texture;
 }
@@ -31,7 +32,7 @@ export function DistanceConstellation(props: Context) {
   return <>{memories.map(memory => <Neighbor key={memory.id} {...props} {...memory} />)}</>;
 }
 
-function Neighbor({ index, state, place, stage, anchor, depth: chosenDepth, sceneTexture, edgePrint }: Context & {
+function Neighbor({ index, state, place, stage, anchor, depth: chosenDepth, shift, sceneTexture, edgePrint }: Context & {
   index: number; state: VesselState; place: ReturnType<typeof memoryFieldPlace>;
 }) {
   const root = useRef<THREE.Group>(null);
@@ -52,7 +53,8 @@ function Neighbor({ index, state, place, stage, anchor, depth: chosenDepth, scen
     // Match VesselArtifact's fitting: flat or deeply lobed forms must not be
     // enlarged to fill a seat by their tiny height alone.
     const reach = Math.max(.5, (box.max.y - box.min.y) / 2, radius * 1.45);
-    return { glass, sheet, center, height: 2 * reach * 1.12 };
+    glass.geometry.computeBoundingSphere();
+    return { glass, sheet, center, height: 2 * reach * 1.12, radius: glass.geometry.boundingSphere!.radius };
   }, [state]);
   useEffect(() => () => { built.glass.geometry.dispose(); built.sheet.geometry.dispose(); }, [built]);
   const uniforms = useMemo(() => {
@@ -83,17 +85,22 @@ function Neighbor({ index, state, place, stage, anchor, depth: chosenDepth, scen
     const distance = cam.position.distanceTo(anchor.current);
     // Follow the current memory in depth, leaving it fixed in the view. Every
     // other memory moves relative to that camera, eventually passing the eye.
-    const seat = distancePreviewSeat(index, place, chosenDepth.current, { w: size.width, h: size.height });
+    const bounds = stage.current.foregroundBounds;
+    const seat = distancePreviewSeat(index, place, chosenDepth.current, { w: size.width, h: size.height },
+      bounds ? { bounds, shift: shift.current ?? 0, radiusRatio: built.radius / built.height } : undefined);
     root.current.visible = seat.opacity > .001;
     if (!root.current.visible) return;
     const depth = distance * seat.depth / FIELD_FOCAL;
     const halfH = viewHalfTan(cam) * depth;
-    vector.set((seat.x / size.width - .5) * 2 * halfH * cam.aspect, (.5 - seat.y / size.height) * 2 * halfH, -depth);
+    const y = seat.y + (shift.current ?? 0) * size.height;
+    vector.set((seat.x / size.width - .5) * 2 * halfH * cam.aspect, (.5 - y / size.height) * 2 * halfH, -depth);
     root.current.position.copy(vector.applyQuaternion(cam.quaternion).add(cam.position));
     root.current.quaternion.copy(cam.quaternion);
     root.current.rotateY(-state.tune.anchorAngle * Math.PI / 180);
-    const frame = carouselFrame(size.width, size.height);
-    const scale = frame.size / size.height * 2 * viewHalfTan(cam) * distance / built.height;
+    // fieldSeat caps projection at .3 near the eye; undo that cap as well so
+    // the final fade never shrinks a neighbour's actual geometry.
+    const sizeDepth = distance * Math.max(.3, seat.depth) / FIELD_FOCAL;
+    const scale = seat.size / size.height * 2 * viewHalfTan(cam) * sizeDepth / built.height;
     root.current.scale.setScalar(scale);
     root.current.traverse(child => {
       if (child instanceof THREE.Mesh && child.layers.isEnabled(FRONT_LAYER)) child.renderOrder = 100 - seat.depth * 2;

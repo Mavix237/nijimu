@@ -7,11 +7,11 @@ import { POND_DROP_SLOTS } from "../lib/voicePeaks";
 import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamera";
 import { PortraitFit } from "../lib/portraitView";
 
-export interface PondTouch { x: number; y: number; serial: number; strength?: number }
+export interface PondTouch { x: number; y: number; serial: number; strength?: number; soft?: boolean }
 
 export const POND_WAVES_GLSL = /* glsl */ `
   uniform float uTime;
-  uniform vec4 uDrops[${POND_DROP_SLOTS}];
+  uniform vec4 uDrops[${POND_DROP_SLOTS}]; // negative strength selects the gentle transcription envelope
   uniform vec4 uSheetDrop;   // centre x, z, time laid down, strength
   uniform vec4 uSheetShape;  // half width, half height, cos yaw, sin yaw
   uniform vec4 uTrails[${POND_TRAIL_SLOTS}];
@@ -39,7 +39,9 @@ export const POND_WAVES_GLSL = /* glsl */ `
     vec3 field = vec3(0.0);
     vec2 wob = breath(p);
     for (int i = 0; i < ${POND_DROP_SLOTS}; i++) {
-      if (uDrops[i].w < .001 || uTime < uDrops[i].z) continue;
+      float strength = abs(uDrops[i].w);
+      float soft = uDrops[i].w < 0.0 ? 1.0 : 0.0;
+      if (strength < .001 || uTime < uDrops[i].z) continue;
       float age = uTime - uDrops[i].z;
       // Long spent: nothing left to add, and the slot is usually still filled.
       if (age > 14.0) continue;
@@ -61,7 +63,9 @@ export const POND_WAVES_GLSL = /* glsl */ `
         + sin(ang * 2.0 + seed * 2.3 - age * .2) * .15;
       // The front sprints away from the touch and then settles into a glide,
       // so the ripple reads on the next frame instead of creeping out of a dot.
-      float radius = (age * 1.02 + .42 * (1.0 - exp(-age * 6.5))) * (1.0 + uneven * (.015 + age * .025));
+      float quickRadius = age * 1.02 + .42 * (1.0 - exp(-age * 6.5));
+      float gentleRadius = 1.02 * (age - .35 * (1.0 - exp(-age / .35)));
+      float radius = mix(quickRadius, gentleRadius, soft) * (1.0 + uneven * (.015 + age * .025));
       float front = d - radius;
       float trail = max(0.0, -front);
       // The train lengthens behind the front as the slower waves fall back,
@@ -72,17 +76,18 @@ export const POND_WAVES_GLSL = /* glsl */ `
       float train = cos(trail / wavelength * 6.2831853) * exp(-trail * 3.2 / (1.0 + age * .55));
       // Still water ahead of the front.
       float gate = exp(-pow(max(0.0, front) / (.045 + age * .015), 2.0));
-      float birth = smoothstep(0.0, .03, age);
+      float birth = smoothstep(0.0, mix(.03, .65, soft), age);
+      float release = mix(1.0, 1.0 - smoothstep(7.0, 13.5, age), soft);
       // Energy shared over a growing circumference, and lost to the water.
-      float amp = train * gate * birth * exp(-age * .33) / (1.0 + d * .55);
+      float amp = train * gate * birth * release * exp(-age * .33) / (1.0 + d * .55);
       amp *= .8 + .3 * uneven;
       // The touch itself: a dimple under the finger, present on the same frame
       // and gone before the first ring has travelled far.
       float dimple = -exp(-pow(d / .15, 2.0)) * exp(-age * 8.0) * birth;
-      field.x += (amp * .075 + dimple * .05) * uDrops[i].w;
+      field.x += (amp * .075 + dimple * .05) * strength;
       // Push the water's material coordinates along with the wave. This bends
       // existing currents and light ribbons instead of drawing atop them.
-      field.yz += dir * (amp * .8 + dimple * .3) * uDrops[i].w;
+      field.yz += dir * (amp * .8 + dimple * .3) * strength;
     }
     // A sheet laid on the water. The wave leaves from the whole edge at once,
     // so the front keeps the sheet's outline — a rounded rectangle easing to a
@@ -511,7 +516,7 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
       tapAt.current = time.current;
       raycaster.setFromCamera(new THREE.Vector2(touch.x * 2 - 1, 1 - touch.y * 2), camera);
       if (raycaster.ray.intersectPlane(plane, point) && onPond(point)) {
-        uniforms.uDrops.value[1 + (touchIndex.current++ % (POND_DROP_SLOTS - 1))].set(point.x, point.z, time.current, touch.strength ?? 1.5);
+        uniforms.uDrops.value[1 + (touchIndex.current++ % (POND_DROP_SLOTS - 1))].set(point.x, point.z, time.current, (touch.strength ?? 1.5) * (touch.soft ? -1 : 1));
       }
     }
     const nearX = size.width < 600 ? 0 : POND_THOUGHTS[0].x;

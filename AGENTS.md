@@ -20,6 +20,16 @@ transcript highlighting works by finger (sideways drag), the lab dock is hidden,
 naming does not auto-focus on touch, pages use `h-dvh`, and `index.html` has
 `viewport-fit=cover`. Not done: the revisit editors are camera-only.
 
+## Underwater camera introduction (2026-10-10)
+
+`HandTrackingDialog` appears when the dive and form ascent finish, before the
+first handling step. `DescentRun` starts camera/hand tracking only after “allow
+camera & begin”; it retains that choice across handling steps, offers retry on
+startup failure and keeps the mouse fallback. Direct/reloaded underwater entry
+also asks; `?camera=off` bypasses it for development. The dialog overlays the
+existing water canvas without replacing it. `GlassPane` focuses its card on
+opening and traps Tab navigation inside the dialog.
+
 ## Rhythm continuity (2026-10-10)
 
 `DescentPrototype` retains its glass geometry and settled photo sheet while m2
@@ -33,6 +43,14 @@ units as well as the existing confirmation/deadband gates. Run
 topology, continuous retargeting, endpoint glitches and final-pose convergence.
 
 ## Pond → recording dialog continuity (2026-10-10)
+
+The transcription pulse sits at screen y=.81, with its floating label 52px
+above the origin. `VoiceRippleSpot.soft` selects a gentle water-wave envelope
+(encoded as negative strength in `uDrops`, with absolute strength for amplitude):
+650ms entrance, eased initial expansion, and a smooth release before expiry.
+Pulses arrive 1.25–1.7s apart with slight strength variation; stopping transcription
+stops new pulses while existing waves decay. Other touch/voice ripples retain
+their immediate response.
 
 `LandingPage` now hosts `/memory/pond`, `/record/start`, `/record/transcript`,
 and `/record/descent` under the same route parent and retains one `DescentFlow`
@@ -89,12 +107,23 @@ least .6 through the existing pose easing (`rhythmMorph`), so skipping Shape or
 restoring an old zero-growth draft cannot hide every m2 edit behind a sphere.
 Higher growth is retained; the revealed growth is carried into later steps and
 saved. The neighbour preview uses the gallery's
-existing irregular positions, with depth `2.4 + galleryDepth * 2.8` and added
+existing irregular positions, with depth `2.4 + galleryDepth * 4.4` and added
 haze reduced to 38% (saved haze remains intact). It does not generate rings or
 reshuffle by angle. Only neighbours inside the central artifact's clearance
 are shifted on one axis. Preview travel eases as `22 * haze³` so several
-references remain visible at the midpoint and pass the eye by the endpoint;
-the saved distance mapping is unchanged.
+references remain visible through 70% and pass the eye by the endpoint.
+Fixed neighbour world sizes compensate for the deeper starting seats and make
+them 15% larger on screen at zero distance. The renderer uses the projected
+seat size, so slider travel never changes mesh scale. `HANDLING_DROP = .01`
+places the main artifact and its constellation 4% of screen height higher than
+the previous .05 placement across underwater steps. The saved distance mapping
+is unchanged.
+
+At distance entry, `DescentRun` measures the foreground heading/copy with a
+Range and ResizeObserver (including font load and viewport changes).
+`distancePreviewSeat` reserves those bounds plus each neighbour's bounding
+sphere and 24px spacing. Only overlapping starting seats move sideways;
+these corrected world positions remain fixed throughout slider travel.
 
 The pond invitation now uses a white luminous halo: a bright core and two soft
 falloffs on a wider floating annulus, with the hold-progress arc retained.

@@ -20,7 +20,8 @@ const POND_FADE = "rgba(226, 230, 226, 0.88)";
 
 
 
-const TRANSCRIBING_SPOT = { x: .5, y: .87, strength: .7 };
+const TRANSCRIBING_SPOT = { x: .5, y: .81, strength: .7, soft: true };
+const TRANSCRIBING_LABEL_GAP = 52;
 
 interface PuddleTranscriptState {
   transcript?: string;
@@ -132,10 +133,14 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
   const transcribing = !transcribeError && !highlightMode && (awaitingTranscript || isTyping);
   useEffect(() => {
     if (!transcribing || reducedMotion) return;
-    const pulse = () => pulseRef.current?.(TRANSCRIBING_SPOT);
+    let timer: number;
+    const pulse = () => {
+      pulseRef.current?.({ ...TRANSCRIBING_SPOT, strength: .6 + Math.random() * .16 });
+      // A quiet, uneven cadence; existing waves finish naturally after typing.
+      timer = window.setTimeout(pulse, 1250 + Math.random() * 450);
+    };
     pulse();
-    const timer = window.setInterval(pulse, 950);
-    return () => window.clearInterval(timer);
+    return () => window.clearTimeout(timer);
   }, [transcribing, reducedMotion]);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [showBottomFade, setShowBottomFade] = useState(false);
@@ -350,7 +355,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     >
         {transcribing && <p role="status" style={{
           position: "absolute", left: `${TRANSCRIBING_SPOT.x * 100}%`, top: `${TRANSCRIBING_SPOT.y * 100}%`,
-          transform: "translate(-50%, -100%)", margin: "-24px 0 0", fontFamily: SERIF,
+          transform: "translate(-50%, -100%)", margin: `-${TRANSCRIBING_LABEL_GAP}px 0 0`, fontFamily: SERIF,
           fontSize: NOTE_SIZE, lineHeight: 1.45, color: CHROME_GRAY, textAlign: "center",
         }}>transcribing</p>}
         <FlowPageGrid actions={(pairReady || transcribeError) && (
@@ -423,7 +428,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             left: "50%",
             transform: "translateX(-50%)",
             top: `calc(${FLOW_PAGE.headingTop} + 96px)`,
-            bottom: transcribing ? "max(160px, calc(13vh + 92px))" : "clamp(120px, 18vh, 160px)",
+            bottom: transcribing ? `calc(${(1 - TRANSCRIBING_SPOT.y) * 100}vh + ${TRANSCRIBING_LABEL_GAP + 68}px)` : "clamp(120px, 18vh, 160px)",
             width: "100%",
             display: "flex",
             flexDirection: "column",

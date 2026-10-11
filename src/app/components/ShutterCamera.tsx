@@ -1,19 +1,19 @@
 import { useEffect, useRef, type CSSProperties, type RefObject } from "react";
+import { cameraMotion, cameraMotionEase, cameraMotionLook } from "../lib/cameraMotion";
 
 /*
  * The hand-tracking camera, shown as if shot on film with a slow shutter.
  *
  * The video itself stays hidden (MediaPipe still reads it); what is seen is a
  * canvas. Every frame of the video is laid into an exposure that lets go of
- * what came before over SHUTTER_S, so a moving hand leaves a smear of itself.
+ * what came before over a motion-sensitive shutter, so a moving hand leaves
+ * a smear of itself and a still hand becomes clearer.
  * The exposure is shown only FPS times a second — posterized in time, the
  * picture stepping rather than flowing — and each shown frame takes a fresh
  * grain, then is gradient-mapped (its brightness read off GRADIENT, black and
  * white with lifted blacks) and softly blurred.
  */
 
-/** How long the exposure remembers, in seconds. */
-const SHUTTER_S = 0.28;
 /** Pictures shown per second. */
 const FPS = 8;
 /** Strength of the grain laid over each shown picture (overlay). */
@@ -94,6 +94,13 @@ export function ShutterCamera({ video, active, style }: {
     exposure.height = h;
     const ex = exposure.getContext("2d")!;
     const tiles = grainTiles(w, h);
+    const probe = document.createElement("canvas");
+    probe.width = 32; probe.height = 24;
+    const probeContext = probe.getContext("2d", { willReadFrequently: true })!;
+    let previousFrame: Uint8ClampedArray | null = null;
+    let measuredAt = -Infinity;
+    let motionTarget = 0;
+    let motion = 0;
 
     let raf = 0;
     let last = 0;
@@ -110,8 +117,19 @@ export function ShutterCamera({ video, active, style }: {
       const sh = h / s;
       const dt = primed ? Math.min(0.1, (now - last) / 1000) : 0;
       last = now;
+      // Sample the raw camera before adding grain or accumulating exposure.
+      if (now - measuredAt >= 1000 / 16) {
+        probeContext.drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, 0, 0, 32, 24);
+        const raw = probeContext.getImageData(0, 0, 32, 24).data;
+        motionTarget = previousFrame ? cameraMotion(previousFrame, raw) : 0;
+        previousFrame = raw;
+        measuredAt = now;
+      }
+      motion = cameraMotionEase(motion, motionTarget, dt);
+      const look = cameraMotionLook(motion);
+      out.style.filter = `blur(${look.blur.toFixed(3)}px)`;
       // the shutter: each frame adds itself in proportion to the time it covers
-      ex.globalAlpha = primed ? 1 - Math.exp(-dt / SHUTTER_S) : 1;
+      ex.globalAlpha = primed ? 1 - Math.exp(-dt / look.shutter) : 1;
       ex.drawImage(v, (v.videoWidth - sw) / 2, (v.videoHeight - sh) / 2, sw, sh, 0, 0, w, h);
       primed = true;
 

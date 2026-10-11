@@ -3,12 +3,12 @@ import { vesselTint } from "../lib/vesselTint";
 import { holdSurfaceFrame } from "../lib/surfaceHandoff";
 import { pondCameraPose, POND_CAMERA_HEIGHT, POND_CAMERA_Z, POND_LOOK as SURFACE_LOOK, SINK_WASH, SURFACE_LIGHT as WHITEOUT } from "../lib/pondCamera";
 import { DistanceConstellation } from "./DistanceConstellation";
-import { FIELD_FOCAL, memoryDepth } from "./vesselField";
+import { FIELD_FOCAL, memoryDepth, type FieldTextBounds } from "./vesselField";
 import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
 import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch } from "../lib/memoryRhythm";
 import { createDistancePush } from "../lib/memoryDistanceGesture";
 import { advanceArtifactPose } from "../lib/artifactPose";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
@@ -27,6 +27,7 @@ import {
 } from "../hooks/useHandTracking";
 import { GestureHint } from "../components/GestureHint";
 import { ShutterCamera } from "../components/ShutterCamera";
+import { HandTrackingDialog } from "../components/HandTrackingDialog";
 import { MATERIAL_PRESETS } from "../components/SceneViewer";
 import { draftColorIndex } from "../components/NamingRim";
 import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE } from "../lib/theme";
@@ -807,6 +808,7 @@ interface StageState {
   surfaceLight: number;
   captureSurface?: () => void;
   voicePulses: VoiceRippleSpot[];
+  foregroundBounds: FieldTextBounds | null;
   request: FallRequest | null;
   holding: boolean;
   /** The sculpting step the page is on, if any. */
@@ -915,6 +917,9 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   const smooth = useRef({ morph: 0, frost: 0, wash: 0, dye: 0, spin: 0, ceiling: 0, stain: 0 });
   const distanceAnchor = useRef(new THREE.Vector3());
   const distanceDepth = useRef(FIELD_FOCAL);
+  /** Screen-down shift of the handled vessel. Null until the first frame, so a
+   * direct step opens already lowered and a finished ascent eases down. */
+  const handlingDrop = useRef<number | null>(null);
   const written = useRef(-1);
   const touches = useRef([
     { at: new THREE.Vector2(-10, -10), wake: new THREE.Vector2(), press: 0 },
@@ -1463,7 +1468,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       voiceNdc.set(pulse.x * 2 - 1, 1 - pulse.y * 2);
       voiceRay.setFromCamera(voiceNdc, camera);
       if (voiceRay.ray.intersectPlane(voicePlane, voicePoint) && voicePoint.z > -100 && voicePoint.z < 18) {
-        drop(voicePoint.x, voicePoint.z, t, pulse.strength);
+        drop(voicePoint.x, voicePoint.z, t, pulse.strength * (pulse.soft ? -1 : 1));
       }
     }
 
@@ -1667,6 +1672,18 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
        vessel's haze; the colour pick reaches the glass through the room it
        reflects, as it reaches the water. */
     const body = form.current;
+    const handlingTarget = riseAt.current !== null ? 0
+      : wrapAt.current !== null ? HANDLING_DROP * (1 - flowProgress(t - wrapAt.current, 0, WRAP_MOVE_S))
+      : s.step ? HANDLING_DROP : 0;
+    if (handlingDrop.current === null) handlingDrop.current = s.step ? HANDLING_DROP : 0;
+    if (wrapAt.current === null && riseAt.current === null) {
+      handlingDrop.current += (handlingTarget - handlingDrop.current) * (1 - Math.exp(-3 * dt));
+    } else handlingDrop.current = handlingTarget;
+    if (body && Math.abs(handlingDrop.current) > 0.0005) {
+      const dist = Math.max(0.1, camera.position.distanceTo(formAt));
+      scratch.forward.set(0, -1, 0).applyQuaternion(camera.quaternion);
+      formAt.addScaledVector(scratch.forward, handlingDrop.current * 2 * dist * viewHalfTan(camera as THREE.PerspectiveCamera));
+    }
     if (body) {
       const reveal = descentAt.current === null ? 0
         : smoothProgress(t - descentAt.current, FORM_REVEAL_S[0], FORM_REVEAL_S[1]);
@@ -1864,7 +1881,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         <Mist geometry={artifact.geometry} uniforms={glassU} layer={FRONT_LAYER} renderOrder={7} on />
       </group>
     </group>
-    <DistanceConstellation stage={stage} anchor={distanceAnchor} depth={distanceDepth} sceneTexture={refract.target.texture} edgePrint={filmUniforms.uEdgePrint.value} />
+    <DistanceConstellation stage={stage} anchor={distanceAnchor} depth={distanceDepth} shift={handlingDrop} sceneTexture={refract.target.texture} edgePrint={filmUniforms.uEdgePrint.value} />
     {CLOUD && particleGeometry && (
       <points ref={particles} geometry={particleGeometry} material={particleMaterial} renderOrder={6} frustumCulled={false} />
     )}
@@ -1876,33 +1893,30 @@ const easeMorph = (m: number) => m * m * (3 - 2 * m);
 
 /** Words set against the washed water, which is paper by then: the chrome grey. */
 const UNDER_INK = CHROME_GRAY;
+/** Signed shift of the handled vessel from the look point, as a fraction of the view. Negative sits higher. */
+const HANDLING_DROP = 0.01;
 
-/* The gesture ranges, as ShapeGrowPage reads them. The hint under the copy
-   names the drag only while no camera is driving the step. */
-const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string]; drag: string }> = {
+/* The gesture ranges, as ShapeGrowPage reads them. */
+const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string] }> = {
   shape: {
     mark: "形",
     name: "shape",
     lines: ["each memory already has a shape.", "open your hands, and let these words find theirs."],
-    drag: "or drag across to grow it",
   },
   rhythm: {
     mark: "律",
     name: "rhythm",
     lines: ["let its contours find their rhythm.", "spread thumb and index finger for more folds; pinch for fewer."],
-    drag: "or drag across to change its rhythm",
   },
   distance: {
     mark: "间",
     name: "distance",
     lines: ["time blurs the edges, not the feeling.", "push your open palm toward the camera to send it farther into the blur."],
-    drag: "or drag across to move it deeper into the constellation",
   },
   color: {
     mark: "染",
     name: "color",
     lines: ["remembering dyes what happened.", "how does it feel, returning to it today?"],
-    drag: "",
   },
 };
 
@@ -2275,6 +2289,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     view: null,
     surfaceLight: 0,
     voicePulses: [],
+    foregroundBounds: null,
     request: null, holding: false, step: null,
     morph: resume ? clamp01(resume.shape?.evolve ?? .5) : FROM ? PREVIEW_MORPH : 0, frost: resume ? 1 - clamp01(resume.look?.vividness ?? 1) : FROM ? PREVIEW_FROST : 0,
     oklch: resume?.look?.oklch ?? DEFAULT_OKLCH, hands: [], wrap: false, rise: false, release: false, ascend: false,
@@ -2360,6 +2375,36 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const drag = useRef<{ x: number; from: number } | null>(null);
 
   const step: Step | null = phase === "shape" || phase === "rhythm" || phase === "distance" || phase === "color" ? phase : null;
+  const handlingHeadingRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const heading = handlingHeadingRef.current;
+    const host = hostRef.current;
+    if (step !== "distance" || !heading || !host) {
+      stage.current.foregroundBounds = null;
+      return;
+    }
+    let live = true;
+    const measure = () => {
+      if (!live) return;
+      const range = document.createRange();
+      range.selectNodeContents(heading);
+      const text = range.getBoundingClientRect();
+      const scene = host.getBoundingClientRect();
+      stage.current.foregroundBounds = {
+        left: text.left - scene.left, right: text.right - scene.left,
+        top: text.top - scene.top, bottom: text.bottom - scene.top,
+      };
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(heading); observer.observe(host);
+    window.addEventListener("resize", measure);
+    void document.fonts.ready.then(measure);
+    return () => { live = false; observer.disconnect(); window.removeEventListener("resize", measure); };
+  }, [step]);
+  const [cameraChoice, setCameraChoice] = useState<"ask" | "starting" | "enabled" | "manual">(CAMERA_ENABLED ? "ask" : "manual");
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const cameraDialogOpen = step !== null && (cameraChoice === "ask" || cameraChoice === "starting");
   stage.current.step = step;
   const stepRef = useRef(step);
   stepRef.current = step;
@@ -2411,13 +2456,14 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
 
   /* Two palms apart for shape, a thumb–index pinch for rhythm, one palm pushing for
      distance, a fingertip over the field for color (pinch to hold).
-     The camera opens when the form surfaces; the drag below stays as
-     the fallback when it is refused or no hand is seen. */
+     After the form surfaces, the camera starts only through the access dialog;
+     dragging stays available when it is refused or no hand is seen. */
   const tracking = useHandTracking({
-    enabled: CAMERA_ENABLED && step !== null,
+    enabled: CAMERA_ENABLED && step !== null && (cameraChoice === "starting" || cameraChoice === "enabled"),
     videoRef,
     numHands: step === "shape" ? 2 : 1,
     onLandmarks: (hands) => {
+      if (cameraChoice !== "enabled") return;
       setHandsDetected(hands.length);
       // the camera is mirrored, as the corner window shows it; landmark y runs down
       handsFrom.current = "camera";
@@ -2469,6 +2515,14 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       if (colorHeldRef.current) { colorHeldRef.current = false; pinchFrames.current = 0; setColorHeld(false); }
     },
   });
+  useEffect(() => {
+    if (tracking.isTracking) setCameraChoice("enabled");
+  }, [tracking.isTracking]);
+  useEffect(() => {
+    if (!tracking.error) return;
+    setCameraError(tracking.error);
+    setCameraChoice("ask");
+  }, [tracking.error]);
   const handsNeeded = step === "shape" ? 2 : 1;
   const gestureLive = tracking.isTracking && handsDetected >= handsNeeded;
 
@@ -2695,6 +2749,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         background: WHITEOUT }} />
 
       {!invitation && <PageHeader layout="absolute" carousel={lab ? false : undefined} />}
+      <HandTrackingDialog open={cameraDialogOpen} busy={cameraChoice === "starting"}
+        error={cameraError}
+        onAllow={() => { setCameraError(null); setCameraChoice("starting"); }}
+        onManual={() => setCameraChoice("manual")} />
       {recording && <>
         <BackButton onClick={() => navigate(MEMORY_POND_PATH, { state: location.state })} />
         <PondRecordingOverlay reducedMotion={reducedMotion}
@@ -2735,8 +2793,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       <ShutterCamera video={videoRef} active={!!step && tracking.isTracking}
         style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96,
           borderRadius: 10, transform: "scaleX(-1)", zIndex: 20, pointerEvents: "none",
-          opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease",
-          filter: "blur(0.6px)" }} />
+          opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease" }} />
 
       <FlowPageGrid heading={
         <p style={{ margin: 0, fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
@@ -2854,21 +2911,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         </div>
       )}
       {step && <>
-        <FlowPageGrid style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
+        <FlowPageGrid headingRef={handlingHeadingRef} style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
           heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
             </p>
-            <p style={{ margin: "28px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
+            <p style={{ margin: "28px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}
             </p>
-            {STEP_COPY[step].drag && (
-              <p style={{ margin: "26px 0 0", fontFamily: SANS, fontSize: NOTE_SIZE, color: UNDER_INK,
-                opacity: gestureLive ? 0 : 0.7, transition: "opacity 900ms ease" }}>
-                {tracking.isTracking ? STEP_COPY[step].drag : STEP_COPY[step].drag.replace(/^or /, "")}
-              </p>
-            )}
           </div>}
           actions={<PillButton label="continue" trailing="›" onClick={continueStep} />}
           actionsStyle={{ pointerEvents: leaving ? "none" : "auto" }} />

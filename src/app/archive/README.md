@@ -12,6 +12,12 @@ Current headings and naming fields use `FlowPageGrid`, with row positions in
 `FLOW_PAGE` in `src/app/lib/theme.ts`. Navigation is a separate row above them.
 `/lab/descent` previews the same scene with additional study controls.
 
+## `color-spectrum-2026-10-10/`
+
+The separate [`color-spectrum-2026-10-10/`](color-spectrum-2026-10-10/README.md)
+snapshot preserves the underwater colour page before the homescreen-palette field
+experiment. It includes the owning scene and original colour field/mapping.
+
 ## `shape-flow/`
 
 Previous standalone shape, color, texture, and naming screens. The old

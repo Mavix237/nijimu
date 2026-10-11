@@ -39,6 +39,7 @@ import { PAGE_HEADER_MARK, PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { PillButton } from "../components/PillButton";
 import { OklchColorField } from "../components/OklchColorField";
+import { sampleHomePalette, uvFromHomePalette } from "../lib/homePaletteField";
 import { CAPTION_TITLE_GAP, CAPTION_TITLE_STYLE, CAPTION_YEAR_STYLE } from "../components/PuddleDiveGallery";
 import { MODEL_SPACE } from "../components/SceneViewer";
 import { buildPhotoUv } from "../components/MemoryPhotoLayer";
@@ -46,7 +47,7 @@ import { createArtifactGeometry } from "../hooks/useArtifactGeometry";
 import { computeMeshNormals, formFromState, formKey, getArtifactMesh, type ArtifactForm } from "../lib/superformula";
 import { assignMemoryShape, isMemoryAssignment, type MemoryAssignment } from "../lib/memoryShape";
 import { requestMemoryAssessment } from "../lib/assessMemory";
-import { DEFAULT_OKLCH, meshCoreFromOklch, oklchToHex, sampleField, uvFromOklch, type Oklch } from "../lib/oklch";
+import { DEFAULT_OKLCH, meshCoreFromOklch, oklchToHex, type Oklch } from "../lib/oklch";
 import { FILM_LOOK_GLSL, filmLookUniforms, prepareFilmPhoto } from "../lib/filmLook";
 import { SHEET_GLSL, STRIP_FACE_GLSL, STRIP_GLSL, STRIP_MM, createEdgePrint, sheetUniforms } from "./filmStrip";
 import {
@@ -2367,7 +2368,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     });
     return () => { live = false; };
   }, []);
-  const [colorUv, setColorUv] = useState(() => uvFromOklch(stage.current.oklch));
+  const [colorUv, setColorUv] = useState(() => uvFromHomePalette(stage.current.oklch));
   const [colorHeld, setColorHeld] = useState(false);
   const [handsDetected, setHandsDetected] = useState(0);
   const [memoryName, setMemoryName] = useState("");
@@ -2433,7 +2434,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     const uv = { u: clamp01(u), v: clamp01(v) };
     colorUvRef.current = uv;
     setColorUv(uv);
-    stage.current.oklch = sampleField(uv.u, uv.v);
+    stage.current.oklch = sampleHomePalette(uv.u, uv.v);
   };
   const colorHeldRef = useRef(false);
   const pinchFrames = useRef(0);
@@ -2899,15 +2900,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           {/* a pale veil under the wash, so the band reads as light on the paper rather than a strip */}
           <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "30vh", zIndex: 9, pointerEvents: "none",
             background: "linear-gradient(to bottom, rgba(236,237,238,0) 0%, rgba(236,237,238,.55) 45%, rgba(236,237,238,.7) 100%)" }} />
-          <OklchColorField u={colorUv.u} v={colorUv.v} held={colorHeld} onPick={({ u, v }) => pickColor(u, v)} />
-          {/* the hue alone, carried through to the naming page's stain */}
+          <OklchColorField opacity={0.85} sample={sampleHomePalette} u={colorUv.u} v={colorUv.v} held={colorHeld} onPick={({ u, v }) => pickColor(u, v)} />
           <div style={{ position: "absolute", bottom: 150, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
-            <input type="range" min={0} max={1} step={0.01} value={colorUv.u} aria-label="memory hue"
-              aria-valuetext={`${Math.round(stage.current.oklch.h)}°`}
+            <input type="range" min={0} max={1} step={0.01} value={colorUv.u} aria-label="memory colour"
+              aria-valuetext={`${Math.round(colorUv.u * 100)}% across the homescreen palette`}
               onChange={e => pickColor(Number(e.target.value), colorUvRef.current.v)}
               style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>rose</span><span>round the hues, back to rose</span></div>
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>rose</span><span>night</span></div>
           </div>
+
         </div>
       )}
       {step && <>

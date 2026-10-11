@@ -230,9 +230,11 @@ All GlassPane action buttons use `PaneOptions` / `PaneOption`, including profile
 and memory reading. Full-width rows have 1px top/bottom rules in
 `GALLERY_TRANSCRIPT.color` (trail ink); adjacent rows share one rule, with zero
 group gap and zero button margins. The last button has no bottom rule.
-Padding supplies the touch area. Reading's
+The trail rules use 25% opacity. `PANE_ACTION.paddingY` supplies 14px vertical
+button padding and reduces the pane's bottom inset by the same 14px. Reading's
 bottom anchoring belongs to the options wrapper (`atFoot`), never an inline
-margin on the button.
+margin on the button. Instruction-dialog titles and body copy are left-aligned;
+`PANE_CONTENT_GAP` sets title-to-copy spacing to 14px; copy-to-actions uses 1.5× (21px).
 
 ## Phone layout (2026-10-10)
 

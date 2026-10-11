@@ -53,6 +53,10 @@ export const GALLERY_TRANSCRIPT = {
 } as const;
 /** Pill and text-button labels. Primary and secondary share this size. */
 export const BUTTON_SIZE_SM = "clamp(13px, 2.6vw, 14px)";
+/** Shared dialog action spacing, including the pane's compensating bottom inset. */
+export const PANE_ACTION = { paddingY: 14, borderOpacity: 25 } as const;
+/** Dialog title-to-instructions gap; instructions-to-actions uses 1.5× this. */
+export const PANE_CONTENT_GAP = 14;
 /** Exposure title — glass panes and pond overlay headings. */
 export const TITLE_SIZE = "clamp(20px, 4.6vw, 24px)";
 export const TITLE_TRACKING = "0.01em";

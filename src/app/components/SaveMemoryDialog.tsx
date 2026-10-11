@@ -1,3 +1,4 @@
+import { PANE_CONTENT_GAP } from "../lib/theme";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GlassPane } from "./GlassPane";
@@ -71,11 +72,11 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
     else if (!event.shiftKey && (index < 0 || index === buttons.length - 1)) { event.preventDefault(); buttons[0].focus(); }
   }}>
     <GlassPane open onClose={onClose} closeDisabled={busy} labelledBy="save-memory-title" align="start">
-      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
         <h2 id="save-memory-title" style={PANE_TITLE}>Keep a copy of your memory</h2>
-        <div style={PANE_BODY}>
-          <p style={{ margin: 0 }}>You’re exploring nijimu as a guest. Your memory will remain in the gallery during this visit, but won’t be saved or shared publicly.</p>
-          <p style={{ margin: "1.6em 0 0" }}>Download an image to take a piece of it with you.</p>
+        <div className="nijimuPaneBody" style={PANE_BODY}>
+          <p>You’re exploring nijimu as a guest. Your memory will remain in the gallery during this visit, but won’t be saved or shared publicly.</p>
+          <p>Download an image to take a piece of it with you.</p>
         </div>
         {(error || storageError) && <p role="alert" style={PANE_BODY}>{error || storageError}</p>}
       </div>

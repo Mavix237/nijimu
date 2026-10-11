@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { LANDING_RETURN } from "../lib/landingReturn";
 import { squirclePath } from "../lib/squircle";
 import { useCompact } from "../hooks/useCompact";
+import { PANE_ACTION, PANE_CONTENT_GAP } from "../lib/theme";
 
 /** Paper grain — same recipe as SceneViewer / the dive gallery veil. */
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
@@ -198,8 +199,8 @@ export function GlassPane({
               display: "flex",
               flexDirection: "column",
               alignItems: align === "start" ? "stretch" : "center",
-              gap: align === "start" ? "clamp(22px, 3.4vh, 28px)" : "clamp(20px, 4vh, 30px)",
-              padding: "clamp(32px, 7vw, 44px) clamp(24px, 6.4vw, 44px) clamp(30px, 6.4vw, 40px)",
+              gap: align === "start" ? PANE_CONTENT_GAP * 1.5 : "clamp(20px, 4vh, 30px)",
+              padding: `calc(clamp(32px, 7vw, 44px) - 4px) clamp(24px, 6.4vw, 44px) calc(clamp(30px, 6.4vw, 40px) - ${PANE_ACTION.paddingY}px - 4px)`,
             }}
           >
             {children}
@@ -208,6 +209,9 @@ export function GlassPane({
       </div>
 
       <style>{`
+        .nijimuPaneBody > p { margin: 0; }
+        .nijimuPaneBody > p + p { margin-top: .4em; }
+
         @keyframes nijimuProfileFadeIn {
           from { opacity: 0; }
           to { opacity: 1; }

@@ -6,12 +6,12 @@
  */
 
 import type { CSSProperties, ReactNode } from "react";
-import { BODY_SIZE, BUTTON_SIZE_SM, GALLERY_TRANSCRIPT, SANS, SERIF, TITLE } from "../lib/theme";
+import { BODY_SIZE, BUTTON_SIZE_SM, GALLERY_TRANSCRIPT, PANE_ACTION, SANS, SERIF, TITLE } from "../lib/theme";
 import { PANE_INK } from "../lib/colors";
 
 export const PANE_TITLE: CSSProperties = {
   ...TITLE,
-  fontSize: 16,
+  fontSize: 20,
   color: PANE_INK.title,
   margin: 0,
   textAlign: "left",
@@ -24,7 +24,7 @@ export const PANE_BODY: CSSProperties = {
   fontFamily: SERIF,
   fontSize: BODY_SIZE,
   fontWeight: 400,
-  lineHeight: 1.6,
+  lineHeight: 1.45,
   color: PANE_INK.body,
   margin: 0,
   textAlign: "left",
@@ -158,11 +158,11 @@ const PANE_OPTION_CSS = `
   align-items: center;
   gap: 10px;
   margin: 0;
-  padding: 12px 0;
+  padding: ${PANE_ACTION.paddingY}px 0;
   min-height: 44px;
   width: 100%;
   border: none;
-  border-block: 1px solid ${GALLERY_TRANSCRIPT.color};
+  border-block: 1px solid color-mix(in srgb, ${GALLERY_TRANSCRIPT.color} ${PANE_ACTION.borderOpacity}%, transparent);
   border-radius: 0;
   background: transparent;
   font-family: ${SANS};

@@ -109,7 +109,7 @@ assert.ok(pondSource.includes("float waterHeight(vec2 p)"));
 assert.ok(pondSource.includes("/ (1.0 + d * .55)"), "a ring's energy is shared over a growing circumference");
 assert.ok(pondSource.includes("exp(-age * .33)"), "and is lost to the water as the ring travels");
 assert.ok(pondSource.includes("float gate = exp(-pow(max(0.0, front)"), "water outside the travelling front cannot ripple early");
-assert.ok(pondSource.includes("float birth = smoothstep(0.0, .03, age)"), "the near-zero impulse starts softly");
+assert.ok(pondSource.includes("float birth = smoothstep(0.0, mix(.03, .65, soft), age)"), "touch impulses start softly and transcription ripples have a longer entrance");
 assert.ok(pondSource.includes("uTime < uDrops[i].z) continue"), "a ripple cannot exist before its birth");
 assert.ok(!pondSource.includes("uRippleEnergy"), "new ripples cannot reset the pond-wide contrast");
 assert.ok(pondSource.includes("(ribbons - .5) * .022 + fibers * .006"), "ambient lighting contrast remains constant");

@@ -4,6 +4,20 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Water surface continuity (2026-10-11)
+
+`PerspectivePond.tsx` exports `POND_SURFACE_GLSL` alongside `POND_WAVES_GLSL`.
+The pond, descent's top surface, and the overhead surface during the colour →
+naming rise share `pondSurfaceNormal` and `pondSurfaceColor`: ripple/swell/grain
+normals, wind-driven ribbons, clouds and the low sun. The overhead view mirrors
+the eye across the water and reuses the same world coordinates and clock.
+Its former independent `ceilingHeight` and extra surface caustic pattern are
+removed. `underwaterBodyColor` supplies the same near-surface colour gradient
+to the surface plane and full-frame volume. The overhead texture feathers out
+over grazing rays, and light shafts ease out over an angular range instead of
+the former hard `dir.y < .2` cutoff, preventing a separate coloured band beneath
+the surface during the naming ascent.
+
 ## Phone layout (2026-10-10)
 
 Breakpoint: `max-width: 600px` (`src/styles/responsive.css`, `useCompact()` in

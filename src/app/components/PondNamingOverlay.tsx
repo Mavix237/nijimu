@@ -22,13 +22,18 @@ import {
  * memory was made and stands at the pond again, in the same place it stood to
  * speak; the memory has risen with it and hangs in the air over the water,
  * centred, turning, in the gallery's own glass. The name and the year are
- * typed above it. They keep the shared heading row for layout, then drop
- * part of the way toward the glass, so a taller window does not leave them
- * stranded under the wordmark.
+ * typed above the transcript, with the vessel below the words. The content
+ * stays inside the scene row, leaving the save action clear.
  */
 
-/** Air left between the year and the top of the vessel's frame. */
+/** Air left between the year and the scene content. */
 const FIELD_GAP = 48;
+/** The name, year and transcript rise further than the vessel. */
+const TEXT_LIFT = "6vh";
+/** The vessel sits this far above the seat the words leave it. */
+const ARTIFACT_LIFT = "3vh";
+/** A little larger than the gallery seat, on this page only. */
+const ARTIFACT_SCALE = 1.1;
 /** Going back down: the words leave first, then the eye sinks. */
 const CHROME_OUT_MS = 420;
 /** How far below its seat the memory sinks when going back, as a share of the viewport height. */
@@ -96,13 +101,14 @@ export function PondNamingOverlay({
   const navigate = useNavigate();
   const viewport = useViewport();
   const frame = carouselFrame(viewport.w, viewport.h);
-  const artifactTop = `max(24px, calc(50% - ${frame.size / 2}px - ${FLOW_PAGE.namingArtifactRaise}))`;
+  const contentTop = `max(24px, calc(50% - ${frame.size / 2}px - ${FLOW_PAGE.namingArtifactRaise}))`;
   const [fieldDrop, setFieldDrop] = useState(0);
   const { state } = session;
 
   const washRef = useRef<HTMLDivElement>(null);
   const lightRef = useRef<HTMLDivElement>(null);
   const artifactRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
   const passageRef = useRef<HTMLParagraphElement>(null);
   const passage = (state.transcript ?? "").trim();
@@ -139,7 +145,7 @@ export function PondNamingOverlay({
     appearRef.current = appear;
     const el = artifactRef.current;
     if (!el) return;
-    el.style.transform = `translateY(${lift * LIFT_VH}vh)`;
+    el.style.transform = `translateY(calc(${lift * LIFT_VH}vh - ${ARTIFACT_LIFT}))`;
     el.style.opacity = String(clamp01(appear));
     el.style.filter = blurPx > 0.02 ? `blur(${blurPx.toFixed(2)}px)` : "";
   };
@@ -153,17 +159,17 @@ export function PondNamingOverlay({
     el.style.setProperty("-webkit-backdrop-filter", filter);
   };
 
-  // The heading row stays put, so the vessel does not move. The fields
-  // themselves travel down, stopping short of the glass.
+  // The heading row stays put. Its fields stop short of the transcript
+  // and vessel stack, so editing never shifts the scene.
   useLayoutEffect(() => {
     const place = () => {
       const heading = chromeRef.current;
-      const artifact = artifactRef.current;
-      const scene = artifact?.offsetParent as HTMLElement | null;
-      if (!heading || !artifact || !scene) return;
-      const artifactEdge = scene.offsetTop + artifact.offsetTop;
+      const content = contentRef.current;
+      const scene = content?.offsetParent as HTMLElement | null;
+      if (!heading || !content || !scene) return;
+      const contentEdge = scene.offsetTop + content.offsetTop;
       const headingBottom = heading.offsetTop + heading.offsetHeight;
-      setFieldDrop(Math.max(0, artifactEdge - FIELD_GAP - headingBottom));
+      setFieldDrop(Math.max(0, contentEdge - FIELD_GAP - headingBottom));
     };
     place();
     window.addEventListener("resize", place);
@@ -268,18 +274,46 @@ export function PondNamingOverlay({
 
       {/* Naming is content, not navigation: it shares the step-heading row. */}
       <FlowPageGrid headingRef={chromeRef} heading={rim.caption}
-        scene={<>
+        scene={<div ref={contentRef} style={{ position: "absolute", top: contentTop, bottom: 12,
+          left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: passage ? 28 : 0 }}>
+        {passage && (
+          <p
+            ref={passageRef}
+            style={{
+              ...TRANSCRIPT,
+              fontSize: NAMING_PROSE_SIZE,
+              lineHeight: 1.55,
+              flex: "0 1 auto",
+              minHeight: 0,
+              maxHeight: "45%",
+              overflowY: "auto",
+              width: "min(80ch, calc(100vw - 40px))",
+              maxWidth: "80ch",
+              margin: 0,
+              color: CHROME_GRAY,
+              textAlign: "center",
+              opacity: rising ? 0 : 1,
+              transform: `translateY(-${TEXT_LIFT})`,
+              pointerEvents: "auto",
+              zIndex: 1,
+            }}
+          >
+            {passage}
+          </p>
+        )}
+        <div style={{ flex: "1 1 0", minHeight: 0, width: "100%" }}>
         <div
         ref={artifactRef}
         role="img"
         aria-label="the memory being made"
         style={{
-          position: "absolute",
-          left: `calc(50% - ${frame.size / 2}px)`,
-          top: artifactTop,
-          width: frame.size,
-          height: frame.size,
-          transform: rising ? `translateY(${ARRIVE_SETTLE_VH}vh)` : "translateY(0)",
+          position: "relative",
+          height: "100%",
+          maxHeight: frame.size * ARTIFACT_SCALE,
+          maxWidth: "100%",
+          aspectRatio: "1",
+          margin: "0 auto",
+          transform: rising ? `translateY(calc(${ARRIVE_SETTLE_VH}vh - ${ARTIFACT_LIFT}))` : `translateY(-${ARTIFACT_LIFT})`,
           opacity: rising ? 0 : 1,
           willChange: "transform, opacity, filter",
           pointerEvents: "auto",
@@ -299,33 +333,11 @@ export function PondNamingOverlay({
           />
         </div>
       </div>
-        {passage && (
-          <p
-            ref={passageRef}
-            style={{
-              ...TRANSCRIPT,
-              fontSize: NAMING_PROSE_SIZE,
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              top: `calc(${artifactTop} + ${frame.size + 28}px)`,
-              width: "min(80ch, calc(100vw - 40px))",
-              maxWidth: "80ch",
-              margin: 0,
-              color: CHROME_GRAY,
-              textAlign: "center",
-              opacity: rising ? 0 : 1,
-              pointerEvents: "none",
-              zIndex: 1,
-            }}
-          >
-            {passage}
-          </p>
-        )}
-        </>}
+        </div>
+        </div>}
         actions={rim.actions}
         headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
-          transform: `translateY(${fieldDrop}px)`,
+          transform: `translateY(calc(${fieldDrop}px - ${TEXT_LIFT}))`,
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />
 

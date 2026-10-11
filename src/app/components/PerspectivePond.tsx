@@ -201,24 +201,12 @@ export const POND_WAVES_GLSL = /* glsl */ `
   }
 `;
 
-const vertexShader = /* glsl */ `
-  varying vec3 vWorld;
-  void main() {
-    // An uninterrupted water plane. Fine wave normals are evaluated per pixel,
-    // so expanding the lake cannot make its ripple detail coarser.
-    vec4 world = modelMatrix * vec4(position, 1.0);
-    vWorld = world.xyz;
-    gl_Position = projectionMatrix * viewMatrix * world;
-  }
-`;
-
-const fragmentShader = /* glsl */ `
-  ${POND_WAVES_GLSL}
-  varying vec3 vWorld;
-  void main() {
-    vec2 p = vWorld.xz;
+/** One surface texture for the pond and its underside: the same waves, wind,
+ * fine grain, reflected ribbons and sunlight, evaluated from either eye. */
+export const POND_SURFACE_GLSL = /* glsl */ `
+  vec3 pondSurfaceNormal(vec2 p, out vec2 flow) {
     vec3 ripple = rippleField(p);
-    vec2 flow = flowAt(ripple, p);
+    flow = flowAt(ripple, p);
     // One surface, one normal. Swell, ripples and grain are a single height
     // field, and everything the light does — the shading, the sun's
     // reflection — follows from its shape. The grain fades before the horizon
@@ -230,8 +218,9 @@ const fragmentShader = /* glsl */ `
     float h = swellFrom(ripple, p) + ripple.x + grainAt(flow) * grain;
     float hx = waterHeight(p + vec2(.02, 0)) + grainAt(flow + vec2(.02, 0)) * grain;
     float hz = waterHeight(p + vec2(0, .02)) + grainAt(flow + vec2(0, .02)) * grain;
-    vec3 n = normalize(vec3((h - hx) / .02, 1.0, (h - hz) / .02));
-    vec3 eye = normalize(cameraPosition - vWorld);
+    return normalize(vec3((h - hx) / .02, 1.0, (h - hz) / .02));
+  }
+  vec3 pondSurfaceColor(vec2 p, vec2 flow, vec3 n, vec3 eye) {
     vec3 reflection = reflect(-eye, n);
     float fresnel = pow(1.0 - max(0.0, dot(n, eye)), 3.0);
     // The page's own paper tone, and the water a shade below it: the pond is
@@ -273,6 +262,32 @@ const fragmentShader = /* glsl */ `
     // local normals and displaced coordinates, never a global exposure pulse.
     float surfaceTone = (ribbons - .5) * .022 + fibers * .006;
     color += vec3(surfaceTone);
+    return color;
+  }
+`;
+
+const vertexShader = /* glsl */ `
+  varying vec3 vWorld;
+  void main() {
+    // An uninterrupted water plane. Fine wave normals are evaluated per pixel,
+    // so expanding the lake cannot make its ripple detail coarser.
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+
+const fragmentShader = /* glsl */ `
+  ${POND_WAVES_GLSL}
+  ${POND_SURFACE_GLSL}
+  varying vec3 vWorld;
+  void main() {
+    vec2 p = vWorld.xz;
+    vec2 flow;
+    vec3 n = pondSurfaceNormal(p, flow);
+    vec3 eye = normalize(cameraPosition - vWorld);
+    vec3 sky = vec3(.888, .902, .897);
+    vec3 color = pondSurfaceColor(p, flow, n, eye);
     // Keep distant folds legible long enough to establish scale, then lose
     // them gradually into the sky instead of ending the water nearby.
     float haze = 1.0 - exp(-max(0.0, -p.y - 12.0) * .012);

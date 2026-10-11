@@ -34,7 +34,7 @@ import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE } from
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
-import { PondWater, type PondProps, POND_WAVES_GLSL } from "../components/PerspectivePond";
+import { PondWater, type PondProps, POND_WAVES_GLSL, POND_SURFACE_GLSL } from "../components/PerspectivePond";
 import { PAGE_HEADER_MARK, PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { PillButton } from "../components/PillButton";
@@ -368,31 +368,12 @@ const CEILING_GLSL = /* glsl */ `
     float cells = pow(la * lb, 1.6) * 0.5 * (ba + bb) * 0.5 + pow(lb * lc, 1.6) * 0.35 * (bb + bc) * 0.5;
     return (lines + cells) * 1.25;
   }
-  float ceilingHeight(vec2 s) {
-    vec2 wind = vec2(.5435, .8399);
-    vec2 flow = s + wind * uTime * .14;
-    return sin(flow.x * 1.2 + flow.y * .55 + uTime * .48) * .014
-      + sin(flow.y * 1.9 - flow.x * .31 - uTime * .33) * .008
-      + (noise(flow * 3.1 + wind * uTime * .12) - .5) * .011;
-  }
-  vec3 ceilingSurface(vec2 s, vec3 eye) {
-    float h = ceilingHeight(s);
-    float hx = ceilingHeight(s + vec2(.02, 0.0));
-    float hz = ceilingHeight(s + vec2(0.0, .02));
-    vec3 n = normalize(vec3((h - hx) / .02 * 2.2, 1.0, (h - hz) / .02 * 2.2));
-    vec3 e = normalize(eye - vec3(s.x, 0.0, s.y));
-    vec3 reflection = reflect(-e, n);
-    float fresnel = pow(1.0 - max(0.0, dot(n, e)), 3.0);
-    vec3 sky = vec3(.888, .902, .897);
-    vec3 color = mix(sky * vec3(.76, .80, .80), sky, .24 + fresnel * .66);
-    color += (noise(reflection.xz * 3.0) - .5) * .06;
-    color += (n.x * .6 + n.z) * .14;
-    vec3 sunDir = normalize(vec3(0.0, .7, -1.0));
-    float toSun = max(0.0, dot(reflection, sunDir));
-    color += pow(toSun, 12.0) * vec3(.05, .046, .036);
-    color += pow(toSun, 80.0) * fresnel * vec3(.28, .26, .22);
-    color += sky * (uwFolds(s * 0.42, uTime) - 0.45) * 0.12;
-    return color;
+  vec3 ceilingSurface(vec2 p, vec3 eye, vec2 flow, vec3 normal) {
+    // Mirror only the viewpoint. The overhead water keeps the top surface's
+    // actual ripple normals, drifting ribbons and fine grain, at the same
+    // world coordinates and clock; no independent tiled caustic texture.
+    vec3 mirroredEye = normalize(eye - vec3(p.x, 0.0, p.y));
+    return pondSurfaceColor(p, flow, normal, mirroredEye);
   }
   // Shafts: the surface light followed down into the water along the eye's ray,
   // as far as reach, strongest just under the surface and thinning with depth.
@@ -414,6 +395,27 @@ const CEILING_GLSL = /* glsl */ `
     float band = smoothstep(-0.7, 0.05, dir.y);
     return rays * vec3(.95, .97, .96) * 0.9 * band;
   }
+  // A shared background for the plane and the full-frame water. As the eye
+  // rises, a broad gradient picks up the surface's pale reflected sky. The
+  // same colour must sit behind the plane wherever it fades or clips away.
+  vec3 underwaterBodyColor(vec3 dir) {
+    vec3 color = volumeColor(dir);
+    vec3 sky = vec3(.888, .902, .897);
+    vec3 surfaceTone = mix(sky * vec3(.76, .80, .80), sky, .9);
+    float nearSurface = 1.0 - smoothstep(.25, 3.5, max(0.0, -cameraPosition.y));
+    float skyGradient = smoothstep(-.38, .28, dir.y);
+    color = mix(color, surfaceTone, nearSurface * skyGradient * uCeiling * .78);
+    vec2 s = dir.xz / max(.25, dir.y + .45);
+    float shaft = pow(noise(vec2(s.x * 3.0 + uTime * .05, s.y * .6)), 3.0);
+    color += shaft * smoothstep(-.2, .5, dir.y) * .08 * (1.0 - uWash * .7) * (1.0 - uCeiling);
+    // The former dir.y < .2 cutoff drew a visible horizontal colour band.
+    // Ease the shafts into the surface instead, identically in both passes.
+    if (uCeiling > .001) {
+      float shaftFade = 1.0 - smoothstep(-.06, .32, dir.y);
+      color += ceilingRays(dir, 9.0) * uCeiling * shaftFade;
+    }
+    return color;
+  }
 `;
 
 const waterVertex = /* glsl */ `
@@ -432,44 +434,17 @@ const waterVertex = /* glsl */ `
    goes through. */
 const waterFragment = /* glsl */ `
   ${POND_WAVES_GLSL}
+  ${POND_SURFACE_GLSL}
   ${VOLUME_GLSL}
   ${CEILING_GLSL}
   varying vec3 vWorld;
   void main() {
     vec2 p = vWorld.xz;
-    vec3 ripple = rippleField(p);
-    vec2 flow = flowAt(ripple, p);
-    float detail = 1.0 - smoothstep(.3, 1.1, length(fwidth(flow * 12.0)));
-    float stir = 1.0 + clamp(ripple.x * 40.0, -.7, 1.5);
-    float grain = detail * stir;
-    float h = swellFrom(ripple, p) + ripple.x + grainAt(flow) * grain;
-    float hx = waterHeight(p + vec2(.02, 0)) + grainAt(flow + vec2(.02, 0)) * grain;
-    float hz = waterHeight(p + vec2(0, .02)) + grainAt(flow + vec2(0, .02)) * grain;
-    vec3 n = normalize(vec3((h - hx) / .02, 1.0, (h - hz) / .02));
+    vec2 flow;
+    vec3 n = pondSurfaceNormal(p, flow);
     vec3 eye = normalize(cameraPosition - vWorld);
     vec3 sky = vec3(.888, .902, .897);
-    vec3 reflection = reflect(-eye, n);
-    float fresnel = pow(1.0 - max(0.0, dot(n, eye)), 3.0);
-    vec3 deep = sky * vec3(.76, .80, .80);
-    vec3 above = mix(deep, sky, .24 + fresnel * .66);
-    float aboveClouds = noise(reflection.xz * 3.0 + WIND * uTime * .04);
-    above += (aboveClouds - .5) * .06;
-    above += (n.x * .6 + n.z) * .14;
-    vec3 sunDir = normalize(vec3(0.0, .24, -1.0));
-    float toSun = max(0.0, dot(reflection, sunDir));
-    float light = pow(toSun, 220.0);
-    float glow = pow(toSun, 12.0);
-    float centre = exp(-(p.x * p.x / 16.0 + pow((p.y + 5.0) / 15.0, 2.0)));
-    float reach = smoothstep(-60.0, -30.0, p.y) * (.25 + .75 * centre);
-    above += glow * reach * vec3(.05, .046, .036);
-    above += light * reach * (.45 + .55 * fresnel) * vec3(.38, .36, .32);
-    vec2 drift = flow * vec2(.38, .65) + WIND * uTime * .06;
-    float bend = noise(drift * .7) * 2.0 - 1.0;
-    float ribbons = noise(vec2(drift.x * .7, drift.y * 2.4 + bend * 1.3));
-    vec2 fibersUV = vec2(flow.x * 1.8, flow.y * 24.0 + bend * 5.0 + WIND.y * uTime * .6);
-    float fiberAA = 1.0 - smoothstep(.3, 1.3, length(fwidth(fibersUV)));
-    float fibers = (noise(fibersUV) - .5) * fiberAA;
-    above += vec3((ribbons - .5) * .022 + fibers * .006);
+    vec3 above = pondSurfaceColor(p, flow, n, eye);
     float haze = 1.0 - exp(-max(0.0, -p.y - 8.0) * .028);
     above = mix(above, sky, haze);
     above += (hash(gl_FragCoord.xy) - .5) * .017;
@@ -491,15 +466,17 @@ const waterFragment = /* glsl */ `
     float ceilingOn = smoothstep(0.0, 0.3, uCeiling);
     if (uCeiling > 0.001) {
       vec3 mirrorEye = vec3(cameraPosition.x, -cameraPosition.y, cameraPosition.z);
-      below = mix(below, ceilingSurface(p, mirrorEye), ceilingOn);
+      below = mix(below, ceilingSurface(p, mirrorEye, flow, n), ceilingOn);
     }
     // the surface runs out into the body of the water, so its far edge is never a line; as it
     // comes in it is close-hazed, so it is seen first where it is nearest — over the top of the
     // frame — and reaches out toward the horizon as the eye rises to it
     float hazeRate = mix(.045, mix(.16, .018, uCeiling), ceilingOn);
-    below = mix(below, volumeColor(up), 1.0 - exp(-dist * hazeRate));
-    // the same shafts the body below carries, so nothing changes at the horizon
-    if (uCeiling > 0.001) below += ceilingRays(up, min(dist, 9.0)) * uCeiling;
+    // Feather the overhead texture into the shared colour gradient well
+    // before the geometric horizon; no separately coloured strip beneath it.
+    float horizonBlend = mix(1.0, smoothstep(0.0, .20, up.y), ceilingOn);
+    float surfaceVisibility = exp(-dist * hazeRate) * horizonBlend;
+    below = mix(underwaterBodyColor(up), below, surfaceVisibility);
     below += (hash(gl_FragCoord.xy) - .5) * .017;
     // Still the pond as the eye meets the surface; the quieter body only once it is under.
     float submerge = 1.0 - smoothstep(-1.15, .12, cameraPosition.y);
@@ -524,6 +501,7 @@ const volumeVertex = /* glsl */ `
 `;
 const volumeFragment = /* glsl */ `
   ${POND_WAVES_GLSL}
+  ${POND_SURFACE_GLSL}
   ${VOLUME_GLSL}
   ${CEILING_GLSL}
   uniform mat4 uInvProjection;
@@ -533,11 +511,7 @@ const volumeFragment = /* glsl */ `
   void main() {
     vec4 v = uInvProjection * vec4(vNdc, 1.0, 1.0);
     vec3 dir = normalize((uCameraWorld * vec4(v.xyz / v.w, 0.0)).xyz);
-    vec3 color = volumeColor(dir);
-    vec2 s = dir.xz / max(.25, dir.y + .45);
-    float shaft = pow(noise(vec2(s.x * 3.0 + uTime * .05, s.y * .6)), 3.0);
-    color += shaft * smoothstep(-.2, .5, dir.y) * .08 * (1.0 - uWash * .7) * (1.0 - uCeiling);
-    if (uCeiling > 0.001 && dir.y < 0.2) color += ceilingRays(dir, 9.0) * uCeiling;
+    vec3 color = underwaterBodyColor(dir);
     color += (hash(gl_FragCoord.xy) - .5) * .017;
     gl_FragColor = vec4(color, uUnder);
   }
@@ -694,6 +668,7 @@ const ROOM_SURFACE = new THREE.Color(0.86, 0.89, 0.88);
    glass vessel bends when a hand reaches for it under water. A moving hand
    leaves a wake that trails it; the disturbance shimmers; at its thickest the
    light splits by a hair. Nothing is added to the scene, only its light bent. */
+const UNDERWATER_TOUCH = { radiusScale: .7, intensity: .55 } as const;
 const touchVertex = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -728,7 +703,7 @@ const touchFragment = /* glsl */ `
       float press = uPress[i];
       if (press < .002) continue;
       vec2 d = (vUv - uHand[i]) * aspect;
-      float r2 = dot(d, d);
+      float r2 = dot(d, d) / ${Math.pow(UNDERWATER_TOUCH.radiusScale, 2).toFixed(4)};
       // the lens: strongest a hand's width out from the centre, where the water is pushed aside
       float lens = exp(-r2 / .034);
       shift -= d * lens * .18 * press;
@@ -1542,7 +1517,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     }
     tu.uTime.value = t;
     // only while the form is in hand, and only under the water
-    tu.uAmount.value = ease(tu.uAmount.value, s.step !== null ? under.value : 0, 2.5);
+    tu.uAmount.value = ease(tu.uAmount.value, s.step !== null ? under.value * UNDERWATER_TOUCH.intensity : 0, 2.5);
     if (glowRef.current) glowRef.current.style.opacity = String(1 - under.value);
     if (crossingRef.current) {
       const crossing = descentAt.current === null ? 0 : Math.exp(-((camY / 0.28) ** 2));
@@ -2901,14 +2876,6 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "30vh", zIndex: 9, pointerEvents: "none",
             background: "linear-gradient(to bottom, rgba(236,237,238,0) 0%, rgba(236,237,238,.55) 45%, rgba(236,237,238,.7) 100%)" }} />
           <OklchColorField opacity={0.85} sample={sampleHomePalette} u={colorUv.u} v={colorUv.v} held={colorHeld} onPick={({ u, v }) => pickColor(u, v)} />
-          <div style={{ position: "absolute", bottom: 150, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
-            <input type="range" min={0} max={1} step={0.01} value={colorUv.u} aria-label="memory colour"
-              aria-valuetext={`${Math.round(colorUv.u * 100)}% across the homescreen palette`}
-              onChange={e => pickColor(Number(e.target.value), colorUvRef.current.v)}
-              style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>rose</span><span>night</span></div>
-          </div>
-
         </div>
       )}
       {step && <>

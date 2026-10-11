@@ -196,8 +196,11 @@ is a live canvas.
   margin, `--chrome-inset` (18 px: the back arrow's and burger's glyphs from
   the edges; 14 px ≤359px; 20 px elsewhere, which FlowPageGrid's columns use).
   Heading lower and form higher (`UNDERWATER_PHONE.headingTop`/`artifactDrop`);
-  the slider spans the margins above a 52 px foot row, a grid of
-  [gesture illustration (scaled to the row) | camera capsule | round continue].
+  the slider spans the margins above a 64 px foot row, a grid of
+  [gesture illustration | camera capsule | round continue]. Each illustration
+  is scaled so its drawn height (`GESTURE_EXTENT`, GestureHint.tsx) fills the
+  row, centred in one cell as wide as the widest so scaled (104 px, colour),
+  so the capsule keeps one width on every step.
   With the camera off the capsule keeps its place: a pale fill and a
   struck-through camera; the gesture stays shown. Desktop keeps the corner
   camera, the pill continue and the gesture above the camera.

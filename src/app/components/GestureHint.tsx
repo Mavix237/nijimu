@@ -9,6 +9,19 @@ import rhythmStillUrl from "../../assets/gesture-rhythm-pinch-still.png";
 
 export type GestureHintKind = "shape" | "rhythm" | "feeling" | "distance" | "color";
 
+/** What each illustration actually covers, in its own px, centred in its stage —
+    the drawn image plus the ground its animation travels over (the palms
+    parting ±36px, the colour hand sweeping ±18px, the feeling hand lifting
+    ±8px). Keep in step with the sizes and keyframes below. A row that fits
+    the illustrations to its height reads these. */
+export const GESTURE_EXTENT: Record<GestureHintKind, { w: number; h: number }> = {
+  shape: { w: 36 * 2 + 56, h: 80 },
+  rhythm: { w: 70, h: 84 },
+  feeling: { w: 84, h: 42 + 16 },
+  distance: { w: 74, h: 74 },
+  color: { w: 58 + 18 * 2, h: 58 },
+};
+
 export function GestureHint({
   kind,
   active,

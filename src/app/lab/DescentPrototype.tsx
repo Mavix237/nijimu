@@ -30,7 +30,7 @@ import {
   preloadHandTracking,
   useHandTracking,
 } from "../hooks/useHandTracking";
-import { GestureHint } from "../components/GestureHint";
+import { GESTURE_EXTENT, GestureHint } from "../components/GestureHint";
 import { ShutterCamera } from "../components/ShutterCamera";
 import { HandTrackingDialog } from "../components/HandTrackingDialog";
 import { MATERIAL_PRESETS } from "../components/SceneViewer";
@@ -1987,8 +1987,12 @@ const easeMorph = (m: number) => m * m * (3 - 2 * m);
 const UNDER_INK = CHROME_GRAY;
 /** Signed shift of the handled vessel from the look point, as a fraction of the view. Negative sits higher. */
 const HANDLING_DROP = 0.01;
-/** The gesture illustration in a phone's foot row: its 88px stage fitted to the row. */
-const HINT_ROW_SCALE = UNDERWATER_PHONE.rowHeight / 88;
+/** The gesture illustration in a phone's foot row: each scaled so its own drawn
+    height fills the row, centred in one cell as wide as the widest of them
+    once so scaled — the capsule beside it keeps its width from step to step. */
+const HINT_ROW_STEPS = ["shape", "rhythm", "distance", "color"] as const;
+const hintRowScale = (kind: (typeof HINT_ROW_STEPS)[number]) => UNDERWATER_PHONE.rowHeight / GESTURE_EXTENT[kind].h;
+const HINT_ROW_WIDTH = Math.ceil(Math.max(...HINT_ROW_STEPS.map((kind) => GESTURE_EXTENT[kind].w * hintRowScale(kind))));
 
 /* The gesture ranges, as ShapeGrowPage reads them. */
 const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string] }> = {
@@ -3076,10 +3080,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", alignItems: "center", columnGap: 14,
           opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}>
           {/* the gesture stays shown here whether or not the camera is on */}
-          <div style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight,
-            width: (step === "shape" ? 180 : 96) * HINT_ROW_SCALE, opacity: 0.8 }}>
+          <div style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight, width: HINT_ROW_WIDTH, opacity: 0.8 }}>
             <GestureHint kind={step} active={gestureLive} style={{
-              top: "50%", left: "50%", transform: `translate(-50%, -50%) scale(${HINT_ROW_SCALE})`,
+              top: "50%", left: "50%", transform: `translate(-50%, -50%) scale(${hintRowScale(step)})`,
               ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),
             }} />
           </div>
@@ -3104,7 +3107,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
               border: "none", padding: 0, background: "rgba(123, 123, 135, 0.16)", cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
               pointerEvents: leaving ? "none" : "auto" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.6"
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.5"
               strokeLinecap="round" strokeLinejoin="round" aria-hidden>
               <path d="M5 12h14M13 6l6 6-6 6" />
             </svg>

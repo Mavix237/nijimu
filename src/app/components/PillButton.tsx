@@ -1,11 +1,11 @@
 import { CSSProperties, ReactNode } from "react";
-import { SANS, SANS_UI } from "../lib/theme";
+import { BUTTON_SIZE_SM, SANS, SANS_UI } from "../lib/theme";
 
 interface PillButtonProps {
   label: string;
   onClick: () => void;
   disabled?: boolean;
-  /** light = gray text on light pages (default); dark = white text on dark pages; outline = bordered, transparent */
+  /** light = gray text on light pages (default); dark = white text on dark pages; outline = bordered secondary */
   variant?: "light" | "dark" | "outline";
   /** trailing glyph, e.g. "›" or "✦" */
   trailing?: string;
@@ -14,9 +14,16 @@ interface PillButtonProps {
   /** positioning only — visuals live here */
   style?: CSSProperties;
   className?: string;
+  /** Instructional dialogs keep sentence case; the rest of the chrome stays lowercase. */
+  transform?: "lowercase" | "none";
 }
 
 const DIMMED = "rgba(140, 140, 140, 0.5)";
+/** Shared chrome — cool gray to match light-page UI */
+const LIGHT_TEXT = "#7b7b87";
+const OUTLINE_BORDER = "1px solid rgba(123, 123, 135, 0.28)";
+const LIGHT_FILL = "rgba(123, 123, 135, 0.16)";
+const LIGHT_FILL_DISABLED = "rgba(123, 123, 135, 0.08)";
 
 export function PillButton({
   label,
@@ -27,18 +34,23 @@ export function PillButton({
   icon,
   style,
   className,
+  transform = "lowercase",
 }: PillButtonProps) {
   const isDark = variant === "dark";
-  const textColor = isDark ? "white" : disabled ? DIMMED : "#8C8C8C";
+  const isOutline = variant === "outline";
+  const textColor = isDark
+    ? "white"
+    : disabled
+      ? DIMMED
+      : LIGHT_TEXT;
 
-  const background =
-    variant === "outline"
-      ? "transparent"
-      : isDark
-        ? "rgba(218, 218, 218, 0.25)"
-        : disabled
-          ? "rgba(175, 163, 163, 0.1)"
-          : "rgba(175, 163, 163, 0.2)";
+  const background = isOutline
+    ? "transparent"
+    : isDark
+      ? "rgba(218, 218, 218, 0.25)"
+      : disabled
+        ? LIGHT_FILL_DISABLED
+        : LIGHT_FILL;
 
   return (
     <button
@@ -50,12 +62,13 @@ export function PillButton({
         alignItems: "center",
         justifyContent: "center",
         gap: 12,
-        padding: "12px 24px",
+        padding: "12px 28px",
         borderRadius: 100,
-        border: variant === "outline" ? "1px solid rgba(175, 163, 163, 0.35)" : "none",
+        border: isOutline ? OUTLINE_BORDER : "none",
         background,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease",
         ...style,
       }}
     >
@@ -63,12 +76,13 @@ export function PillButton({
       <span
         style={{
           fontFamily: isDark ? SANS_UI : SANS,
-          fontSize: 16,
+          fontSize: BUTTON_SIZE_SM,
           fontWeight: isDark ? 300 : 400,
           lineHeight: 1.5,
+          letterSpacing: 0,
           color: textColor,
           textShadow: isDark ? "0px 4px 100px black" : "none",
-          textTransform: "lowercase",
+          textTransform: transform,
         }}
       >
         {label}
@@ -77,8 +91,9 @@ export function PillButton({
         <span
           style={{
             fontFamily: SANS_UI,
-            fontSize: 14,
+            fontSize: BUTTON_SIZE_SM,
             lineHeight: 0,
+            letterSpacing: 0,
             color: textColor,
             fontVariationSettings: "'wdth' 100",
           }}

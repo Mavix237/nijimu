@@ -3,6 +3,8 @@ import { useState, useEffect, useRef } from "react";
 import { SANS, SANS_UI, SERIF } from "../lib/theme";
 import { COLOR_PALETTE } from "../lib/colors";
 import { saveMemory } from "../lib/memoryStore";
+import type { ArtifactForm } from "../lib/superformula";
+import { MEMORY_FIELD_PATH } from "../lib/routes";
 import { PageHeader } from "./PageHeader";
 import { PillButton } from "./PillButton";
 
@@ -14,7 +16,7 @@ interface SavedState {
   highlightedWords?: string[];
   matPresetIndex?: number;
   shape?: {
-    modelPath?: string;
+    form?: ArtifactForm;
     fluidity?: number;
     evolve?: number;
     bumpAmount?: number;
@@ -35,6 +37,7 @@ export function MemorySavedPage() {
   const [showText, setShowText] = useState(false);
   const [showButton, setShowButton] = useState(false);
   const persistedRef = useRef(false);
+  const [saveError, setSaveError] = useState(false);
 
   useEffect(() => {
     // Orchestrate the reveal animation - more subtle fades
@@ -47,18 +50,18 @@ export function MemorySavedPage() {
   // the edit flow has no id to update against.
   useEffect(() => {
     if (persistedRef.current || isEditing) return;
-    if (!state?.shape?.modelPath || !memoryName) return;
+    if (!state?.shape?.form || !memoryName) return;
     persistedRef.current = true; // guards against StrictMode's double effect
 
     const matPresetIndex = state.matPresetIndex ?? 0;
-    saveMemory({
+    const stored = saveMemory({
       id: crypto.randomUUID(),
       title: memoryName,
       year,
       transcript: state.transcript ?? "",
       highlightedWords: state.highlightedWords ?? [],
       shape: {
-        modelPath: state.shape.modelPath,
+        form: state.shape.form,
         matPresetIndex,
         fluidity: state.shape.fluidity ?? 0,
         evolve: state.shape.evolve ?? 0.5,
@@ -69,6 +72,7 @@ export function MemorySavedPage() {
       colorIndex: Math.round((matPresetIndex / 4) * (COLOR_PALETTE.length - 1)),
       createdAt: new Date().toISOString(),
     });
+    setSaveError(!stored);
   }, [isEditing, memoryName, state, year]);
 
   const displayName = memoryName || "your memory";
@@ -76,7 +80,7 @@ export function MemorySavedPage() {
 
   return (
     <div
-      className="relative w-full h-screen overflow-hidden"
+      className="relative w-full h-dvh overflow-hidden"
       style={{ 
         background: "#e0e0e0",
       }}
@@ -124,7 +128,7 @@ export function MemorySavedPage() {
                 marginBottom: 16,
               }}
             >
-              {isEditing ? "memory updated" : "memory preserved"}
+              {saveError ? "memory couldn’t be saved" : isEditing ? "memory updated" : "memory preserved"}
             </p>
             
 
@@ -141,7 +145,7 @@ export function MemorySavedPage() {
                 margin: 0,
               }}
             >
-              {isEditing 
+              {saveError ? "Your browser’s session storage may be full or disabled. Please go back and try again." : isEditing
                 ? "the shape has been reshaped, reflecting how you feel about it now"
                 : "it will blend with the others, waiting to be rediscovered when the time feels right"}
             </p>
@@ -152,7 +156,7 @@ export function MemorySavedPage() {
         {showButton && (
           <PillButton
             label="return home"
-            onClick={() => navigate("/")}
+            onClick={() => navigate(MEMORY_FIELD_PATH)}
             trailing="›"
             className="transition-all duration-1000"
             style={{

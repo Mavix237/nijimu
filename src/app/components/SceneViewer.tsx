@@ -2,20 +2,32 @@ import React, {
   useRef,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useState,
   Suspense,
 } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { useGLTF, OrbitControls, Environment } from "@react-three/drei";
+import { OrbitControls, Environment } from "@react-three/drei";
 import * as THREE from "three";
 import { getShapeBuildEvolvePhase } from "../hooks/useOscillatingEvolve";
-
-// Available 3D model paths
-export const MODEL_PATHS = [
-  "https://raw.githubusercontent.com/Noyok1vas/figbuildAssets/main/Form_01.glb",
-  "https://raw.githubusercontent.com/Noyok1vas/figbuildAssets/main/Form_02.glb",
-  "https://raw.githubusercontent.com/Noyok1vas/figbuildAssets/main/Form_03.glb",
-];
+import { useArtifactGeometry } from "../hooks/useArtifactGeometry";
+import {
+  ArtifactForm,
+  ArtifactMesh,
+  DEFAULT_ARTIFACT_FORM,
+  computeMeshNormals,
+  formKey,
+} from "../lib/superformula";
+import {
+  MemoryPhotoTexture,
+  attachMemoryPhotoOverlay,
+  buildPhotoUv,
+  createMemoryPhotoMaterial,
+  detachMemoryPhotoOverlays,
+  setMemoryPhotoFade,
+  setPhotoUvAttribute,
+} from "./MemoryPhotoLayer";
+import { FrostOverlay } from "./FrostOverlay";
 
 // Glass material presets — 5 warmth choices (cool → warm)
 export interface MaterialPreset {
@@ -71,15 +83,40 @@ function scaledHex(hex: string, factor: number): string {
     .padStart(2, "0")}${clamp(b).toString(16).padStart(2, "0")}`;
 }
 
+// ─── Artifact framing ───────────────────────────────────────────────────────
+
+/**
+ * A superformula form carries most of itself in its top-down cross-section —
+ * a star's arms, a flower's petals — and the profile stands along y, so seen
+ * level the camera would only ever get the edge. The artifact leans its top
+ * toward the camera and turns about its own axis.
+ */
+export const ARTIFACT_TILT = 0.45;
+
+/** The form is the whole model, so photo UVs read straight off its sphere. */
+export const MODEL_SPACE = new THREE.Matrix4();
+
+/** Uniform scale that fits a form to `fitTargetSize`, and the box it then fills. */
+export function fitArtifact(rest: ArtifactMesh, fitTargetSize: number) {
+  const maxDim = Math.max(...rest.size);
+  // Guard: a degenerate form must never push the camera inside it.
+  const scale = Math.min(Math.max(fitTargetSize / maxDim, 0.02), 50);
+  const half = new THREE.Vector3(...rest.size).multiplyScalar(scale / 2);
+  const box = new THREE.Box3(half.clone().negate(), half);
+  return { scale, box, sphere: box.getBoundingSphere(new THREE.Sphere()) };
+}
+
 // ─── 3D Model ────────────────────────────────────────────────────────────────
 
 interface ModelProps {
-  modelPath: string;
+  form: ArtifactForm;
   matColor: string;
   matAttenuationColor: string;
   matSheenColor: string;
   autoRotate: boolean;
   floatAmplitude?: number;
+  /** Carousel: settle the bob at center while navigating; undefined keeps legacy motion. */
+  recenterFloat?: boolean;
   fluidity?: number;
   evolve?: number;
   bumpAmount?: number;
@@ -90,17 +127,131 @@ interface ModelProps {
   fitTargetSize?: number;
   /** When true, evolve breathing/env motion is driven inside useFrame (shape-build oscillation). */
   oscillatingEvolve?: boolean;
+  /** Hold a fixed pose: the internal clock stops advancing, so every frame
+      renders the same image. For artifacts parked on screen — without it a
+      canvas that only renders now and then animates in visible jerks. */
+  still?: boolean;
+  /** Start the pose clock at the page's own elapsed time instead of zero, so
+      the same artifact mounted on a second screen carries on turning and
+      drifting from where the first one left it rather than snapping to rest. */
+  sharedClock?: boolean;
+  /**
+   * Manual morph weight: 0 = sphere rest pose, 1 = form rest pose.
+   * Ignored while `introMorph` is animating internally.
+   */
+  morphProgress?: number;
+  /** Play sphere→form morph once on mount (slow organic growth). */
+  introMorph?: boolean;
+  /** Duration in seconds for introMorph. */
+  introMorphDuration?: number;
   /** Called after center/scale is applied, so camera can fit. */
   onBounds?: (box: THREE.Box3, sphere: THREE.Sphere) => void;
+  /** Memory photo overlay; fades as the form grows. */
+  photoTexture?: THREE.Texture | null;
+}
+
+/** Slow rise, soft settle — reads more like growth than a snap morph. */
+function easeOrganicGrowth(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  // Quintic in-out: long quiet start, gentle middle, soft landing.
+  return x < 0.5
+    ? 16 * x * x * x * x * x
+    : 1 - Math.pow(-2 * x + 2, 5) / 2;
+}
+
+/** Mild cubic ease for gesture-driven morph — mostly linear, soft ends. */
+export function easeSoftMorph(t: number): number {
+  const x = Math.min(1, Math.max(0, t));
+  const eased = x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+  // Blend toward linear so it stays responsive.
+  return x * 0.55 + eased * 0.45;
+}
+
+const GLASS = {
+  transmission: 0.94,
+  thickness: 3,
+  roughness: 0.1,
+  metalness: 0.4,
+  ior: 1.45,
+  envMapIntensity: 0.88,
+  attenuationDistance: 0.55,
+  sheenRoughness: 0.35,
+};
+
+/**
+ * Bump-texture coordinates per mesh unit. Forms are normalised to ±1, and at
+ * the texture step's densities (150–500) raw coordinates would ripple faster
+ * than the grid samples them — blotches, not texture. At this scale even 500
+ * keeps four vertices to a ripple on the coarsest grid (128 around).
+ */
+const BUMP_SPACE = 0.065;
+/** Fluidity wave: spatial frequency per mesh unit (sampled on the settled form). */
+const WAVE_SPATIAL = 2.5;
+
+/**
+ * Sphere→form growth plus the bump texture — everything about the surface
+ * that doesn't move with time. Bumps push out along the settled form's normals.
+ */
+function writeStaticPose(
+  out: Float32Array,
+  rest: ArtifactMesh,
+  blend: number,
+  bump: number,
+  bumpSpike: number,
+  density: number,
+): void {
+  const form = rest.positions;
+  const sph = rest.sphere;
+  const norms = rest.normals;
+  const k = density * BUMP_SPACE;
+  const exponent = 1.0 - bumpSpike * 0.98;
+  for (let i = 0; i < form.length; i += 3) {
+    const ox = form[i];
+    const oy = form[i + 1];
+    const oz = form[i + 2];
+    let px = sph[i] + (ox - sph[i]) * blend;
+    let py = sph[i + 1] + (oy - sph[i + 1]) * blend;
+    let pz = sph[i + 2] + (oz - sph[i + 2]) * blend;
+    if (bump > 0) {
+      const raw =
+        (Math.sin(ox * k) * Math.cos(oy * k) +
+          Math.sin(oy * k) * Math.cos(oz * k) +
+          Math.sin(oz * k) * Math.cos(ox * k)) /
+        3;
+      if (raw > 0) {
+        const amount = Math.pow(raw, exponent) * bump * 0.25;
+        px += norms[i] * amount;
+        py += norms[i + 1] * amount;
+        pz += norms[i + 2] * amount;
+      }
+    }
+    out[i] = px;
+    out[i + 1] = py;
+    out[i + 2] = pz;
+  }
+}
+
+/** sin/cos of every vertex's wave phase, so the per-frame wave needs no trig per vertex. */
+function buildWaveBasis(rest: ArtifactMesh): Float32Array {
+  const form = rest.positions;
+  const basis = new Float32Array((form.length / 3) * 4);
+  for (let i = 0, b = 0; i < form.length; i += 3, b += 4) {
+    basis[b] = Math.sin(form[i] * WAVE_SPATIAL);
+    basis[b + 1] = Math.cos(form[i] * WAVE_SPATIAL);
+    basis[b + 2] = Math.sin(form[i + 2] * WAVE_SPATIAL);
+    basis[b + 3] = Math.cos(form[i + 2] * WAVE_SPATIAL);
+  }
+  return basis;
 }
 
 function Model({
-  modelPath,
+  form,
   matColor,
   matAttenuationColor,
   matSheenColor,
   autoRotate,
   floatAmplitude = 0.08,
+  recenterFloat,
   fluidity = 0,
   evolve = 0,
   bumpAmount = 0,
@@ -109,114 +260,124 @@ function Model({
   matOpacity = 0.1,
   fitTargetSize = 2.5,
   oscillatingEvolve = false,
+  still = false,
+  sharedClock = false,
+  morphProgress = 1,
+  introMorph = false,
+  introMorphDuration = 5.5,
   onBounds,
+  photoTexture = null,
 }: ModelProps) {
-  const { scene } = useGLTF(modelPath);
+  const { geometry, rest } = useArtifactGeometry(form);
+  const material = useMemo(
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        ...GLASS,
+        color: new THREE.Color(matColor),
+        transparent: true,
+        opacity: matOpacity,
+        side: THREE.DoubleSide,
+        attenuationColor: new THREE.Color(matAttenuationColor),
+        sheenColor: new THREE.Color(matSheenColor),
+      }),
+    [], // eslint-disable-line react-hooks/exhaustive-deps -- tints follow below
+  );
+  useEffect(() => () => material.dispose(), [material]);
+  const { scene, mesh } = useMemo(() => {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    const scene = new THREE.Group();
+    scene.add(mesh);
+    return { scene, mesh };
+  }, [geometry, material]);
+
   const { scene: threeScene } = useThree();
   const groupRef = useRef<THREE.Group>(null!);
-  const clock = useRef(0);
-  const originalPositions = useRef<Float32Array | null>(null);
-  const originalNormals = useRef<Float32Array | null>(null);
-  const meshRef = useRef<THREE.Mesh | null>(null);
-  const maxDimRef = useRef<number>(1);
+  /** Angle the form holds beyond the shared clock, so pausing and resuming the
+   *  auto-turn is continuous instead of a jump to the clock's own angle. */
+  const spinOffsetRef = useRef(0);
+  // Seeded from the page clock when the pose has to continue across a route
+  // change; the artifact then starts mid-motion rather than at rest.
+  const clock = useRef(sharedClock ? performance.now() / 1000 : 0);
+  const floatClock = useRef(0);
+  const photoMaterialRef = useRef<THREE.ShaderMaterial | null>(null);
+  const morphRef = useRef(introMorph ? 0 : morphProgress);
+  const introMorphRef = useRef(introMorph);
+  const introDurationRef = useRef(introMorphDuration);
   const oscillatingEvolveRef = useRef(oscillatingEvolve);
   useLayoutEffect(() => {
     oscillatingEvolveRef.current = oscillatingEvolve;
   }, [oscillatingEvolve]);
+  const stillRef = useRef(still);
+  useLayoutEffect(() => {
+    stillRef.current = still;
+  }, [still]);
+  useLayoutEffect(() => {
+    introMorphRef.current = introMorph;
+    introDurationRef.current = introMorphDuration;
+    if (introMorph) morphRef.current = 0;
+  }, [introMorph, introMorphDuration]);
+  useLayoutEffect(() => {
+    if (!introMorphRef.current) morphRef.current = morphProgress;
+  }, [morphProgress]);
 
-  const matTransmission = 0.94;
-  const matThickness = 3;
-  const matRoughness = 0.1;
-  const matMetalness = 0.4;
-  const matIor = 1.45;
-  const matEnvMapIntensity = 0.88;
-  const matAttenuationDistance = 0.55;
-  const matSheenRoughness = 0.35;
+  /**
+   * The vertices are rewritten only when the pose actually changes. A settled
+   * artifact with no fluidity — a parked carousel neighbour, a still preview —
+   * costs nothing per frame. `staticRef` holds growth + bumps (pose null =
+   * the settled form as built); `writtenRef` is what the geometry holds now.
+   */
+  const staticRef = useRef({
+    blend: 1,
+    bump: 0,
+    spike: 0,
+    density: 0,
+    version: 0,
+    pose: null as Float32Array | null,
+  });
+  const writtenRef = useRef({ version: 0, fluid: 0, waveT: 0 });
+  const waveBasisRef = useRef<Float32Array | null>(null);
 
-  // Layout + mesh capture when the glTF path changes.
-  // Reset transform first so cached glTF + StrictMode double-invoke stay idempotent.
+  // Center/scale the form and report bounds for the camera fit.
+  useLayoutEffect(() => {
+    const fit = fitArtifact(rest, fitTargetSize);
+    scene.scale.setScalar(fit.scale);
+    onBounds?.(fit.box, fit.sphere);
+  }, [scene, rest, fitTargetSize]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Memory photo wrapped on the growth sphere; it shares the geometry, so it
+  // follows every vertex the form writes.
   useEffect(() => {
-    scene.position.set(0, 0, 0);
-    scene.rotation.set(0, 0, 0);
-    scene.scale.set(1, 1, 1);
+    if (!photoTexture) return;
+    setPhotoUvAttribute(geometry, buildPhotoUv(rest.sphere, MODEL_SPACE));
+    const photoMaterial = createMemoryPhotoMaterial(
+      photoTexture,
+      1 - easeSoftMorph(morphRef.current),
+    );
+    photoMaterialRef.current = photoMaterial;
+    attachMemoryPhotoOverlay(mesh, photoMaterial);
+    return () => {
+      detachMemoryPhotoOverlays(scene);
+      photoMaterial.dispose();
+      photoMaterialRef.current = null;
+    };
+  }, [scene, mesh, geometry, rest, photoTexture]);
 
-    const box = new THREE.Box3().setFromObject(scene);
-    const center = new THREE.Vector3();
-    box.getCenter(center);
-    scene.position.sub(center);
+  // Tints are uniforms — no program rebuild, so no needsUpdate.
+  useLayoutEffect(() => {
+    material.color.set(matColor);
+    material.opacity = matOpacity;
+    material.attenuationColor.set(matAttenuationColor);
+    material.sheenColor.set(matSheenColor);
+  }, [material, matColor, matAttenuationColor, matSheenColor, matOpacity]);
 
-    const size = new THREE.Vector3();
-    box.getSize(size);
-    const maxDim = Math.max(size.x, size.y, size.z);
-    if (maxDim > 0) {
-      // Guard: some assets have tiny units → huge scale → camera ends up inside.
-      const desiredScale = fitTargetSize / maxDim;
-      const clampedScale = Math.min(Math.max(desiredScale, 0.02), 50);
-      scene.scale.setScalar(clampedScale);
-      maxDimRef.current = maxDim;
-    }
-
-    // Recompute bounds after transform and report to parent for camera fitting.
-    if (onBounds) {
-      const finalBox = new THREE.Box3().setFromObject(scene);
-      const finalSphere = new THREE.Sphere();
-      finalBox.getBoundingSphere(finalSphere);
-      onBounds(finalBox, finalSphere);
-    }
-
-    scene.traverse((child) => {
-      if (!(child as THREE.Mesh).isMesh) return;
-      const mesh = child as THREE.Mesh;
-      const prev = mesh.material as THREE.Material | null;
-      if (prev && typeof prev.dispose === "function") prev.dispose();
-      mesh.material = new THREE.MeshPhysicalMaterial({
-        color: new THREE.Color(matColor),
-        transmission: matTransmission,
-        thickness: matThickness,
-        roughness: matRoughness,
-        metalness: matMetalness,
-        ior: matIor,
-        transparent: true,
-        opacity: matOpacity,
-        side: THREE.DoubleSide,
-        envMapIntensity: matEnvMapIntensity,
-        attenuationColor: new THREE.Color(matAttenuationColor),
-        attenuationDistance: matAttenuationDistance,
-        sheenColor: new THREE.Color(matSheenColor),
-        sheenRoughness: matSheenRoughness,
-      });
-      mesh.castShadow = false;
-      mesh.receiveShadow = false;
-      meshRef.current = mesh;
-
-      const geom = mesh.geometry as THREE.BufferGeometry;
-      if (!geom.attributes.normal) geom.computeVertexNormals();
-      originalPositions.current = Float32Array.from(
-        geom.attributes.position.array as Float32Array,
-      );
-      originalNormals.current = Float32Array.from(
-        geom.attributes.normal.array as Float32Array,
-      );
-    });
-  }, [modelPath, scene, fitTargetSize]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Tint update — separate effect so we never re-apply center/scale on preset switch
-  useEffect(() => {
-    scene.traverse((child) => {
-      if (!(child as THREE.Mesh).isMesh) return;
-      const m = (child as THREE.Mesh).material as THREE.MeshPhysicalMaterial;
-      if (!m?.isMeshPhysicalMaterial) return;
-      m.color.set(matColor);
-      m.opacity = matOpacity;
-      m.attenuationColor.set(matAttenuationColor);
-      m.sheenColor.set(matSheenColor);
-      m.needsUpdate = true;
-    });
-  }, [scene, matColor, matAttenuationColor, matSheenColor, matOpacity]);
-
-  useFrame((_, delta) => {
+  useFrame((_, rawDelta) => {
     if (!groupRef.current) return;
-    clock.current += delta;
+    // A canvas that draws on demand hands back the whole gap since its last
+    // frame, which would jump the motion rather than continue it.
+    const delta = Math.min(rawDelta, 1 / 30);
+    if (!stillRef.current) clock.current += delta;
     const t = clock.current;
 
     // Evolve: read oscillation from ref so useFrame never keeps a stale prop closure.
@@ -243,78 +404,143 @@ function Model({
       }
     }
 
-    // Float, auto-rotate, subtle tilt
-    groupRef.current.position.y = Math.sin(t * 0.6) * floatAmplitude;
-    if (autoRotate) groupRef.current.rotation.y += delta * 0.07;
-    groupRef.current.rotation.z = Math.sin(t * 0.3) * 0.015;
-
-    // Vertex effects: fluidity wave + surface bump — one pass from original positions
-    if (
-      originalPositions.current &&
-      meshRef.current?.geometry?.attributes?.position
-    ) {
-      const pos = meshRef.current.geometry.attributes.position;
-      const orig = originalPositions.current;
-      const norms = originalNormals.current;
-      const f = fluidity * 0.6;
-      const useBump = !!norms && bumpAmount > 1e-9;
-
-      for (let i = 0; i < pos.count; i++) {
-        const ox = orig[i * 3];
-        const oy = orig[i * 3 + 1];
-        const oz = orig[i * 3 + 2];
-        const wave =
-          f > 0
-            ? Math.sin(ox * 2.5 + t * f * 3) *
-              Math.cos(oz * 2.5 + t * f * 2) *
-              0.08 *
-              f
-            : 0;
-        let px = ox;
-        let py = oy + wave;
-        let pz = oz;
-
-        if (useBump && norms) {
-          const nx = norms[i * 3];
-          const ny = norms[i * 3 + 1];
-          const nz = norms[i * 3 + 2];
-          const n1 = Math.sin(ox * density) * Math.cos(oy * density);
-          const n2 = Math.sin(oy * density) * Math.cos(oz * density);
-          const n3 = Math.sin(oz * density) * Math.cos(ox * density);
-          const raw = (n1 + n2 + n3) / 3;
-          const shaped = Math.pow(
-            Math.max(0, raw),
-            1.0 - bumpSpike * 0.98,
-          );
-          const amount = shaped * bumpAmount * 0.25;
-          px += nx * amount;
-          py += ny * amount;
-          pz += nz * amount;
-        }
-
-        pos.setXYZ(i, px, py, pz);
-      }
-      pos.needsUpdate = true;
-      meshRef.current.geometry.computeVertexNormals();
+    // Float, auto-rotate, subtle tilt (tilt follows float — still when amplitude is 0)
+    if (recenterFloat === undefined) {
+      groupRef.current.position.y = Math.sin(t) * floatAmplitude;
+      groupRef.current.rotation.z = floatAmplitude > 0 ? Math.sin(t * 0.3) * 0.015 : 0;
+    } else {
+      // Keep the rotation/morph clock intact. Only the levitation resets when
+      // the carousel moves, so revisiting a memory never resumes a frozen lift.
+      if (recenterFloat) floatClock.current = 0;
+      else if (!stillRef.current) floatClock.current += delta;
+      const blend = stillRef.current ? 1 : 1 - Math.exp(-14 * delta);
+      const y = recenterFloat ? 0 : Math.sin(floatClock.current) * floatAmplitude;
+      const tilt = recenterFloat || floatAmplitude === 0 ? 0 : Math.sin(floatClock.current * 0.3) * 0.015;
+      groupRef.current.position.y = THREE.MathUtils.lerp(groupRef.current.position.y, y, blend);
+      groupRef.current.rotation.z = THREE.MathUtils.lerp(groupRef.current.rotation.z, tilt, blend);
+    }
+    // read off the clock rather than accumulated, so a seeded clock hands the
+    // turn over mid-rotation (see `sharedClock`). The offset is what keeps that
+    // from being destructive: assigning the bare clock angle meant any pause —
+    // a drag, a remount, a prop flip — snapped the form to wherever the clock
+    // had got to. While the turn is held, the offset tracks the angle the form
+    // is actually at, so resuming continues from there instead of jumping.
+    if (autoRotate && !stillRef.current) {
+      groupRef.current.rotation.y = t * 0.16 + spinOffsetRef.current;
+    } else {
+      spinOffsetRef.current = groupRef.current.rotation.y - t * 0.16;
     }
 
-    // Evolve: breathe the whole model (group), not a single mesh — multi-mesh GLBs were invisible before.
-    if (groupRef.current) {
-      if (e > 0) {
-        const freq = 1.0 + e * 2.0;
-        const breath = 1 + Math.sin(t * freq) * breathAmp;
-        groupRef.current.scale.setScalar(breath);
+    // Vertex effects: quiet sphere→form growth + late fluidity/bump settle-in.
+    // Advance intro morph inside the render loop (no React setState per frame).
+    if (introMorphRef.current && morphRef.current < 1) {
+      const dur = Math.max(0.05, introDurationRef.current);
+      morphRef.current = Math.min(1, morphRef.current + delta / dur);
+    }
+    const mt = Math.min(1, Math.max(0, morphRef.current));
+    // Intro: slow organic; gesture: nearly linear with a touch of ease.
+    const formBlend = introMorphRef.current
+      ? easeOrganicGrowth(mt)
+      : easeSoftMorph(mt);
+    setMemoryPhotoFade(photoMaterialRef.current, 1 - formBlend);
+    // Keep surface detail quiet until the body has mostly emerged.
+    const detailGain = mt < 0.62 ? 0 : Math.pow((mt - 0.62) / 0.38, 2);
+    const fluid = fluidity * 0.6 * detailGain;
+    const bump = bumpAmount > 1e-9 && detailGain > 1e-4 ? bumpAmount * detailGain : 0;
+    const waveT = fluid > 0 ? t : 0;
+
+    const s = staticRef.current;
+    if (
+      s.blend !== formBlend ||
+      s.bump !== bump ||
+      (bump > 0 && (s.spike !== bumpSpike || s.density !== density))
+    ) {
+      s.pose ??= new Float32Array(rest.positions.length);
+      writeStaticPose(s.pose, rest, formBlend, bump, bumpSpike, density);
+      s.blend = formBlend;
+      s.bump = bump;
+      s.spike = bumpSpike;
+      s.density = density;
+      s.version++;
+    }
+
+    const w = writtenRef.current;
+    if (w.version !== s.version || w.fluid !== fluid || w.waveT !== waveT) {
+      const position = geometry.attributes.position as THREE.BufferAttribute;
+      const normal = geometry.attributes.normal as THREE.BufferAttribute;
+      const out = position.array as Float32Array;
+      const base = s.pose ?? rest.positions;
+      if (fluid > 0) {
+        // sin(a + b) and cos(c + d) expanded, so only these four are per frame
+        const basis = (waveBasisRef.current ??= buildWaveBasis(rest));
+        const sinB = Math.sin(t * fluid * 3);
+        const cosB = Math.cos(t * fluid * 3);
+        const sinD = Math.sin(t * fluid * 2);
+        const cosD = Math.cos(t * fluid * 2);
+        const amp = 0.08 * fluid;
+        for (let i = 0, b = 0; i < out.length; i += 3, b += 4) {
+          const wave =
+            (basis[b] * cosB + basis[b + 1] * sinB) *
+            (basis[b + 3] * cosD - basis[b + 2] * sinD) *
+            amp;
+          out[i] = base[i];
+          out[i + 1] = base[i + 1] + wave;
+          out[i + 2] = base[i + 2];
+        }
       } else {
-        groupRef.current.scale.set(1, 1, 1);
+        out.set(base);
       }
+      computeMeshNormals(out, rest.index, normal.array as Float32Array);
+      position.needsUpdate = true;
+      normal.needsUpdate = true;
+      w.version = s.version;
+      w.fluid = fluid;
+      w.waveT = waveT;
+    }
+
+    // Evolve: breathe the whole model (group), not the mesh.
+    if (e > 0) {
+      const freq = 1.0 + e * 2.0;
+      const breath = 1 + Math.sin(t * freq) * breathAmp;
+      groupRef.current.scale.setScalar(breath);
+    } else {
+      groupRef.current.scale.set(1, 1, 1);
     }
   });
 
   return (
-    <group ref={groupRef}>
-      <primitive object={scene} />
+    <group rotation-x={ARTIFACT_TILT}>
+      <group ref={groupRef}>
+        <primitive object={scene} />
+      </group>
     </group>
   );
+}
+
+// ─── Parked canvases ─────────────────────────────────────────────────────────
+
+/**
+ * frameloop="demand" draws only when something asks it to, and a parked
+ * artifact has to be asked more than once: the environment map, the camera fit
+ * and the first vertex pass in `Model` each land later than the form itself.
+ * So we ask a few times, thinly spread — a dense burst of frames across six
+ * parked canvases stalls the swing that put them there.
+ * Mounted inside the Suspense boundary, so the schedule starts once the model
+ * (and any photo it wears) is actually there; after it, the canvas holds its
+ * last frame for free.
+ */
+const DEMAND_DRAW_DELAYS_MS = [60, 160, 340, 700, 1200, 1900];
+
+function DemandFrames() {
+  const invalidate = useThree((s) => s.invalidate);
+  useEffect(() => {
+    invalidate();
+    const timers = DEMAND_DRAW_DELAYS_MS.map((ms) =>
+      window.setTimeout(invalidate, ms),
+    );
+    return () => timers.forEach(clearTimeout);
+  }, [invalidate]);
+  return null;
 }
 
 // ─── Fallback while loading ───────────────────────────────────────────────────
@@ -331,7 +557,8 @@ function Loader() {
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface SceneViewerProps {
-  modelPath?: string;
+  /** The artifact's superformula form. */
+  form?: ArtifactForm;
   className?: string;
   style?: React.CSSProperties;
   autoRotate?: boolean;
@@ -344,8 +571,24 @@ interface SceneViewerProps {
   bumpSpike?: number;
   density?: number;
   ready?: boolean;
+  /** Preserve render resolution while a parent grows from a tiny ink pointer. */
+  measureUnscaled?: boolean;
   /** Tighter framing for small fixed viewports (cards, connect flow, thumbnails). */
   constrainedViewport?: boolean;
+  /** Camera distance as a multiple of the model's bounding sphere — lower
+      fills more of the frame. Overrides the constrainedViewport default. */
+  frameMargin?: number;
+  /** "demand" renders only when something changes; for artifacts that are
+      parked on screen (gallery neighbours) it costs almost nothing. */
+  frameloop?: "always" | "demand";
+  /** Hold one fixed pose instead of animating. Pair it with frameloop="demand":
+      a canvas that draws intermittently would otherwise show its motion in
+      lurches. */
+  still?: boolean;
+  /** Carry the pose across a route change: the clock starts at the page's own
+      elapsed time, so an artifact remounted on the next screen keeps turning
+      from where it was instead of snapping back to rest. */
+  sharedClock?: boolean;
   /** Legacy: colour passed as raw hex for the glass tint + rect area lights */
   rectAreaLightColors?: {
     color1?: string;
@@ -356,12 +599,30 @@ interface SceneViewerProps {
   matPresetIndex?: number;
   /** Shape-build flow: 10s oscillating evolve inside the render loop (env + subtle scale). */
   shapeBuildOscillatingEvolve?: boolean;
+  /** Vertical bob amplitude; 0 = still. */
+  floatAmplitude?: number;
+  /** Reset levitation while moving between carousel seats, without resetting rotation. */
+  recenterFloat?: boolean;
+  /**
+   * Morph weight 0–1 (sphere→form). Default 1 = settled form (other pages unchanged).
+   * Prefer `introMorph` for one-shot archive entrance.
+   */
+  morphProgress?: number;
+  /** Archive/revisit: play sphere→form organic growth morph once on mount. */
+  introMorph?: boolean;
+  introMorphDuration?: number;
+  /** Optional memory photo wrapped on the sphere; fades out as the form grows. */
+  memoryPhotoUrl?: string;
+  /** Scroll / pinch zoom. Off on the carousel so the wheel steps memories. */
+  enableZoom?: boolean;
+  /** Two-finger / right-drag pan. */
+  enablePan?: boolean;
 }
 
 // ─── Main Scene ───────────────────────────────────────────────────────────────
 
 export function SceneViewer({
-  modelPath = MODEL_PATHS[0],
+  form = DEFAULT_ARTIFACT_FORM,
   className = "",
   style = {},
   autoRotate: autoRotateProp,
@@ -374,10 +635,23 @@ export function SceneViewer({
   bumpSpike = 0,
   density = 200,
   ready: readyProp,
+  measureUnscaled = false,
   constrainedViewport = false,
+  frameMargin,
+  frameloop = "always",
+  still = false,
+  sharedClock = false,
   rectAreaLightColors,
   matPresetIndex,
   shapeBuildOscillatingEvolve = false,
+  floatAmplitude = 0.08,
+  recenterFloat,
+  morphProgress = 1,
+  introMorph = false,
+  introMorphDuration = 5.5,
+  memoryPhotoUrl,
+  enableZoom = true,
+  enablePan = false,
 }: SceneViewerProps) {
   // Camera settings calibrated so fitTargetSize fills ~60-65% of viewport height
   // (whole shape visible with breathing room). Formula: cameraZ = fitTargetSize / (2*tan(fov/2) * 0.65)
@@ -388,8 +662,18 @@ export function SceneViewer({
   const orbitMax = constrainedViewport ? 12 : 12;
 
   const [autoRotateInternal, setAutoRotateInternal] = useState(true);
+  /* Once the artifact has been turned by hand it belongs to the hand: the idle
+     spin stops for good rather than dragging the view back out from under it.
+     This is tracked separately from `autoRotate` because most callers pass that
+     in as a prop, and a state setter can't talk them out of it. */
+  const [grabbed, setGrabbed] = useState(false);
+  /** Set the first time the viewer orbits, and never cleared: from then on the
+   *  angle belongs to them, so neither the auto-turn nor a re-fit may move it. */
+  const userTurnedRef = useRef(false);
   const autoRotate =
-    autoRotateProp !== undefined ? autoRotateProp : autoRotateInternal;
+    (autoRotateProp !== undefined ? autoRotateProp : autoRotateInternal) &&
+    !grabbed &&
+    !userTurnedRef.current;
   const setAutoRotate = onAutoRotateChange ?? setAutoRotateInternal;
 
   const [isDragging, setIsDragging] = useState(false);
@@ -432,18 +716,34 @@ export function SceneViewer({
     const r = Math.max(0.001, sphere.radius);
     // Fit to vertical FOV with a little breathing room.
     const fovRad = (cameraFov * Math.PI) / 180;
-    const margin = constrainedViewport ? 1.35 : 1.25;
+    const margin = frameMargin ?? (constrainedViewport ? 1.35 : 1.25);
     const z = (r / Math.sin(fovRad / 2)) * margin;
     const near = Math.max(0.01, z - r * 2.5);
     const far = z + r * 6;
-    setFitCam({ z, near, far });
+    // A fresh object on every bounds report re-runs the fit effect, which used
+    // to re-seat the camera. Keep the identity when the numbers have not moved.
+    setFitCam((prev) =>
+      prev &&
+      Math.abs(prev.z - z) < 1e-4 &&
+      Math.abs(prev.near - near) < 1e-4 &&
+      Math.abs(prev.far - far) < 1e-4
+        ? prev
+        : { z, near, far },
+    );
   }
 
   function FitControlsTarget() {
     const { camera } = useThree();
     useEffect(() => {
       if (!fitCam) return;
-      camera.position.set(0, 0, fitCam.z);
+      // Re-fitting is about distance, not direction. Once the viewer has turned
+      // the form, keep their angle and only push the camera out to the new
+      // radius; seating it back on +Z threw the turn away.
+      if (userTurnedRef.current && camera.position.lengthSq() > 1e-6) {
+        camera.position.setLength(fitCam.z);
+      } else {
+        camera.position.set(0, 0, fitCam.z);
+      }
       (camera as THREE.PerspectiveCamera).near = fitCam.near;
       (camera as THREE.PerspectiveCamera).far = fitCam.far;
       camera.updateProjectionMatrix();
@@ -462,6 +762,40 @@ export function SceneViewer({
     zIndex: 1,
     cursor: isDragging ? "grabbing" : "grab",
     ...style,
+    /* Nothing is shown until the camera has been fitted to the form. The first
+       frames are drawn at the default distance, and since the fit only arrives
+       from the model's own effect, letting them paint pops the artifact a step
+       larger or smaller. Parked (demand) canvases show it worst: they redraw on
+       a schedule that straddles the fit, so the jump lands well into whatever
+       entrance was playing. */
+    visibility: fitCam ? undefined : "hidden",
+  };
+
+  // A new form (or switching the intro on) mounts a fresh Model, so its
+  // clocks and pose caches start over with the geometry.
+  const modelKey = `${formKey(form)}-${introMorph ? "intro" : "static"}`;
+  const modelProps: ModelProps = {
+    form,
+    matColor,
+    matAttenuationColor,
+    matSheenColor,
+    autoRotate,
+    floatAmplitude,
+    recenterFloat,
+    fluidity: safeFluidity,
+    evolve: safeEvolve,
+    oscillatingEvolve: shapeBuildOscillatingEvolve,
+    still,
+    sharedClock,
+    bumpAmount: safeBumpAmount,
+    bumpSpike: safeBumpSpike,
+    density: safeDensity,
+    matOpacity,
+    fitTargetSize,
+    morphProgress,
+    introMorph,
+    introMorphDuration,
+    onBounds: handleBounds,
   };
 
   // Don't mount the Canvas until the parent signals ready (avoids iframe conflicts)
@@ -470,6 +804,8 @@ export function SceneViewer({
   return (
     <div className={className} style={containerStyle}>
       <Canvas
+        resize={{ offsetSize: measureUnscaled }}
+        frameloop={frameloop}
         camera={{
           position: [0, 0, fitCam?.z ?? cameraZ],
           fov: cameraFov,
@@ -520,93 +856,33 @@ export function SceneViewer({
         />
         <Environment preset="city" environmentIntensity={1.5} />
         <Suspense fallback={<Loader />}>
-          <Model
-            key={modelPath}
-            modelPath={modelPath}
-            matColor={matColor}
-            matAttenuationColor={matAttenuationColor}
-            matSheenColor={matSheenColor}
-            autoRotate={autoRotate}
-            fluidity={safeFluidity}
-            evolve={safeEvolve}
-            oscillatingEvolve={shapeBuildOscillatingEvolve}
-            bumpAmount={safeBumpAmount}
-            bumpSpike={safeBumpSpike}
-            density={safeDensity}
-            matOpacity={matOpacity}
-            fitTargetSize={fitTargetSize}
-            onBounds={handleBounds}
-          />
+          {memoryPhotoUrl ? (
+            <MemoryPhotoTexture url={memoryPhotoUrl}>
+              {(photoTexture) => (
+                <Model key={modelKey} {...modelProps} photoTexture={photoTexture} />
+              )}
+            </MemoryPhotoTexture>
+          ) : (
+            <Model key={modelKey} {...modelProps} />
+          )}
+          {frameloop === "demand" && <DemandFrames />}
         </Suspense>
         <OrbitControls
           ref={controlsRef}
-          enableZoom={true}
-          enablePan={false}
+          enableZoom={enableZoom}
+          enablePan={enablePan}
           minDistance={orbitMin}
           maxDistance={orbitMax}
           autoRotate={false}
-          onStart={() => setAutoRotate(false)}
+          onStart={() => {
+            userTurnedRef.current = true;
+            setGrabbed(true);
+            setAutoRotate(false);
+          }}
         />
       </Canvas>
 
-      {/* Frosted glass blur — main layer */}
-      {canvasBlurPx > 0 && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            zIndex: 10,
-            backdropFilter: `blur(${canvasBlurPx * 1.0}px) contrast(${
-              1 + canvasBlurPx * 0.05
-            }) brightness(${1.02 + canvasBlurPx * 0.02})`,
-            WebkitBackdropFilter: `blur(${canvasBlurPx * 1.0}px) contrast(${
-              1 + canvasBlurPx * 0.05
-            }) brightness(${1.02 + canvasBlurPx * 0.02})`,
-            background: `rgba(255, 255, 255, ${canvasBlurPx * 0.008})`,
-            transition: "backdrop-filter 0.2s ease",
-          }}
-        />
-      )}
-
-      {/* Edge vignette blur — heavier blur fading in from edges */}
-      {canvasBlurPx > 0 && (
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            zIndex: 10,
-            backdropFilter: `blur(${canvasBlurPx * 2.8}px) saturate(1.2)`,
-            WebkitBackdropFilter: `blur(${canvasBlurPx * 2.8}px) saturate(1.2)`,
-            maskImage:
-              "radial-gradient(ellipse 88% 88% at 50% 50%, transparent 40%, black 90%)",
-            WebkitMaskImage:
-              "radial-gradient(ellipse 88% 88% at 50% 50%, transparent 40%, black 90%)",
-            transition: "backdrop-filter 0.2s ease",
-          }}
-        />
-      )}
-
-      {/* Subtle noise texture */}
-      {canvasBlurPx > 0 && (
-        <div
-          aria-hidden
-          style={{
-            position: "absolute",
-            inset: 0,
-            pointerEvents: "none",
-            zIndex: 11,
-            opacity: Math.min(canvasBlurPx * 0.018, 0.12),
-            backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
-            backgroundRepeat: "repeat",
-            backgroundSize: "512px 512px",
-            mixBlendMode: "soft-light",
-            transition: "opacity 0.2s ease",
-          }}
-        />
-      )}
+      <FrostOverlay canvasBlurPx={canvasBlurPx} />
     </div>
   );
 }

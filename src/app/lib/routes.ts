@@ -1,0 +1,46 @@
+/** The water / ripple memory field — the previous default homescreen. */
+export const MEMORY_FIELD_PATH = "/ripple";
+
+/** 3D memory carousel — the screen Enter opens from the landing. */
+export const CAROUSEL_PATH = "/memory";
+
+/** Perspective water and reflection prompts, reached beyond either carousel end. */
+export const MEMORY_POND_PATH = "/memory/pond";
+
+/** Speak a memory — chrome over the same pond, not a separate water screen. */
+export const RECORD_START_PATH = "/record/start";
+
+/** Spoken words and highlights — same pond overlay as recording. */
+export const TRANSCRIPT_PATH = "/record/transcript";
+
+/** Photo, film, and the descent — the create shot after the transcript.
+    The same scene as /lab/descent, without the lab's knobs. */
+export const DESCENT_PATH = "/record/descent";
+
+/** Each handling step is a history entry within the same underwater scene. */
+export const DESCENT_STEP_PATHS = {
+  shape: "/record/descent/shape",
+  rhythm: "/record/descent/rhythm",
+  distance: "/record/descent/distance",
+  color: "/record/descent/color",
+} as const;
+export type DescentStep = keyof typeof DESCENT_STEP_PATHS;
+
+export function descentStepForPath(pathname: string): DescentStep | null {
+  return (Object.keys(DESCENT_STEP_PATHS) as DescentStep[])
+    .find(step => DESCENT_STEP_PATHS[step] === pathname) ?? null;
+}
+
+export function isDescentPath(pathname: string): boolean {
+  return pathname === DESCENT_PATH || descentStepForPath(pathname) !== null;
+}
+
+/** Archived MediaPipe shape steps. Kept for the archived implementation only;
+    live bookmarks redirect to DESCENT_PATH and there are no home shortcuts. */
+export const SHAPE_GROW_PATH = "/record/shape/grow";
+export const SHAPE_FEELING_PATH = "/record/shape/feeling";
+export const SHAPE_DISTANCE_PATH = "/record/shape/distance";
+
+/** The naming step of the create flow. Rendered by LandingPage (see App.tsx), so
+    that saving can turn the naming rim into the /memory gallery in place. */
+export const NAMING_PATH = "/record/name";

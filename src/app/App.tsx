@@ -1,25 +1,39 @@
-import { createBrowserRouter, Outlet, RouterProvider, useNavigate } from "react-router";
-import { useEffect, useRef, useState } from "react";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useNavigate } from "react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { CHROME_GRAY } from "./lib/colors";
 import { HomePage } from "./components/HomePage";
-import { RecordingStartPage } from "./components/RecordingStartPage";
-import { RecordingProcessPage } from "./components/RecordingProcessPage";
-import { TranscriptPage } from "./components/TranscriptPage";
-import { OrbPage } from "./components/OrbPage";
-import { ClickToRecordPage } from "./components/ClickToRecordPage";
-import { NameMemoryPage } from "./components/NameMemoryPage";
-import { BuildObjectPage } from "./components/BuildObjectPage";
-import { ShapeEditorPage } from "./components/ShapeEditorPage";
-import { ShapeWeightPage } from "./components/ShapeWeightPage";
-import { ShapeColorPage } from "./components/ShapeColorPage";
-import { ShapeTexturePage } from "./components/ShapeTexturePage";
-import { ConnectMemoriesPage } from "./components/ConnectMemoriesPage";
+import { LandingPage } from "./components/LandingPage";
+import {
+  CAROUSEL_PATH,
+  MEMORY_FIELD_PATH,
+  MEMORY_POND_PATH,
+  DESCENT_PATH,
+  DESCENT_STEP_PATHS,
+  NAMING_PATH,
+  RECORD_START_PATH,
+  TRANSCRIPT_PATH,
+} from "./lib/routes";
+import {
+  LANDING_PAPER,
+  LANDING_RETURN,
+  LandingReturnContext,
+  useLandingReturn,
+  type LandingReturnPhase,
+} from "./lib/landingReturn";
 import { MemorySavedPage } from "./components/MemorySavedPage";
-import { ProfilePage } from "./components/ProfilePage";
+import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
+import { ProfilePanel } from "./components/ProfilePanel";
 import { MemoryScrollPage } from "./components/MemoryScrollPage";
 import { RevisitMemoryPage } from "./components/RevisitMemoryPage";
 import { EditWeightPage } from "./components/EditWeightPage";
 import { EditColorPage } from "./components/EditColorPage";
 import { EditTexturePage } from "./components/EditTexturePage";
+import { StyleGuidePage } from "./components/StyleGuidePage";
+import { MemoryMeaningLab } from "./lab/MemoryMeaningLab";
+import { DescentPrototype } from "./lab/DescentPrototype";
+import { FilmPreview } from "./lab/FilmPreview";
+import { VesselPreview } from "./lab/VesselPreview";
+import { VesselGalleryPreview } from "./lab/VesselGalleryPreview";
 
 const SOUNDTRACK_URL =
   "https://cdn.jsdelivr.net/gh/Noyok1vas/figbuildAssets/prodarmaan%20-%20somber%20springtime.mp3";
@@ -31,33 +45,104 @@ const routerBasename =
     : import.meta.env.BASE_URL.replace(/\/$/, "") || undefined;
 
 function RootLayout() {
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const [phase, setPhase] = useState<LandingReturnPhase>("idle");
+  const [profileOpen, setProfileOpen] = useState(false);
+  const timersRef = useRef<number[]>([]);
+
+  const clearTimers = useCallback(() => {
+    for (const id of timersRef.current) window.clearTimeout(id);
+    timersRef.current = [];
+  }, []);
+
+  useEffect(() => () => clearTimers(), [clearTimers]);
+
+  const beginReturn = useCallback(() => {
+    if (pathname === "/" || phase !== "idle") return;
+    setProfileOpen(false);
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      navigate("/");
+      return;
+    }
+    clearTimers();
+    const { profileLeaveMs, sceneFadeMs, holdMs, contentFadeMs, headerDelayMs, headerFadeMs } = LANDING_RETURN;
+    timersRef.current = [
+      window.setTimeout(() => setPhase("scene-out"), profileLeaveMs),
+      window.setTimeout(() => {
+        navigate("/");
+        setPhase("holding");
+      }, profileLeaveMs + sceneFadeMs),
+      window.setTimeout(() => setPhase("landing"), profileLeaveMs + sceneFadeMs + holdMs),
+      window.setTimeout(
+        () => setPhase("idle"),
+        profileLeaveMs + sceneFadeMs + holdMs + contentFadeMs + headerDelayMs + headerFadeMs,
+      ),
+    ];
+  }, [pathname, phase, navigate, clearTimers]);
+
+  const veiled = phase === "scene-out" || phase === "holding";
+
   return (
-    <>
-      <GlobalControls />
+    <LandingReturnContext.Provider value={{ phase, beginReturn }}>
+      <GlobalControls profileOpen={profileOpen} onProfileOpenChange={setProfileOpen} />
+      <div
+        aria-hidden
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 99980,
+          background: LANDING_PAPER,
+          opacity: veiled ? 1 : 0,
+          transition: phase === "scene-out"
+            ? `opacity ${LANDING_RETURN.sceneFadeMs}ms ease`
+            : "none",
+          pointerEvents: veiled ? "auto" : "none",
+        }}
+      />
       <Outlet />
-    </>
+    </LandingReturnContext.Provider>
   );
 }
 
+// Old bookmarks enter the current, single-canvas flow with their carried draft.
+function ArchivedShapeRedirect() {
+  const { state } = useLocation();
+  return <Navigate to={DESCENT_PATH} state={state} replace />;
+}
+
 const router = createBrowserRouter([
+  { path: "/style", Component: StyleGuidePage },
+  { path: "/lab/descent", Component: DescentPrototype },
+  { path: "/lab/film", Component: FilmPreview },
+  { path: "/lab/vessel", Component: VesselPreview },
   {
     Component: RootLayout,
     children: [
-      { path: "/", Component: HomePage },
-      { path: "/record/click", Component: ClickToRecordPage },
-      { path: "/record/start", Component: RecordingStartPage },
-      { path: "/record/process", Component: RecordingProcessPage },
-      { path: "/record/transcript", Component: TranscriptPage },
-      { path: "/record/name", Component: NameMemoryPage },
-      { path: "/record/build", Component: BuildObjectPage },
-      { path: "/record/shape", Component: ShapeEditorPage },
-      { path: "/record/shape/weight", Component: ShapeWeightPage },
-      { path: "/record/shape/color", Component: ShapeColorPage },
-      { path: "/record/shape/texture", Component: ShapeTexturePage },
-      { path: "/record/connect", Component: ConnectMemoriesPage },
+      {
+        /* Landing, gallery, pond, recording, transcript, descent and
+           naming share one layout: Enter preloads the gallery behind the ink,
+           saving a memory
+           turns the naming rim into that same gallery in place. The children
+           render nothing themselves; LandingPage reads the path. */
+        Component: LandingPage,
+        children: [
+          { path: "/", element: null },
+          { path: CAROUSEL_PATH, element: null },
+          { path: MEMORY_POND_PATH, element: null },
+          { path: RECORD_START_PATH, element: null },
+          { path: TRANSCRIPT_PATH, element: null },
+          { path: DESCENT_PATH, element: null },
+          ...Object.values(DESCENT_STEP_PATHS).map(path => ({ path, element: null })),
+          { path: NAMING_PATH, element: null },
+        ],
+      },
+      { path: MEMORY_FIELD_PATH, Component: HomePage },
+      { path: "/lab/gallery", Component: VesselGalleryPreview },
+      { path: "/lab/meaning", Component: MemoryMeaningLab },
+      { path: "/record/shape/:step", Component: ArchivedShapeRedirect },
       { path: "/record/saved", Component: MemorySavedPage },
-      { path: "/record/orb", Component: OrbPage },
-      { path: "/profile", Component: ProfilePage },
       { path: "/memory/scroll", Component: MemoryScrollPage },
       { path: "/memory/revisit", Component: RevisitMemoryPage },
       { path: "/memory/edit/weight", Component: EditWeightPage },
@@ -67,15 +152,25 @@ const router = createBrowserRouter([
   },
 ], { basename: routerBasename });
 
-function GlobalControls() {
+function GlobalControls({
+  profileOpen,
+  onProfileOpenChange,
+}: {
+  profileOpen: boolean;
+  onProfileOpenChange: (open: boolean) => void;
+}) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [muted, setMuted] = useState(false);
-  const navigate = useNavigate();
+  const [muted, setMuted] = useState(true);
+  const { pathname } = useLocation();
+  const { phase } = useLandingReturn();
+  const onLanding = pathname === "/";
+  const leavingScene = phase === "scene-out" || phase === "holding";
 
   useEffect(() => {
     const audio = new Audio(SOUNDTRACK_URL);
     audio.loop = true;
     audio.volume = 0.35;
+    audio.muted = true;
     audioRef.current = audio;
 
     const attempt = audio.play();
@@ -101,87 +196,94 @@ function GlobalControls() {
     if (audioRef.current) audioRef.current.muted = muted;
   }, [muted]);
 
+  /** The pane belongs to the page it opened over — leaving that page closes it. */
+  useEffect(() => {
+    onProfileOpenChange(false);
+  }, [pathname, onProfileOpenChange]);
+
+  const [nameShown, setNameShown] = useState<"profile" | "music" | null>(null);
+
+  const iconButtonStyle = {
+    position: "fixed" as const,
+    zIndex: 99999,
+    boxSizing: "border-box" as const,
+    width: "var(--chrome-icon)",
+    height: 36 + HEADER_ICON_LABEL_PAD,
+    padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
+    borderRadius: 0,
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  };
+
+  const iconStroke = CHROME_GRAY;
+
   return (
     <>
-      {/* Profile button */}
-      <button
-        onClick={() => navigate("/profile")}
-        title="Profile"
-        style={{
-          position: "fixed",
-          top: 22,
-          right: 68,
-          zIndex: 99999,
-          width: 36,
-          height: 36,
-          borderRadius: "50%",
-          border: "1px solid rgba(255,255,255,0.28)",
-          background: "rgba(0,0,0,0.18)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "background 0.2s ease, border-color 0.2s ease",
-          padding: 0,
-        }}
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="rgba(255,255,255,0.75)"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {!onLanding && (
+        <button
+          onClick={() => onProfileOpenChange(!profileOpen)}
+          aria-label="profile"
+          aria-expanded={profileOpen}
+          onMouseEnter={() => setNameShown("profile")}
+          onMouseLeave={() => setNameShown(null)}
+          onFocus={() => setNameShown("profile")}
+          onBlur={() => setNameShown(null)}
+          style={{
+            ...iconButtonStyle,
+            top: "var(--chrome-top)",
+            right: "var(--chrome-r1)",
+            opacity: leavingScene ? 0 : 1,
+            transition: leavingScene ? `opacity ${LANDING_RETURN.sceneFadeMs}ms ease` : "none",
+            pointerEvents: phase === "idle" ? "auto" : "none",
+          }}
         >
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-          <circle cx="12" cy="7" r="4" />
-        </svg>
-      </button>
+          <HeaderIconLabel name="profile" shown={nameShown === "profile"} />
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={iconStroke}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+          </svg>
+        </button>
+      )}
 
-      {/* Music button */}
       <button
         onClick={() => setMuted((m) => !m)}
-        title={muted ? "Unmute" : "Mute"}
-        style={{
-          position: "fixed",
-          top: 22,
-          right: 22,
-          zIndex: 99999,
-          width: 36,
-          height: 36,
-          borderRadius: "50%",
-          border: "1px solid rgba(255,255,255,0.28)",
-          background: "rgba(0,0,0,0.18)",
-          backdropFilter: "blur(8px)",
-          WebkitBackdropFilter: "blur(8px)",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          transition: "background 0.2s ease, border-color 0.2s ease",
-          padding: 0,
-        }}
+        aria-label={muted ? "unmute" : "mute"}
+        onMouseEnter={() => setNameShown("music")}
+        onMouseLeave={() => setNameShown(null)}
+        onFocus={() => setNameShown("music")}
+        onBlur={() => setNameShown(null)}
+        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)" }}
       >
+        <HeaderIconLabel name="music" shown={nameShown === "music"} />
         {muted ? (
-          /* Muted — speaker with X */
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
             <line x1="23" y1="9" x2="17" y2="15" />
             <line x1="17" y1="9" x2="23" y2="15" />
           </svg>
         ) : (
-          /* Unmuted — speaker with waves */
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.75)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
             <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
             <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
           </svg>
         )}
       </button>
+
+      <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />
     </>
   );
 }

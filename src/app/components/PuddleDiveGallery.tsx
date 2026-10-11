@@ -1,0 +1,1400 @@
+import { useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { Link } from "react-router";
+import { SceneViewer } from "./SceneViewer";
+import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
+import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
+import { BackButton } from "./BackButton";
+import { GalleryViewToggle } from "./GalleryViewToggle";
+import { TranscriptTrail } from "./TranscriptTrail";
+import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
+import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
+import { DIVE_TUNING } from "../lib/puddle/dive";
+import type { ArchiveArtifact } from "../lib/archive";
+import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
+import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
+import { carouselFrame, carouselSeat, carouselContainsOffset, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
+
+/*
+ * PuddleDiveGallery — the gallery presentation of the "dive" variant.
+ *
+ * Memories follow a perspective S-curve over the defocused puddle. Older
+ * memories recede into the upper left; newer ones grow toward the lower right.
+ * Stepping moves the whole chronological stream along that same path.
+ *
+ * The descent itself (dolly + defocus) lives in PuddleScene / the sim's dive
+ * pass; this component only owns the overlay UI and its resolve/dissolve
+ * timing, which is keyed to the same DIVE_TUNING.
+ */
+
+/** Maximum gather stagger. Mounted seats use asymmetric perspective bounds. */
+const ARC_NEIGHBOURS = CAROUSEL_OLDER_SEATS;
+/** How long a memory takes to travel one step around the rim. */
+const ARC_TRAVEL_MS = 900;
+/* ── the neighbours arriving and leaving ──
+   On the naming step the rim isn't dived to: it gathers once the memory has a
+   year to stand in. The memories still surface the way they do on a descent —
+   blurred, rising — but they overshoot their seat, levitate there for most of
+   the arrival, and only then lower into place, so the rim reads as assembling
+   itself rather than being placed. Deleting the year sends them back down the
+   way they came. */
+const NEIGHBOR_IN_MS = 2600;
+const NEIGHBOR_OUT_MS = 950;
+/** Nearest memory leads the arrival; the outermost leads the departure. */
+const NEIGHBOR_IN_STAGGER_MS = 110;
+const NEIGHBOR_OUT_STAGGER_MS = 80;
+/** Caption block centre-ish, as a fraction of viewport height from the top —
+    scales with the window instead of sitting a fixed px above the timescale. */
+export const CAPTION_TOP_VH = 0.62;
+/** Extra downward sit of the title + year. Shared by the carousel and the
+    naming step — both draw this caption from the same seat. */
+export const CAPTION_DOWN_VH = 0.07;
+/** Height of the timescale above the bottom of the viewport. */
+const TS_BOTTOM_PX = 78;
+
+function useViewport() {
+  const [size, setSize] = useState(() => ({
+    w: window.innerWidth,
+    h: window.innerHeight,
+  }));
+  useEffect(() => {
+    const onResize = () => setSize({ w: window.innerWidth, h: window.innerHeight });
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  return size;
+}
+
+/** The memory's palette color as a wash: saturation nudged up so the muted
+    palette still reads through the water, then lifted toward paper so even
+    "night" tints the space instead of blotting it. */
+function washColor(hex: string): string {
+  const channel = (i: number) => parseInt(hex.slice(i, i + 2), 16);
+  const [r, g, b] = [channel(1), channel(3), channel(5)];
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  const lift = DIVE_TUNING.artifactWashLift;
+  const wash = (c: number) => {
+    const saturated = Math.min(Math.max(lum + (c - lum) * 2.2, 0), 255);
+    return Math.round(saturated + (255 - saturated) * lift);
+  };
+  return `rgb(${wash(r)}, ${wash(g)}, ${wash(b)})`;
+}
+
+export type DiveGalleryItem = ArchiveArtifact;
+
+export type DivePhase = "diving" | "gallery" | "surfacing";
+
+/**
+ * How the gallery came to be on screen.
+ *  - 'resolve' — it was dived to: every artifact rises out of the blurred water.
+ *  - 'carried' — the naming step already had this rim on screen and only handed
+ *    it over, so the memories must not move or re-resolve. Just the things that
+ *    weren't there yet (the water, the timescale, the arrows) arrive.
+ */
+export type DiveArrival = "resolve" | "carried";
+
+/** How long the chrome that is new to the carried arrival takes to appear. */
+const CARRIED_CHROME_MS = 1200;
+
+const EMPTY_IDS: ReadonlySet<string> = new Set();
+
+/* ── the caption ──
+   The naming step types into this same block, so the two are built from one
+   set of styles and one DOM shape: when the fields become words the text must
+   not move by a pixel. Line-height is pinned on the inputs as well so the
+   editable and the settled caption measure the same. */
+/* fontWeight is pinned because the naming step renders these same words in an
+   <input> inside a <label>, and the theme gives labels weight 500 while inputs
+   and the settled caption get 400 — unpinned, the sizer measures heavier text
+   than the field shows, and the words move by a pixel when they settle. */
+export const CAPTION_TITLE_STYLE: CSSProperties = {
+  color: CHROME_GRAY,
+  margin: 0,
+  fontFamily: SERIF,
+  fontStyle: "italic",
+  fontWeight: 400,
+  fontSize: "clamp(13px, 1.05vw, 16px)",
+  letterSpacing: SERIF_ITALIC_TRACKING,
+  lineHeight: 1.35,
+  textAlign: "center",
+};
+
+export const CAPTION_YEAR_STYLE: CSSProperties = {
+  color: "#999",
+  margin: 0,
+  fontFamily: SERIF_CJK,
+  fontStyle: "normal",
+  fontWeight: 400,
+  fontSize: "clamp(11px, 0.9vw, 14px)",
+  lineHeight: 1.35,
+  textAlign: "center",
+};
+
+/** Gap between the title and the year, in the caption block's own em. */
+export const CAPTION_TITLE_GAP = "0.8em";
+
+/** The settled caption — a memory's words and its year. */
+export function StaticCaption({ title, year }: { title: string; year: string }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div style={{ marginBottom: CAPTION_TITLE_GAP }}>
+        <span style={{ ...CAPTION_TITLE_STYLE, display: "inline-block", whiteSpace: "pre-line" }}>
+          {title}
+        </span>
+      </div>
+      <span style={{ ...CAPTION_YEAR_STYLE, display: "inline-block" }}>{year}</span>
+    </div>
+  );
+}
+
+export function PuddleDiveGallery({
+  items,
+  activeIdx,
+  phase,
+  reducedMotion,
+  onNavigate,
+  onExit,
+  onOverscrollExit,
+  caption,
+  exitOnBackdropClick = false,
+  onToggleGrid,
+  toggleIcon = "view",
+  showTimeScale = true,
+  showArrows = true,
+  waterEffect = true,
+  neighborsVisible = true,
+  arrival = "resolve",
+  inkArrival,
+  pondDeparture = 0,
+  hideHeader = false,
+}: {
+  items: DiveGalleryItem[];
+  activeIdx: number;
+  phase: DivePhase;
+  reducedMotion: boolean;
+  /** Steps to travel around the rim: negative = older (left), positive = newer. */
+  onNavigate: (delta: number) => void;
+  /** Omit on dedicated galleries: the wordmark is their only home control. */
+  onExit?: () => void;
+  /** Leave past the first or last memory — the dedicated carousel uses this
+      to open the perspective pond; the G-gallery falls back to onExit. */
+  onOverscrollExit?: () => void;
+  /** Replace the default title / year caption (used by the naming step). */
+  caption?: ReactNode;
+  /** Explicit opt-in for an embedded gallery that can dismiss on its backdrop. */
+  exitOnBackdropClick?: boolean;
+  onToggleGrid?: () => void;
+  /** The /memory carousel uses a plus that opens the pond after scrolling
+      to the nearer end of the archive. */
+  toggleIcon?: "view" | "plus";
+  /** The foot ruler — hidden on the naming step. */
+  showTimeScale?: boolean;
+  showArrows?: boolean;
+  /** Underwater resolve / refraction / buoyant bob. Off on the naming step. */
+  waterEffect?: boolean;
+  /** Neighbours on the rim. The naming step reveals them with a valid year. */
+  neighborsVisible?: boolean;
+  /** Whether the rim was dived to or handed over from the naming step. */
+  arrival?: DiveArrival;
+  /** A mounted ink field hands its six-pixel pointers to these same artifacts. */
+  inkArrival?: InkArrival;
+  /** Lift the intact dome out of view before the perspective pond arrives. */
+  pondDeparture?: number;
+  hideHeader?: boolean;
+}) {
+  // a preview may seat something other than the crystal; the live routes provide nothing
+  const override = useContext(GalleryOverrideContext);
+  /* The preview's field: while the seats are asked for there, or still on their
+     way between, every memory is mounted, the rim does not step, and the chrome
+     that belongs to the years (the caption, the ruler, the arrows) stands aside. */
+  const field = override?.field;
+  const inField = !!field && (field.on || field.progress > 0);
+  const yearsChrome = !field || (!field.on && field.progress < 0.35);
+  const hasOlder = activeIdx > 0;
+  const hasNewer = activeIdx < items.length - 1;
+  const viewport = useViewport();
+  const geo = carouselFrame(viewport.w, viewport.h);
+  const growth = inkArrival ? inkGrowth(inkArrival) : 1;
+  const washIn = inkArrival ? inkWash(inkArrival) : 1;
+
+  /* Animate the chronological offset, then project it every frame. A CSS
+     x/y lerp would cut straight across the S instead of following its bends. */
+  const [rimIdx, setRimIdx] = useState(activeIdx);
+  const rimIdxRef = useRef(activeIdx);
+  /** Where a press on the backdrop began, so a drag is never read as a click. */
+  const backdropDownRef = useRef<{ x: number; y: number } | null>(null);
+  /** The caption block and the timeline, which the transcript trail keeps its words out of. */
+  const captionRef = useRef<HTMLDivElement>(null);
+  const timeScaleRef = useRef<SVGSVGElement>(null);
+  const trailAvoid = useMemo(() => [captionRef, timeScaleRef], []);
+  const activeIdxRef = useRef(activeIdx);
+  activeIdxRef.current = activeIdx;
+  /* The naming year rebuilds the archive around the memory already at the
+     apex: its index jumps, but it must not travel. Snap the rim by the same
+     delta so its offset stays zero and only the neighbours gather. */
+  const focusId = items[activeIdx]?.id;
+  const navigationPoseRef = useRef({ id: focusId, moved: false });
+  if (focusId !== navigationPoseRef.current.id) {
+    if (phase === "gallery" && waterEffect && growth >= 1) navigationPoseRef.current.moved = true;
+    navigationPoseRef.current.id = focusId;
+  }
+  const seatRef = useRef({ id: focusId, idx: activeIdx });
+  let rimAt = rimIdx;
+  if (focusId && focusId === seatRef.current.id && activeIdx !== seatRef.current.idx) {
+    rimAt = rimIdx + (activeIdx - seatRef.current.idx);
+    if (rimAt !== rimIdx) {
+      rimIdxRef.current = rimAt;
+      setRimIdx(rimAt);
+    }
+  }
+  seatRef.current = { id: focusId, idx: activeIdx };
+  useEffect(() => {
+    if (reducedMotion) {
+      rimIdxRef.current = activeIdx;
+      setRimIdx(activeIdx);
+      return;
+    }
+    let raf = 0;
+    let last = performance.now();
+    const tick = (now: number) => {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const target = activeIdxRef.current;
+      const next = rimIdxRef.current + (target - rimIdxRef.current) * (1 - Math.exp(-5.2 * dt));
+      if (Math.abs(target - next) < 0.001) {
+        rimIdxRef.current = target;
+        setRimIdx(target);
+        return;
+      }
+      rimIdxRef.current = next;
+      setRimIdx(next);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [activeIdx, reducedMotion]);
+
+  const focusIdx = Math.round(rimAt);
+  const item = items[focusIdx] ?? items[activeIdx];
+  // in the field the words belong to the memory under the pointer, if any
+  const captionItem: DiveGalleryItem | null = field?.on
+    ? items.find((it) => it.id === field.hovered) ?? null
+    : items[activeIdx] ?? item;
+  // the last words stay in the block while it fades, so they go out as words and not as a cut
+  const lastCaptionRef = useRef(captionItem);
+  if (captionItem) lastCaptionRef.current = captionItem;
+  const shownCaption = captionItem ?? lastCaptionRef.current;
+  const rimSettled = Math.abs(rimAt - activeIdx) < 0.04;
+  const rimSettledRef = useRef(rimSettled);
+  rimSettledRef.current = rimSettled;
+  const pendingPondRef = useRef(false);
+  const pondTargetRef = useRef<number | null>(null);
+
+  const openPondFromPlus = () => {
+    if (pondDeparture > 0 || pendingPondRef.current) return;
+    if (inField) {
+      onOverscrollExit?.();
+      return;
+    }
+    const target = Math.max(0, items.length - 1);
+    if (target === activeIdx) {
+      onOverscrollExit?.();
+      return;
+    }
+    pendingPondRef.current = true;
+    pondTargetRef.current = target;
+    onNavigate(target - activeIdx);
+  };
+
+  useEffect(() => {
+    if (!pendingPondRef.current) return;
+    if (pondDeparture > 0 || (pondTargetRef.current !== null && activeIdx !== pondTargetRef.current)) {
+      pendingPondRef.current = false;
+      pondTargetRef.current = null;
+      return;
+    }
+    if (rimSettled) {
+      pendingPondRef.current = false;
+      pondTargetRef.current = null;
+      onOverscrollExit?.();
+    }
+  }, [activeIdx, rimSettled, pondDeparture, onOverscrollExit]);
+
+  /* arrows — keyboard */
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      if (e.key === "Escape") { onExit?.(); return; }
+      if (inField) return;
+      if (e.key === "ArrowLeft") { if (hasOlder) onNavigate(-1); }
+      else if (e.key === "ArrowRight") hasNewer ? onNavigate(1) : onOverscrollExit?.();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit]);
+
+  /* A sideways gesture over the carousel is for the artifacts, never for the
+     browser's swipe-to-go-back — which unwound the entry and dropped the
+     viewer on the landing page. The handler below cannot do this job: it bails
+     out before preventDefault whenever the phase, the growth or a pond
+     departure says the carousel is not listening, and the gesture reaches the
+     compositor in exactly those gaps. overscroll-behavior does not cover it
+     either, since nothing here is a scroll port. */
+  useEffect(() => {
+    const block = (e: WheelEvent) => {
+      if (Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest("input, textarea, [contenteditable=true]")) return;
+      e.preventDefault();
+    };
+    window.addEventListener("wheel", block, { passive: false });
+    return () => window.removeEventListener("wheel", block);
+  }, []);
+
+  /* scroll — stop at the oldest memory; past the newest opens the pond.
+     The naming step has no arrows and must not steal the wheel. */
+  useEffect(() => {
+    if (!showArrows) return;
+    let leftover = 0;
+    let lockedUntil = 0;
+    const leave = onOverscrollExit ?? onExit;
+    const handler = (e: WheelEvent) => {
+      if (phase !== "gallery" || growth < 1 || pondDeparture > 0 || inField) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      e.preventDefault();
+      const now = performance.now();
+      if (now < lockedUntil) return;
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
+      const primary = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit;
+      leftover += primary;
+      if (Math.abs(leftover) < 72) return;
+      const dir = leftover > 0 ? 1 : -1;
+      leftover -= dir * 72;
+      lockedUntil = now + (reducedMotion ? 80 : 140);
+      if (dir < 0 && !hasOlder) {
+        leftover = 0;
+      } else if (dir > 0 && !hasNewer) {
+        if (rimSettledRef.current) leave?.();
+        leftover = 0;
+      } else onNavigate(dir);
+    };
+    window.addEventListener("wheel", handler, { passive: false });
+    return () => window.removeEventListener("wheel", handler);
+  }, [showArrows, phase, growth, pondDeparture, inField, reducedMotion, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit]);
+
+  // Touch has the same boundary behavior as a wheel, without interpreting a
+  // tap (or an OrbitControls drag on the focused artifact) as overscroll.
+  useEffect(() => {
+    if (!showArrows || phase !== "gallery" || growth < 1 || pondDeparture > 0 || inField) return;
+    let start: { x: number; y: number } | null = null;
+    const down = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (e.touches.length !== 1 || target.closest("button, input, textarea, canvas")) { start = null; return; }
+      start = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    };
+    const end = (e: TouchEvent) => {
+      if (!start) return;
+      const dx = start.x - e.changedTouches[0].clientX;
+      const dy = start.y - e.changedTouches[0].clientY;
+      start = null;
+      const distance = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+      if (Math.abs(distance) < 70) return;
+      const dir = distance > 0 ? 1 : -1;
+      if (dir < 0 && !hasOlder) return;
+      if (dir > 0 && !hasNewer) {
+        if (rimSettledRef.current) (onOverscrollExit ?? onExit)?.();
+      } else onNavigate(dir);
+    };
+    const cancel = () => { start = null; };
+    window.addEventListener("touchstart", down, { passive: true });
+    window.addEventListener("touchend", end);
+    window.addEventListener("touchcancel", cancel);
+    return () => {
+      window.removeEventListener("touchstart", down);
+      window.removeEventListener("touchend", end);
+      window.removeEventListener("touchcancel", cancel);
+    };
+  }, [showArrows, phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onOverscrollExit, onExit]);
+
+  /* build the forms just off the end of the rim while the page is idle, so
+     the memory that swings in on an arrow press never spends its first frame
+     on the formula */
+  useEffect(
+    () =>
+      warmArtifactMeshes(
+        [-CAROUSEL_OLDER_SEATS - 1, CAROUSEL_NEWER_SEATS + 1]
+          .map((k) => items[activeIdx + k]?.shape.form)
+          .filter((form) => form !== undefined),
+      ),
+    [items, activeIdx],
+  );
+
+  /* The refraction wobble is a full-element filter pass, so it only runs when
+     something is actually moving through the water: the arrival and the exit.
+     A carried rim wasn't moving at all, so it starts calm. */
+  const [wobbling, setWobbling] = useState(false);
+  useEffect(() => {
+    if (!waterEffect || phase === "diving" || reducedMotion || inkArrival || override?.arrival === "plain") {
+      setWobbling(false);
+      return;
+    }
+    if (arrival === "carried" && phase === "gallery") {
+      setWobbling(false);
+      return;
+    }
+    setWobbling(true);
+    const ms =
+      phase === "surfacing"
+        ? DIVE_TUNING.surfaceMs * 0.6
+        : DIVE_TUNING.artifactResolveMs;
+    const t = setTimeout(() => setWobbling(false), ms);
+    return () => clearTimeout(t);
+  }, [arrival, phase, reducedMotion, waterEffect, !!inkArrival, override?.arrival]);
+
+  /* The neighbours outlive `neighborsVisible` going false: they have to stay
+     mounted long enough to sink back out, or the rim would simply blink away. */
+  const [neighborsMounted, setNeighborsMounted] = useState(neighborsVisible);
+  if (neighborsVisible && !neighborsMounted) setNeighborsMounted(true);
+  useEffect(() => {
+    if (neighborsVisible) return;
+    const t = setTimeout(
+      () => setNeighborsMounted(false),
+      reducedMotion ? 0 : NEIGHBOR_OUT_MS + ARC_NEIGHBOURS * NEIGHBOR_OUT_STAGGER_MS,
+    );
+    return () => clearTimeout(t);
+  }, [neighborsVisible, reducedMotion]);
+
+  /* Year-settle gather: first paint is hidden (blurred, faded), then a
+     two-frame hold so the transition has a from-value. Without that hold the
+     canvases paint at full opacity and the rim hard-cuts on. */
+  const [risen, setRisen] = useState<ReadonlySet<string>>(EMPTY_IDS);
+  const risenRef = useRef(risen);
+  risenRef.current = risen;
+  useEffect(() => {
+    if (!neighborsMounted) {
+      if (risenRef.current.size) setRisen(EMPTY_IDS);
+      return;
+    }
+    const pending: string[] = [];
+    for (let i = 0; i < items.length; i++) {
+      const slotItem = items[i];
+      if (!slotItem) continue;
+      const off = Math.abs(i - rimAt);
+      if (off <= 0.5 || !carouselContainsOffset(i - rimAt)) continue;
+      if (!risenRef.current.has(slotItem.id)) pending.push(slotItem.id);
+    }
+    if (!pending.length) return;
+    if (reducedMotion) {
+      setRisen((prev) => {
+        const next = new Set(prev);
+        for (const id of pending) next.add(id);
+        return next;
+      });
+      return;
+    }
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => {
+        setRisen((prev) => {
+          const next = new Set(prev);
+          for (const id of pending) next.add(id);
+          return next;
+        });
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [neighborsMounted, items, rimAt, reducedMotion]);
+
+  /* The memories the naming step already had on screen. They are not entering
+     — they were simply handed over — so they get no entrance at all. Filled the
+     first time the rim is seen as carried and then left alone, since which
+     artifacts carried over is a fact about the hand-off, not the current rim.
+     Usually this component is the very same instance the naming step was
+     rendering, and `arrival` flips under it; the set is what remembers who was
+     there at that moment. */
+  const carriedIdsRef = useRef<Set<string> | null>(null);
+
+  /* A carried rim hands over a wash that was laid on paper; underwater the same
+     color sits lower. It settles across the arrival, while the water itself is
+     still coming in, so the change is never read as the color shifting. Only a
+     rim that *mounts* carried needs the two-frame hold below — when the hand-off
+     happens in place the previous paint is already the value to travel from. */
+  const [washSettled, setWashSettled] = useState(arrival !== "carried");
+  useEffect(() => {
+    if (washSettled) return;
+    // two frames: the first paint has to land on the handed-over value, or the
+    // transition has nothing to travel from
+    let raf = requestAnimationFrame(() => {
+      raf = requestAnimationFrame(() => setWashSettled(true));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [washSettled]);
+
+  /* After the opening rise, a step around the rim must not replay it — a newly
+     mounted neighbour would start 30px low and pop up. */
+  const [rimReady, setRimReady] = useState(false);
+  useEffect(() => {
+    if (phase !== "gallery") {
+      setRimReady(false);
+      return;
+    }
+    if (inkArrival && growth < 1) return;
+    const t = setTimeout(
+      () => setRimReady(true),
+      reducedMotion ? 0 : DIVE_TUNING.artifactResolveMs,
+    );
+    return () => clearTimeout(t);
+  }, [phase, reducedMotion, !!inkArrival, growth < 1]);
+
+  if (!item) return null;
+
+  /* Reveal choreography: an artifact begins resolving the moment it exists on
+     screen, rising out of the defocused water itself. The focused slot is
+     mounted through the descent (hidden) so its GLB has loaded and compiled by
+     the time it's needed; the neighbours only join once the dolly has stopped,
+     so building their canvases can't stutter the descent. */
+  const resolveMs = reducedMotion ? DIVE_TUNING.reducedMs : DIVE_TUNING.artifactResolveMs;
+  const dissolveMs = Math.round(
+    (reducedMotion ? DIVE_TUNING.reducedMs : DIVE_TUNING.surfaceMs) * 0.6,
+  );
+  /* A preview's seats may ask to arrive plain: no tint toward the water, no
+     blur, no wobble — a rise and a fade. The glass vessels carry their own
+     colour and read the teal as a stain, and a 28px filter over ten canvases
+     compiling their shaders is what made it linger. */
+  const plain = override?.arrival === "plain";
+  const artifactAnimation = !waterEffect
+    ? "none"
+    : phase === "diving"
+      ? "none"
+      : phase === "surfacing"
+        ? `${reducedMotion ? "diveDissolveReduced" : plain ? "diveDissolvePlain" : "diveDissolve"} ${dissolveMs}ms ease forwards`
+        : rimReady
+          ? "none"
+          : `${
+              reducedMotion ? "diveResolveReduced" : plain ? "diveResolvePlain" : "diveResolve"
+            } ${Math.round(resolveMs)}ms cubic-bezier(0.22, 1, 0.36, 1) backwards`;
+
+  /* Chrome the carried arrival brings with it — the foot ruler, the arrows, the
+     view switch. These really are new, so they are the ones that fade in. */
+  const carriedChrome =
+    arrival === "carried" ? `diveChromeIn ${CARRIED_CHROME_MS}ms ease backwards` : undefined;
+
+  /* Refraction wobble — an SVG turbulence/displacement filter over the focused
+     artifact, seen as if through moving water. Its SMIL animation starts when
+     the filter mounts and calms to zero as the shape arrives. */
+  const wobble =
+    phase === "surfacing"
+      ? // leaving: the water takes it back, so the distortion grows
+        { dur: dissolveMs, scale: "0;16;44" }
+      : // arriving: strongest at first sight, stilling as the shape settles
+        { dur: Math.round(resolveMs), scale: "42;14;0" };
+
+  const chromeVisible = phase === "gallery" && growth >= 1 && pondDeparture === 0;
+  /** The chrome of the years — caption, ruler, arrows — which the field stands down. */
+  const yearsVisible = chromeVisible && yearsChrome;
+  const palette = COLOR_PALETTE[item.colorIndex % COLOR_PALETTE.length];
+  const travelMs = reducedMotion ? 0 : ARC_TRAVEL_MS;
+  const travelEase = "cubic-bezier(0.33, 0.02, 0.2, 1)";
+
+  /* The background wash: the memory's color belongs to the space the artifact
+     hangs in, not to the water — the puddle is left exactly as it was dived
+     from (PuddleScene restores it on the way up). An arrow press crossfades
+     this color; nothing is added to the surface below. */
+  const washFadeMs = phase === "surfacing" ? dissolveMs : Math.round(resolveMs);
+
+  /* The rim, apex outward. Only the focused memory exists while the dolly is
+     still running; everything on the dome leaves together when it reverses. */
+  const slots: { offset: number; item: DiveGalleryItem }[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const offset = i - rimAt;
+    if (phase === "diving" && Math.abs(offset) > 0.01) continue;
+    if (!neighborsMounted && Math.abs(offset) > 0.01) continue;
+    /* Bounds include an invisible distant seat and an offscreen foreground
+       seat: scrolling never unmounts a visible model, even after settling.
+       A preview with a field keeps every memory mounted — a canvas made or
+       lost at the switch is a long frame — and hides the ones off the curve. */
+    if (!field && !carouselContainsOffset(offset)) continue;
+    const slotItem = items[i];
+    if (slotItem) slots.push({ offset, item: slotItem });
+  }
+
+  /** The rim is letting go: still on screen, but on its way back down. */
+  const neighborsLeaving = neighborsMounted && !neighborsVisible;
+
+  /** How a neighbour joins or leaves a rim that gathers rather than being dived
+      to. Nearest first on the way in, outermost first on the way out. */
+  const neighborAnimation = (offset: number) => {
+    const d = Math.abs(offset);
+    if (reducedMotion) {
+      // nothing rises or sinks here; the rim is simply there or not
+      return neighborsLeaving ? "none" : "diveNeighborInReduced 1.1s ease forwards";
+    }
+    /* ease-in-out, not a snappy ease-out: the curve is applied between every
+       pair of keyframes, so a sharp one would lurch four times over. Easing
+       each segment in and out instead is what lets the overshoot hang. */
+    if (neighborsLeaving) {
+      const delay = (ARC_NEIGHBOURS - d) * NEIGHBOR_OUT_STAGGER_MS;
+      return `diveNeighborOut ${NEIGHBOR_OUT_MS}ms ease-in-out ${delay}ms both`;
+    }
+    return `diveNeighborIn ${NEIGHBOR_IN_MS}ms ease-in-out ${
+      d * NEIGHBOR_IN_STAGGER_MS
+    }ms both`;
+  };
+
+  if (!carriedIdsRef.current && arrival === "carried") {
+    carriedIdsRef.current = new Set(slots.map(({ item: slotItem }) => slotItem.id));
+  }
+  const carriedIds: ReadonlySet<string> = carriedIdsRef.current ?? EMPTY_IDS;
+
+  const arrowStyle = (side: "left" | "right"): CSSProperties => ({
+    position: "absolute",
+    top: geo.apexY,
+    [side]: "clamp(28px, 6vw, 96px)",
+    transform: "translateY(-50%)",
+    background: "none",
+    border: "none",
+    padding: 16,
+    cursor: "pointer",
+    color: "#4a4a4a",
+    opacity: yearsVisible ? 0.35 : 0,
+    transition: "opacity 0.6s ease",
+    animation: carriedChrome,
+    pointerEvents: yearsVisible ? "auto" : "none",
+  });
+
+  return (
+    <div
+      className="absolute inset-0 select-none"
+      inert={pondDeparture > 0}
+      style={{ zIndex: 30, pointerEvents: growth < 1 || pondDeparture > 0 ? "none" : undefined }}
+      onPointerDownCapture={(e) => {
+        backdropDownRef.current = { x: e.clientX, y: e.clientY };
+      }}
+      onClick={(e) => {
+        const down = backdropDownRef.current;
+        backdropDownRef.current = null;
+        // The browser fires click on the common ancestor of the press and the
+        // release, so turning an artifact and letting go a little off it lands
+        // a click here. That is someone handling a memory, not asking to leave.
+        if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
+        if (chromeVisible && exitOnBackdropClick) onExit?.();
+      }}
+    >
+      {/* ═══ BACKGROUND WASH — the memory's color, held around the focused
+             artifact. First child, so it paints under the dome and over the
+             water; its soft radial mask keeps it edgeless. ═══ */}
+      <div
+        aria-hidden
+        className="absolute pointer-events-none"
+        style={{
+          left: geo.cx,
+          top: geo.apexY,
+          transform: "translate(-50%, -50%)",
+          width: "clamp(700px, 78vw, 1000px)",
+          height: "clamp(700px, 78vw, 1000px)",
+          borderRadius: "50%",
+          backgroundColor: washColor(palette.color),
+          opacity: override?.wash === false ? 0 :
+            inkArrival
+              ? DIVE_TUNING.artifactWashOpacity * washIn
+              : (chromeVisible || !waterEffect)
+                ? waterEffect && washSettled
+                  ? DIVE_TUNING.artifactWashOpacity
+                  : Math.min(1, DIVE_TUNING.artifactWashOpacity / 0.62)
+                : 0,
+          maskImage:
+            "radial-gradient(closest-side, #000 10%, rgba(0,0,0,0.5) 50%, transparent 82%)",
+          WebkitMaskImage:
+            "radial-gradient(closest-side, #000 10%, rgba(0,0,0,0.5) 50%, transparent 82%)",
+          transition: inkArrival
+            ? "none"
+            : waterEffect
+              ? `background-color ${DIVE_TUNING.artifactWashFadeMs}ms ease, opacity ${washFadeMs}ms ease`
+              : "none",
+          willChange: waterEffect ? "background-color, opacity" : undefined,
+        }}
+      />
+
+      {/* ═══ TRANSCRIPT — the selected memory's words, found by the pointer.
+             Over the wash and under the dome. Not on the naming step, whose
+             memory is still being made, nor in the field, where no memory is
+             selected. ═══ */}
+      {!caption && items[activeIdx] && (
+        <TranscriptTrail
+          memoryId={items[activeIdx].id}
+          transcript={items[activeIdx].transcript}
+          highlightedWords={items[activeIdx].highlightedWords ?? []}
+          visible={yearsVisible && !field?.on}
+          avoid={trailAvoid}
+        />
+      )}
+
+      {/* Refraction filter def, shared by whichever artifact holds the apex.
+          Mounted only while it has something to do; remounting restarts its
+          SMIL clock, which is what ties it to the arrival and the exit. */}
+      {wobbling && (
+        <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden>
+          <defs>
+            <filter id="dive-refraction" x="-20%" y="-20%" width="140%" height="140%">
+              <feTurbulence
+                type="fractalNoise"
+                baseFrequency="0.014 0.028"
+                numOctaves="2"
+                seed="7"
+                result="water"
+              >
+                {/* the water itself keeps moving while it stills */}
+                <animate
+                  attributeName="baseFrequency"
+                  values="0.014 0.028;0.011 0.023;0.016 0.031"
+                  keyTimes="0;0.6;1"
+                  dur={`${wobble.dur}ms`}
+                  fill="freeze"
+                />
+              </feTurbulence>
+              <feDisplacementMap
+                in="SourceGraphic"
+                in2="water"
+                scale={wobble.scale.split(";")[0]}
+                xChannelSelector="R"
+                yChannelSelector="G"
+              >
+                <animate
+                  attributeName="scale"
+                  values={wobble.scale}
+                  keyTimes="0;0.55;1"
+                  dur={`${wobble.dur}ms`}
+                  fill="freeze"
+                />
+              </feDisplacementMap>
+            </filter>
+          </defs>
+        </svg>
+      )}
+
+      {/* The chronological stream. Stable memory keys let the entire path
+          advance without replacing its artifacts. Isolate its depth stack
+          so foreground memories cannot cover the caption or navigation. */}
+      <div className="absolute inset-0" data-pond-departure={pondDeparture}
+        data-pond-tilt={pondRimPose(pondDeparture, !!reducedMotion).tilt * 180 / Math.PI}
+        style={{ opacity: 1, isolation: "isolate" }}>
+        {slots.map(({ offset, item: slotItem }) => {
+          // in the field no seat is the apex: nothing turns in hand, every memory is a thing to pick
+          const focused = Math.abs(offset) < 0.5 && !field?.on;
+          const curveDepth = carouselSeat(viewport.w, viewport.h, offset);
+          const depth: SeatPlace = override?.adjustSeat ? override.adjustSeat(curveDepth, offset, viewport, slotItem) : curveDepth;
+          const seat = inField
+            ? pondFieldSeat(depth.x, depth.y, geo.size * depth.scale, depth.depth ?? 4 / Math.max(.01, depth.scale), viewport.h, pondDeparture, !!reducedMotion)
+            : pondRimSeat(depth.x, depth.y, geo.cx, geo.apexY, viewport.h, pondDeparture, !!reducedMotion);
+          const slotPalette =
+            COLOR_PALETTE[slotItem.colorIndex % COLOR_PALETTE.length];
+          /* handed over rather than arriving: it is already exactly here */
+          const carried = carriedIds.has(slotItem.id) && phase === "gallery";
+          const entryScale = inkArrival && !inkArrival.reducedMotion
+            ? INK_POINTER_SIZE / geo.size + (1 - INK_POINTER_SIZE / geo.size) * growth
+            : 1;
+          /* Naming year: neighbours gather with a real CSS transition, not a
+             keyframe that can miss the first paint and hard-cut the canvases in. */
+          const gather = !focused && !waterEffect && !inkArrival;
+          const gatherHidden = gather && (!risen.has(slotItem.id) || neighborsLeaving);
+          const gatherDist = Math.min(Math.round(Math.abs(offset)), ARC_NEIGHBOURS);
+          const gatherDelay = neighborsLeaving
+            ? (ARC_NEIGHBOURS - gatherDist) * NEIGHBOR_OUT_STAGGER_MS
+            : gatherDist * NEIGHBOR_IN_STAGGER_MS;
+          const gatherMs = neighborsLeaving ? NEIGHBOR_OUT_MS : NEIGHBOR_IN_MS;
+          return (
+            <div
+              key={slotItem.id}
+              className="dive-artifact"
+              data-memory-id={slotItem.id}
+              data-carousel-offset={offset}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (!chromeVisible) return;
+                if (field?.on) {
+                  // a press and release, not the end of a drag across the field
+                  const down = backdropDownRef.current;
+                  if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
+                  field.onPick(slotItem);
+                  return;
+                }
+                if (!focused) onNavigate(Math.round(offset));
+              }}
+              onPointerEnter={field?.on ? () => field.onHover(slotItem.id) : undefined}
+              onPointerLeave={field?.on ? () => field.onHover(null) : undefined}
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: geo.size,
+                height: geo.size,
+                transform: `translate(-50%, -50%) translate(${seat.x.toFixed(2)}px, ${seat.y.toFixed(2)}px) scale(${depth.scale * seat.scale})${depth.rotate ? ` rotate(${depth.rotate.toFixed(2)}deg)` : ""}`,
+                zIndex: 100000 + Math.round((depth.order ?? offset * 100) + seat.z),
+                cursor: focused ? "default" : "pointer",
+                pointerEvents: chromeVisible && depth.opacity > 0.02 ? "auto" : "none",
+              }}
+            >
+              {/* the arrival / departure, on its own layer so the depth
+                  styling below can't fight its filter and opacity */}
+              <div
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  opacity: gather
+                    ? gatherHidden ? 0 : 1
+                    : inkArrival
+                      // Keyed to the form's own size, not to the clock: it stays
+                      // out of sight until it is 40% grown, then fades in over
+                      // the next third. Opacity used to finish at 20% of the
+                      // growth, so the artifact simply appeared at dot size.
+                      ? flowProgress(entryScale, 0.4, 0.72)
+                      : phase === "diving" ? 0 : undefined,
+                  filter: gather ? (gatherHidden ? "blur(24px)" : "blur(0px)") : undefined,
+                  transform: gather
+                    ? gatherHidden ? "translateY(22px) scale(0.94)" : "translateY(0) scale(1)"
+                    : inkArrival ? `scale(${entryScale})` : undefined,
+                  transition: gather && !reducedMotion
+                    ? `opacity ${gatherMs}ms ease ${gatherDelay}ms, filter ${gatherMs}ms ease ${gatherDelay}ms, transform ${gatherMs}ms ease ${gatherDelay}ms`
+                    : undefined,
+                  /* A carried neighbour keeps the very animation string the
+                     naming step gave it: unchanged, the browser lets it run on
+                     to its end, so a rim still gathering when it was handed
+                     over finishes gathering instead of snapping into place. */
+                  animation: pondDeparture > 0 || gather || inkArrival || (phase === "gallery" && waterEffect && navigationPoseRef.current.moved) ? "none" : carried
+                    ? focused
+                      ? "none"
+                      : neighborAnimation(offset)
+                    : artifactAnimation,
+                  willChange: "filter, opacity, transform",
+                }}
+              >
+                {/* depth: how far into the water this slot has fallen. The
+                    bob lives on the model so a step never cuts a CSS float
+                    short and drops the box. The depth blur belongs to the
+                    dome, not the water, so both screens carry it. */}
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    opacity: depth.opacity,
+                    filter:
+                      [
+                        depth.blurPx ? `blur(${depth.blurPx}px)` : "",
+                        waterEffect && focused && wobbling ? "url(#dive-refraction)" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || undefined,
+                    transition: "none",
+                  }}
+                >
+                  {override ? override.renderArtifact(slotItem, {
+                    focused,
+                    still: !focused && rimSettled,
+                    frameloop: focused || !rimSettled || pondDeparture > 0 ? "always" : "demand",
+                    haze: depth.haze,
+                  }) : <SceneViewer
+                    measureUnscaled
+                    form={slotItem.shape.form}
+                    fluidity={slotItem.shape.fluidity}
+                    evolve={slotItem.shape.evolve}
+                    bumpAmount={slotItem.shape.bumpAmount}
+                    autoRotate={focused}
+                    // Limit vertical levitation to ±0.04 scene units.
+                    floatAmplitude={0.04}
+                    recenterFloat={!focused || !rimSettled || pondDeparture > 0}
+                    ready
+                    // tight framing — the artifact is the screen here, so it
+                    // fills its box instead of floating in the middle of it
+                    frameMargin={1.12}
+                    /* Park only once the rim has stopped. Mid-scroll the CSS
+                       scale is still changing; a demand canvas resizes, clears,
+                       and never redraws — the mesh just vanishes. offsetSize
+                       (measureUnscaled) also keeps the buffer off that scale. */
+                    frameloop={focused || !rimSettled || pondDeparture > 0 ? "always" : "demand"}
+                    still={!focused && rimSettled}
+                    // the apex artifact turns on the page's clock rather than
+                    // its canvas's, so the same memory on two screens reads as
+                    // one continuous rotation instead of snapping back to rest
+                    sharedClock={focused}
+                    // no frosted-glass overlay here: its backdrop-filter draws
+                    // a hard square over the defocused water (backdrop filters
+                    // ignore ancestor opacity/masks in Chromium). The artifact
+                    // resolves sharp; the blur belongs to the puddle behind it.
+                    canvasBlurPx={0}
+                    enableZoom={false}
+                    enablePan={false}
+                    rectAreaLightColors={{
+                      color1: slotPalette.light1,
+                      color2: slotPalette.light2,
+                      matColor: slotPalette.color,
+                    }}
+                    style={{ width: "100%", height: "100%" }}
+                  />}
+                </div>
+              </div>
+              {/* A neighbour is a destination, not a toy: this lid keeps the
+                  pointer off its OrbitControls so the click that lands on it
+                  bubbles up and brings it to the apex instead. */}
+              {!focused && (
+                <div style={{ position: "absolute", inset: 0, zIndex: 20 }} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ═══ TIMESCALE — one line across the foot of the screen ═══ */}
+      {showTimeScale && (
+        <TimeScale
+          svgRef={timeScaleRef}
+          items={items}
+          activeIdx={rimAt}
+          viewport={viewport}
+          visible={yearsVisible}
+          travelMs={0}
+          travelEase={travelEase}
+          enterAnimation={carriedChrome}
+        />
+      )}
+
+      {/* ═══ CAPTION — between the dome and the timescale ═══ */}
+      <div
+        ref={captionRef}
+        className="absolute left-0 right-0 text-center"
+        style={{
+          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h,
+          padding: "0 clamp(24px, 6vw, 80px)",
+          fontFamily: SERIF,
+          // in the field the words come only while a memory is under the pointer
+          opacity: chromeVisible && (field?.on ? !!captionItem : yearsChrome) ? 1 : 0,
+          transition: field?.on ? "opacity 0.45s ease" : "opacity 0.8s ease",
+          zIndex: 30,
+          pointerEvents: caption ? "auto" : "none",
+        }}
+      >
+        {shownCaption && <div
+          key={shownCaption.id}
+          style={{
+            /* the opening fade waits for the memory; once the rim is in
+               motion the words stay put and simply change with the step */
+            animation:
+              caption || reducedMotion || rimReady || carriedIds.has(shownCaption.id)
+                ? undefined
+                : `diveCaptionIn ${travelMs}ms ease`,
+            pointerEvents: caption ? "auto" : "none",
+          }}
+        >
+          {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
+        </div>}
+      </div>
+
+      {/* ═══ ARROWS ═══ */}
+      {showArrows && hasOlder && (
+        <button
+          aria-label="older memory"
+          style={arrowStyle("left")}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(-1);
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
+        >
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(0.65)" }}>
+            <path d="M16 2 L2 12 L16 22 Z" />
+          </svg>
+        </button>
+      )}
+      {showArrows && hasNewer && (
+        <button
+          aria-label="newer memory"
+          style={arrowStyle("right")}
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigate(1);
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
+        >
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(0.65)" }}>
+            <path d="M2 2 L16 12 L2 22 Z" />
+          </svg>
+        </button>
+      )}
+
+      {/* ═══ WAY BACK — same left arrow as the recording screen ═══ */}
+      {!hideHeader && <div
+        style={{
+          opacity: chromeVisible ? 1 : 0,
+          transition: "opacity 0.8s ease",
+          pointerEvents: chromeVisible ? "auto" : "none",
+        }}
+      >
+        {onExit && <BackButton onClick={onExit} />}
+        {/* a way into the vessel preview (/lab/gallery), beside the arrow; not shown inside the preview itself */}
+        {!override && (
+          <Link to="/lab/gallery" aria-label="see the memories as vessels"
+            style={{ position: "absolute", top: 36, left: 70, zIndex: 100, fontFamily: SANS, fontSize: 12, letterSpacing: "0.04em",
+              color: CHROME_GRAY, opacity: 0.55, textDecoration: "none" }}>
+            vessels
+          </Link>
+        )}
+      </div>}
+
+      <GalleryViewToggle
+        view="carousel"
+        icon={toggleIcon}
+        onToggle={toggleIcon === "plus" ? openPondFromPlus : (onToggleGrid ?? (() => {}))}
+        visible={!hideHeader && (toggleIcon === "plus" ? chromeVisible && !!onOverscrollExit : yearsVisible && !!onToggleGrid)}
+        enterAnimation={carriedChrome}
+      />
+
+      {/* the preview's own chrome, arriving and leaving with the gallery's */}
+      {override?.chrome && !hideHeader && (
+        <div style={{ opacity: chromeVisible ? 1 : 0, transition: "opacity 0.8s ease", pointerEvents: chromeVisible ? "auto" : "none" }}>
+          {override.chrome}
+        </div>
+      )}
+
+      <style>{`
+        /* The slots are scaled with a CSS transform, and r3f sizes its canvas
+           from getBoundingClientRect — which already includes that scale, so
+           three.js writes back a px style smaller than the box and the artifact
+           ends up shrunken and off-centre inside it. Pinning the canvas to its
+           container leaves the scale to CSS alone; the measured size then only
+           decides render resolution, which is what a scaled-down neighbour
+           wants anyway. */
+        .dive-artifact canvas {
+          width: 100% !important;
+          height: 100% !important;
+        }
+        /* Rising out of the deep, the way a thing resolves as you swim down
+           to it: it drifts UP toward you (translateY), murky and cool at
+           first — sepia rotated to teal reads as water colour, not gray —
+           then the haze clears and its own warm hues arrive last.
+           Every keyframe lists the same filter chain so the browser can
+           interpolate smoothly. The refraction wobble is a separate SVG
+           displacement layer, calming on its own clock. */
+        @keyframes diveResolve {
+          0% {
+            opacity: 0;
+            filter: blur(28px) sepia(0.5) hue-rotate(150deg) saturate(0.55) brightness(1.08) contrast(0.88);
+            transform: translateY(30px) scale(0.93);
+          }
+          30% {
+            opacity: 1;
+            filter: blur(13px) sepia(0.45) hue-rotate(148deg) saturate(0.6) brightness(1.06) contrast(0.92);
+            transform: translateY(18px) scale(0.955);
+          }
+          60% {
+            filter: blur(4.5px) sepia(0.3) hue-rotate(120deg) saturate(0.75) brightness(1.03) contrast(0.96);
+            transform: translateY(7px) scale(0.98);
+          }
+          85% {
+            filter: blur(1px) sepia(0.12) hue-rotate(60deg) saturate(0.9) brightness(1.01) contrast(0.99);
+            transform: translateY(1px) scale(0.996);
+          }
+          100% {
+            opacity: 1;
+            filter: blur(0) sepia(0) hue-rotate(0deg) saturate(1) brightness(1) contrast(1);
+            transform: translateY(0) scale(1);
+          }
+        }
+        /* Sinking back down and away: colour drains to water first, then the
+           shape drops out of focus into the murk below. */
+        @keyframes diveDissolve {
+          0% {
+            opacity: 1;
+            filter: blur(0) sepia(0) hue-rotate(0deg) saturate(1) brightness(1) contrast(1);
+            transform: translateY(0) scale(1);
+          }
+          40% {
+            opacity: 1;
+            filter: blur(4px) sepia(0.3) hue-rotate(130deg) saturate(0.6) brightness(1.05) contrast(0.94);
+            transform: translateY(10px) scale(0.985);
+          }
+          100% {
+            opacity: 0;
+            filter: blur(22px) sepia(0.5) hue-rotate(150deg) saturate(0.4) brightness(1.1) contrast(0.87);
+            transform: translateY(34px) scale(0.94);
+          }
+        }
+        /* The plain arrival a preview may ask for: the same rise, nothing
+           done to the colour and no blur — the thing is seen whole from its
+           first frame, only faint and a little low. Leaving, the reverse. */
+        @keyframes diveResolvePlain {
+          0% { opacity: 0; transform: translateY(22px) scale(0.96); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes diveDissolvePlain {
+          0% { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(26px) scale(0.95); }
+        }
+        /* the settled artifact's slow buoyant drift */
+        @keyframes diveFloat {
+          from { transform: translateY(0); }
+          to   { transform: translateY(-7px); }
+        }
+        /* the words arrive after the memory they belong to */
+        @keyframes diveCaptionIn {
+          0%   { opacity: 0; }
+          45%  { opacity: 0; }
+          100% { opacity: 1; }
+        }
+        @keyframes diveResolveReduced {
+          from { opacity: 0; }
+          to   { opacity: 1; }
+        }
+        @keyframes diveDissolveReduced {
+          from { opacity: 1; }
+          to   { opacity: 0; }
+        }
+        /* A rim that gathers instead of being dived to. Same surfacing as
+           diveResolve — deep blur clearing as the memory rises — but with no
+           water to tint, and it doesn't arrive straight onto its seat: it
+           floats up past it, hangs there while the blur lets go, and only then
+           lowers into place. */
+        @keyframes diveNeighborIn {
+          0% {
+            opacity: 0;
+            filter: blur(26px);
+            transform: translateY(30px) scale(0.93);
+          }
+          20% {
+            opacity: 0.85;
+            filter: blur(14px);
+            transform: translateY(-4px) scale(0.98);
+          }
+          38% {
+            opacity: 1;
+            filter: blur(6px);
+            transform: translateY(-13px) scale(1.012);
+          }
+          60% {
+            opacity: 1;
+            filter: blur(2.5px);
+            transform: translateY(-15px) scale(1.015);
+          }
+          80% {
+            opacity: 1;
+            filter: blur(0.8px);
+            transform: translateY(-11px) scale(1.008);
+          }
+          100% {
+            opacity: 1;
+            filter: blur(0);
+            transform: translateY(0) scale(1);
+          }
+        }
+        /* Letting go: one small lift, as if it had been held up, then back down
+           into the blur it came out of. */
+        @keyframes diveNeighborOut {
+          0% {
+            opacity: 1;
+            filter: blur(0);
+            transform: translateY(0) scale(1);
+          }
+          26% {
+            opacity: 0.92;
+            filter: blur(3px);
+            transform: translateY(-6px) scale(1.006);
+          }
+          100% {
+            opacity: 0;
+            filter: blur(22px);
+            transform: translateY(26px) scale(0.94);
+          }
+        }
+        @keyframes diveNeighborInReduced {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        /* Chrome that is new to a carried arrival: it focuses in out of a soft
+           blur. Only the 'from' is written: with backwards fill the element
+           travels from nothing to whatever opacity it styles for itself, and
+           keeps it afterwards — so hover states still work once it has arrived. */
+        @keyframes diveChromeIn {
+          from { opacity: 0; filter: blur(6px); }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+/* ── the timescale ────────────────────────────────────────────────────────
+   One line across the foot of the screen. Short ticks mark each memory (no
+   year). Longer ticks land on regular five-year increments (2010, 2015, …)
+   and carry the only numbers. The focused memory's mark slides along as the
+   dome swings. Oldest at the left, newest at the right — same as the dome. */
+
+/** Inset at each end, as a fraction of the width. */
+const TS_SIDE_PAD_VW = 0.07;
+const TS_SIDE_PAD_MIN = 44;
+/** Same-year memories share a point in time; nudge them apart so stepping
+    between two of them still moves the mark. */
+const TS_TIE_SPREAD = 0.011;
+const TS_MEMORY_TICK = 4;
+const TS_YEAR_TICK = 9;
+const TS_LABEL_DROP = 22;
+/** Major ticks every N years (2010, 2015, …). */
+const TS_YEAR_STEP = 5;
+
+function TimeScale({
+  svgRef,
+  items,
+  activeIdx,
+  viewport,
+  visible,
+  travelMs,
+  travelEase,
+  enterAnimation,
+}: {
+  svgRef?: Ref<SVGSVGElement>;
+  items: DiveGalleryItem[];
+  activeIdx: number;
+  viewport: { w: number; h: number };
+  visible: boolean;
+  travelMs: number;
+  travelEase: string;
+  /** Set when the ruler is new to the screen and has to draw itself in. */
+  enterAnimation?: string;
+}) {
+  /** Memory places + the five-year ticks that frame them. */
+  const { positions, yearTicks } = useMemo(() => {
+    const parsed = items.map((it) => parseInt(it.year) || 0);
+    const min = Math.min(...parsed);
+    const max = Math.max(...parsed);
+    // pad the domain out to the surrounding five-year marks so the ends of
+    // the line have something to say
+    const domainMin = Math.floor(min / TS_YEAR_STEP) * TS_YEAR_STEP;
+    const domainMax = Math.ceil(max / TS_YEAR_STEP) * TS_YEAR_STEP;
+    const span = domainMax - domainMin || 1;
+    // oldest to the left, newest to the right — the dome's own direction
+    const ofYear = (y: number) => (y - domainMin) / span;
+
+    const tally = new Map<number, number>();
+    for (const y of parsed) tally.set(y, (tally.get(y) ?? 0) + 1);
+    const seats = new Map<number, number>();
+
+    const positions = parsed.map((y) => {
+      const seat = seats.get(y) ?? 0;
+      seats.set(y, seat + 1);
+      const count = tally.get(y) ?? 1;
+      return ofYear(y) + (seat - (count - 1) / 2) * TS_TIE_SPREAD;
+    });
+
+    const yearTicks: { year: number; t: number }[] = [];
+    for (let y = domainMin; y <= domainMax; y += TS_YEAR_STEP) {
+      yearTicks.push({ year: y, t: ofYear(y) });
+    }
+
+    return { positions, yearTicks };
+  }, [items]);
+
+  const pad = Math.max(TS_SIDE_PAD_MIN, TS_SIDE_PAD_VW * viewport.w);
+  const inner = Math.max(1, viewport.w - pad * 2);
+  const y = viewport.h - TS_BOTTOM_PX;
+  const x = (t: number) => pad + t * inner;
+  const markAt = (() => {
+    const a = Math.max(0, Math.min(positions.length - 1, activeIdx));
+    const i = Math.floor(a);
+    const t0 = positions[i] ?? 0;
+    const t1 = positions[Math.min(i + 1, positions.length - 1)] ?? t0;
+    return t0 + (t1 - t0) * (a - i);
+  })();
+
+  return (
+    <svg
+      ref={svgRef}
+      aria-hidden
+      className="absolute inset-0 pointer-events-none"
+      width="100%"
+      height="100%"
+      style={{
+        opacity: visible ? 1 : 0,
+        transition: "opacity 0.8s ease",
+        animation: enterAnimation,
+      }}
+    >
+      <defs>
+        {/* the line has no ends, it just stops being */}
+        <linearGradient
+          id="dive-timescale-fade"
+          gradientUnits="userSpaceOnUse"
+          x1={0}
+          y1={y}
+          x2={viewport.w}
+          y2={y}
+        >
+          <stop offset="0" stopColor="#4a4a4a" stopOpacity="0" />
+          <stop offset="0.1" stopColor="#4a4a4a" stopOpacity="0.24" />
+          <stop offset="0.9" stopColor="#4a4a4a" stopOpacity="0.24" />
+          <stop offset="1" stopColor="#4a4a4a" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+
+      <line x1={0} y1={y} x2={viewport.w} y2={y} stroke="url(#dive-timescale-fade)" strokeWidth={1} />
+
+      {/* every memory — short tick, no year */}
+      {positions.map((t, i) => (
+        <line
+          key={`m-${items[i].id}`}
+          x1={x(t)}
+          y1={y - TS_MEMORY_TICK / 2}
+          x2={x(t)}
+          y2={y + TS_MEMORY_TICK / 2}
+          stroke="#4a4a4a"
+          strokeOpacity={0.28}
+          strokeWidth={1}
+        />
+      ))}
+
+      {/* regular five-year increments — long tick + year */}
+      {yearTicks.map(({ year, t }) => (
+        <g key={year}>
+          <line
+            x1={x(t)}
+            y1={y - TS_YEAR_TICK / 2}
+            x2={x(t)}
+            y2={y + TS_YEAR_TICK / 2}
+            stroke="#4a4a4a"
+            strokeOpacity={0.38}
+            strokeWidth={1}
+          />
+          <text
+            x={x(t)}
+            y={y + TS_LABEL_DROP}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="#4a4a4a"
+            fillOpacity={0.4}
+            style={{
+              fontFamily: SERIF_CJK,
+              fontSize: 10,
+              letterSpacing: "0.06em",
+            }}
+          >
+            {year}
+          </text>
+        </g>
+      ))}
+
+      {/* where you are */}
+      <g
+        style={{
+          transform: `translate(${x(markAt).toFixed(2)}px, ${y}px)`,
+          transition: travelMs ? `transform ${travelMs}ms ${travelEase}` : "none",
+        }}
+      >
+        <circle
+          r={TS_YEAR_TICK / 2}
+          fill="#f7f7f8"
+          stroke="#4a4a4a"
+          strokeWidth={0.3}
+          style={{ filter: "drop-shadow(0 1px 11px rgba(45, 45, 45, 0.38))" }}
+        />
+      </g>
+    </svg>
+  );
+}

@@ -1,11 +1,28 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import svgPaths from "../../imports/svg-t19vgojqiy";
 import NewMomoryIdle from "../../imports/NewMomoryIdle";
 import { LIFE_EVENTS, COLORS as MEMORY_COLORS, MemoryEvent } from "../data/memoryData";
 import { loadMemories, toMemoryEvent, SavedMemory } from "../lib/memoryStore";
-import { SceneViewer, MODEL_PATHS } from "./SceneViewer";
-import { SANS, SERIF } from "../lib/theme";
-import { COLOR_PALETTE } from "../lib/colors";
+import { SceneViewer } from "./SceneViewer";
+import { ArtifactForm, formForMemory } from "../lib/superformula";
+import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
+import { GalleryViewToggle } from "./GalleryViewToggle";
+import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
+import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
+import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival } from "../lib/landingTransition";
+import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
+import { carouselSeat, carouselContainsOffset, inkUnfoldSeat } from "../lib/carouselLayout";
+
+/** Caption + annotation dot — shared so the marks match the words. */
+const BLOB_CAPTION_COLOR = "#D6DADB";
+/** Landing description. */
+const HEADER_DESC_SIZE = 12;
+/** Blob year + title — restored clamp, a step above the header description. */
+const BLOB_CAPTION_SIZE =
+  "clamp(13px, calc(13px + 2 * ((100vw - 390px) / (1024 - 390))), 15px)";
+const BLOB_DOT = 8;
+/** Radiating ring — kept as a painted width so scale() cannot fatten it. */
+const BLOB_RING_STROKE = 0.6;
 
 
 /* ───────── types ───────── */
@@ -25,7 +42,7 @@ interface BlobData {
   event: string;
   distFromCentroid: number;
   shape: {
-    modelPath: string;
+    form: ArtifactForm;
     colorIndex: number;
     fluidity: number;
     evolve: number;
@@ -82,14 +99,14 @@ function connectionCount(idx: number): number {
 }
 
 /*
- * Gallery sort order: chronological, newest (left) → oldest (right).
+ * Gallery sort order: chronological, oldest (left) → newest (right).
  * gallerySortOrder[slot] = blobIndex
- * gallerySlot[blobIndex] = slot position (0 = leftmost = newest)
+ * gallerySlot[blobIndex] = slot position (0 = leftmost = oldest)
  */
 function computeGalleryOrder(events: { year: string }[]) {
   const sortOrder = events
     .map((_, i) => i)
-    .sort((a, b) => parseInt(events[b].year) - parseInt(events[a].year));
+    .sort((a, b) => parseInt(events[a].year) - parseInt(events[b].year));
   const slot: number[] = new Array(events.length);
   sortOrder.forEach((blobIdx, s) => {
     slot[blobIdx] = s;
@@ -143,14 +160,14 @@ function generateBlobs(
       distFromCentroid: 0,
       shape: savedMemory
         ? {
-            modelPath: savedMemory.shape.modelPath,
+            form: savedMemory.shape.form,
             colorIndex: colorIndex % COLOR_PALETTE.length,
             fluidity: savedMemory.shape.fluidity,
             evolve: savedMemory.shape.evolve,
             bumpAmount: savedMemory.shape.bumpAmount,
           }
         : {
-            modelPath: MODEL_PATHS[Math.floor(Math.random() * MODEL_PATHS.length)],
+            form: formForMemory(events[i].id),
             colorIndex: colorIndex % COLOR_PALETTE.length, // Use the same color index
             fluidity: Math.random() * 0.5 + 0.5,
             evolve: Math.random() * 0.5 + 0.5,
@@ -188,11 +205,58 @@ function useScaleFactor(): number {
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
+function parseHex(hex: string) {
+  const n = hex.replace("#", "");
+  return {
+    r: parseInt(n.slice(0, 2), 16),
+    g: parseInt(n.slice(2, 4), 16),
+    b: parseInt(n.slice(4, 6), 16),
+  };
+}
+function lerpHex(a: string, b: string, t: number) {
+  const pa = parseHex(a);
+  const pb = parseHex(b);
+  return `rgb(${Math.round(lerp(pa.r, pb.r, t))}, ${Math.round(lerp(pa.g, pb.g, t))}, ${Math.round(lerp(pa.b, pb.b, t))})`;
+}
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
 }
 function gentleEase(t: number): number {
   return t - Math.sin(t * Math.PI * 2) / (Math.PI * 2);
+}
+
+const PAPER = "#ededee";
+/** Landing paper — a step below the raw token so isolation doesn't read as a flash. */
+const LANDING_PAPER = "#e4e4e6";
+const HEADER_INK = { mark: "#504A4A", desc: "#2A2018" };
+const HEADER_LIGHT = { mark: "#e2e2e3", desc: "#D6DADB" };
+const HEADER_COLOR_FADE = "color 1.15s ease";
+/** Labels invert against the field; the saturation pass keeps that invert gray. */
+const LANDING_INK = {
+  color: "rgba(255, 255, 255, 0.8)",
+  mixBlendMode: "difference" as const,
+};
+const LANDING_MONO = {
+  color: "#808080",
+  mixBlendMode: "saturation" as const,
+};
+
+function hexLuma(hex: string): number {
+  const n = hex.replace("#", "");
+  const r = parseInt(n.slice(0, 2), 16);
+  const g = parseInt(n.slice(2, 4), 16);
+  const b = parseInt(n.slice(4, 6), 16);
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+const PAPER_LUMA = hexLuma(LANDING_PAPER);
+
+interface CaptionFx {
+  /** How far the caption sits in the header keep-out — blur only. */
+  progress: number;
+  /** Label-on-label coverage — blur only; the top of the stack stays sharp. */
+  overlap: number;
+  stack: number;
 }
 
 /* ──────── annotation ──────── */
@@ -217,7 +281,38 @@ function textScale(idx: number): number {
 /* ═══════════════════════════════════════════════
    COMPONENT
    ═══════════════════════════════════════════════ */
-export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemory?: () => void; hideAnnotations?: boolean }) {
+export function BlobScene({
+  onNewMemory,
+  hideAnnotations = false,
+  openGallery = false,
+  onGalleryExit,
+  onToggleGrid,
+  classicChrome = false,
+  galleryOnly = false,
+  ctaLabel = "New Memory",
+  showPlus = true,
+  landingArrival = null,
+  landingFocusSlot = 0,
+}: {
+  onNewMemory?: () => void;
+  hideAnnotations?: boolean;
+  /** Open the artifact gallery on mount (used by the homescreen G shortcut). */
+  openGallery?: boolean;
+  /** Fired when leaving gallery → blend (so HomePage can restore a test variant). */
+  onGalleryExit?: () => void;
+  onToggleGrid?: () => void;
+  /** Main-branch overlay: top blur, tagline, original wordmark. */
+  classicChrome?: boolean;
+  /** Dedicated carousel route: start (and stay) in gallery, no blend overlay. */
+  galleryOnly?: boolean;
+  ctaLabel?: string;
+  showPlus?: boolean;
+  /** Only the landing's Enter action uses this clock; the original field is
+      unchanged until that action begins. */
+  landingArrival?: InkArrival | null;
+  /** Chronological seat the ink unfolds onto — a middle memory, not an end. */
+  landingFocusSlot?: number;
+}) {
   // Curated life events plus whatever the user has saved, so their memories
   // blend into the same field.
   const [savedMemories] = useState<SavedMemory[]>(() => loadMemories());
@@ -241,9 +336,9 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
   const scale = useScaleFactor();
 
   /* ─── refs for animation state ─── */
-  const morphProgress = useRef(0);
-  const morphTarget = useRef(0);
-  const modeRef = useRef<"blend" | "gallery">("blend");
+  const morphProgress = useRef(galleryOnly ? 1 : 0);
+  const morphTarget = useRef(galleryOnly ? 1 : 0);
+  const modeRef = useRef<"blend" | "gallery">(galleryOnly ? "gallery" : "blend");
   const carouselIdx = useRef(0);
   const carouselTgt = useRef(0);
   const scrollVel = useRef(0);
@@ -261,23 +356,193 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
   const dragStart = useRef({ x: 0, y: 0, scrollX: 0, scrollY: 0 });
   const panDragDist = useRef(0);
 
+  const { phase: returnPhase } = useLandingReturn();
+  const returnReveal = classicChrome && (returnPhase === "holding" || returnPhase === "landing");
+  const revealArmed = returnPhase === "landing";
+  const [fieldShown, setFieldShown] = useState(!returnReveal);
+  const [headerShown, setHeaderShown] = useState(!returnReveal);
+  useEffect(() => {
+    if (!returnReveal) {
+      setFieldShown(true);
+      setHeaderShown(true);
+      return;
+    }
+    setFieldShown(false);
+    setHeaderShown(false);
+    if (!revealArmed) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduced) {
+      setFieldShown(true);
+      setHeaderShown(true);
+      return;
+    }
+    const frame = window.requestAnimationFrame(() => setFieldShown(true));
+    const headerTimer = window.setTimeout(() => setHeaderShown(true), LANDING_RETURN.headerDelayMs);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(headerTimer);
+    };
+  }, [returnReveal, revealArmed]);
+  const fieldFadeStyle = returnReveal
+    ? { opacity: fieldShown ? 1 : 0, transition: revealArmed ? `opacity ${LANDING_RETURN.contentFadeMs}ms ease` : "none" }
+    : undefined;
+  const headerFadeStyle = returnReveal
+    ? { opacity: headerShown ? 1 : 0, transition: revealArmed ? `opacity ${LANDING_RETURN.headerFadeMs}ms ease` : "none" }
+    : undefined;
+
   /* ─── React state ─── */
-  const [morphVal, setMorphVal] = useState(0);
-  const [activeIdx, setActiveIdx] = useState(0);
+  const [morphVal, setMorphVal] = useState(galleryOnly ? 1 : 0);
+  const [activeIdx, setActiveIdx] = useState(() =>
+    galleryOnly ? (gallerySortOrder[0] ?? 0) : 0,
+  );
   const [annotations, setAnnotations] = useState<AnnPos[]>([]);
+  const annotationsRef = useRef<AnnPos[]>([]);
+  annotationsRef.current = annotations;
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [panState, setPanState] = useState({ x: 0, y: 0 });
+  const headerCopyRef = useRef<HTMLDivElement>(null);
+  const headerOnDarkRef = useRef(false);
+  const [headerOnDark, setHeaderOnDark] = useState(false);
+  const captionEls = useRef<(HTMLDivElement | null)[]>([]);
+  const captionFxRef = useRef<CaptionFx[]>([]);
+  const [captionFx, setCaptionFx] = useState<CaptionFx[]>([]);
+  const entryRef = useRef(landingArrival);
+  entryRef.current = landingArrival;
+  const entryCapture = useRef<{
+    inline: string; x: number; y: number; dotX: number; dotY: number;
+    width: number; height: number; a: number; b: number; c: number; d: number;
+    radius: string; blur: number; opacity: number;
+  }[] | null>(null);
+  const entryTime = landingArrival?.elapsed ?? 0;
+  const entryReduced = landingArrival?.reducedMotion ?? false;
+  const entryDesc = landingArrival ? 1 - flowProgress(entryTime, 0, entryReduced ? 80 : INK_ENTRY.descEnd) : 1;
+  const entryHeader = landingArrival ? 1 - flowProgress(entryTime, entryReduced ? 80 : INK_ENTRY.descEnd,
+    entryReduced ? 160 : INK_ENTRY.headerEnd) : 1;
+  const markFlightStart = entryReduced ? 160 : INK_ENTRY.headerEnd;
+  const markFlightEnd = entryReduced ? 320 : INK_ENTRY.markEnd;
+  const entryMark = landingArrival
+    ? flowProgress(entryTime, markFlightStart, markFlightEnd)
+    : 0;
+  const entryMarkInk = landingArrival
+    ? flowProgress(entryTime, lerp(markFlightStart, markFlightEnd, 0.35), lerp(markFlightStart, markFlightEnd, 0.65))
+    : 0;
+  const entryLabels = landingArrival ? 1 - flowProgress(entryTime, entryReduced ? 160 : INK_ENTRY.headerEnd,
+    entryReduced ? 320 : INK_ENTRY.labelsEnd) : 1;
+  const headerGone = !!landingArrival && entryTime >= markFlightStart;
+  const markRef = useRef<HTMLSpanElement>(null);
+  const markFrom = useRef<{ top: number; left: number; fontSize: number; gap: number } | null>(null);
+  const markInkFrom = useRef<string | null>(null);
+  const [markHeld, setMarkHeld] = useState(false);
+  if (!landingArrival) markInkFrom.current = null;
+  else if (!markInkFrom.current) {
+    markInkFrom.current = headerOnDark ? HEADER_LIGHT.mark : HEADER_INK.mark;
+  }
+  const markInk = markInkFrom.current
+    ? lerpHex(markInkFrom.current, CHROME_GRAY, entryMarkInk)
+    : headerOnDark ? HEADER_LIGHT.mark : HEADER_INK.mark;
+  useLayoutEffect(() => {
+    if (!landingArrival) {
+      markFrom.current = null;
+      setMarkHeld(false);
+      return;
+    }
+    const readMark = () => {
+      const el = markRef.current;
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      const cs = getComputedStyle(el);
+      markFrom.current = {
+        top: r.top,
+        left: r.left + r.width / 2,
+        fontSize: parseFloat(cs.fontSize) || 16,
+        gap: parseFloat(cs.gap) || 8,
+      };
+    };
+    if (!headerGone) {
+      readMark();
+      if (markHeld) setMarkHeld(false);
+      return;
+    }
+    readMark();
+    setMarkHeld(true);
+  }, [landingArrival, headerGone, markHeld]);
+  const entryShrink = landingArrival && !entryReduced ? flowProgress(entryTime, INK_ENTRY.labelsEnd, INK_ENTRY.shrinkEnd) : 0;
+  const entryPaper = landingArrival ? 1 - flowProgress(entryTime, entryReduced ? 320 : INK_ENTRY.pathHoldEnd,
+    entryReduced ? INK_ENTRY.reducedEnd : INK_ENTRY.growEnd) : 1;
 
   /* ─── sizing ─── */
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const isMobile = vw <= 768;
   const canvasWidth = isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
-  const canvasHeight = isMobile ? vh * 0.9 : vh * 1.5 * 0.9;
+  // never shorter than the screen: the pan's bounds assume the field covers it
+  const canvasHeight = isMobile ? vh : vh * 1.5 * 0.9;
   const baseSize = 120 * scale;
   const selSize = 260 * scale;
   const gap = 36 * scale;
   const centerY = vh * 0.73; // Moved carousel lower
+
+  // Animate the actual CSS blobs from their live, panned positions. Capturing
+  // their computed transform and shape preserves the original first frame.
+  useLayoutEffect(() => {
+    if (!landingArrival) {
+      if (entryCapture.current) {
+        entryCapture.current.forEach((captured, i) => {
+          if (blobEls.current[i]) blobEls.current[i]!.style.cssText = captured.inline;
+        });
+        entryCapture.current = null;
+      }
+      return;
+    }
+    const container = containerRef.current;
+    if (!container) return;
+    const cr = container.getBoundingClientRect();
+    if (!entryCapture.current) {
+      panVelocity.current = { x: 0, y: 0 };
+      isPanning.current = false;
+      entryCapture.current = blobEls.current.map((el, i) => {
+        const style = getComputedStyle(el!);
+        const rect = el!.getBoundingClientRect();
+        const matrix = new DOMMatrixReadOnly(style.transform);
+        const s = parseFloat(style.scale) || 1;
+        return { inline: el!.style.cssText, x: rect.left + rect.width / 2, y: rect.top + rect.height / 2,
+          dotX: annotations[i] ? cr.left + annotations[i].dotX : rect.left + rect.width / 2,
+          dotY: annotations[i] ? cr.top + annotations[i].dotY : rect.top + rect.height / 2,
+          width: parseFloat(style.width), height: parseFloat(style.height),
+          a: matrix.a * s, b: matrix.b * s, c: matrix.c * s, d: matrix.d * s,
+          radius: style.borderRadius, blur: blobs[i].blur * scale, opacity: blobs[i].opacity };
+      });
+    }
+    const gather = entryReduced ? 0 : flowProgress(entryTime, INK_ENTRY.shrinkEnd, INK_ENTRY.pathEnd);
+    const unfold = entryReduced ? 0 : flowProgress(entryTime, INK_ENTRY.pathHoldEnd, INK_ENTRY.unfoldEnd);
+    const growth = inkGrowth(landingArrival);
+    entryCapture.current.forEach((captured, i) => {
+      const el = blobEls.current[i];
+      if (!el) return;
+      const slot = gallerySlot[i];
+      const offset = slot - landingFocusSlot;
+      const path = inkUnfoldSeat(vw, vh, slot, blobs.length, landingFocusSlot, unfold);
+      const seat = carouselSeat(vw, vh, offset);
+      // Out-of-range pointers keep travelling along the extended projection.
+      // Only visible seats crossfade into artifacts; the rest leave the frame
+      // physically, without fading away when the gallery's render range ends.
+      const becomesArtifact = carouselContainsOffset(offset) && seat.opacity > 0;
+      const x = lerp(lerp(captured.x, captured.dotX, entryShrink), path.x, gather);
+      const y = lerp(lerp(captured.y, captured.dotY, entryShrink), path.y, gather);
+      const pointerScale = lerp(1, path.scale, gather);
+      const width = lerp(captured.width, INK_POINTER_SIZE * pointerScale, entryShrink);
+      const height = lerp(captured.height, INK_POINTER_SIZE * pointerScale, entryShrink);
+      el.style.animation = "none";
+      el.style.scale = "1";
+      el.style.left = `${x - cr.left}px`; el.style.top = `${y - cr.top}px`;
+      el.style.width = `${width}px`; el.style.height = `${height}px`;
+      el.style.transform = `matrix(${lerp(captured.a, 1, entryShrink)}, ${lerp(captured.b, 0, entryShrink)}, ${lerp(captured.c, 0, entryShrink)}, ${lerp(captured.d, 1, entryShrink)}, ${-width / 2}, ${-height / 2})`;
+      el.style.borderRadius = entryShrink > 0.98 ? "50%" : captured.radius;
+      el.style.filter = `blur(${captured.blur * (1 - entryShrink)}px)`;
+      el.style.opacity = `${lerp(captured.opacity, 1, entryShrink) * lerp(1, becomesArtifact ? seat.opacity : 1, unfold) * (becomesArtifact || entryReduced ? 1 - flowProgress(growth, 0.01, entryReduced ? 1 : 0.24) : 1)}`;
+      if (entryShrink > 0.98) el.style.background = blobs[i].color.match(/#[0-9a-f]{6}/i)?.[0] ?? MEMORY_COLORS[0];
+    });
+  }, [landingArrival, entryTime, entryShrink, entryReduced, gallerySlot, landingFocusSlot, blobs, scale, vw, vh]);
 
   /* ─── initial pan offset (center the canvas) ─── */
   useEffect(() => {
@@ -321,18 +586,37 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
     if (!c) return;
     const ctx = c.getContext("2d");
     if (!ctx) return;
-    c.width = 512;
-    c.height = 512;
-    const img = ctx.createImageData(512, 512);
-    for (let i = 0; i < img.data.length; i += 4) {
-      const v = Math.random() * 255;
-      img.data[i] = v;
-      img.data[i + 1] = v;
-      img.data[i + 2] = v;
-      img.data[i + 3] = 30;
-    }
-    ctx.putImageData(img, 0, 0);
-  }, []);
+    let painted = false;
+    const paint = () => {
+      // Slightly larger grains, still sized relative to the display rather
+      // than stretching a fixed texture across different viewport sizes.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const grainSize = 1.5;
+      const width = classicChrome ? Math.max(1, Math.round(c.clientWidth * dpr / grainSize)) : 512;
+      const height = classicChrome ? Math.max(1, Math.round(c.clientHeight * dpr / grainSize)) : 512;
+      if (painted && c.width === width && c.height === height) return;
+      c.width = width;
+      c.height = height;
+      const img = ctx.createImageData(width, height);
+      for (let i = 0; i < img.data.length; i += 4) {
+        const v = Math.random() * 255;
+        img.data[i] = v;
+        img.data[i + 1] = v;
+        img.data[i + 2] = v;
+        img.data[i + 3] = 42;
+      }
+      ctx.putImageData(img, 0, 0);
+      painted = true;
+    };
+    paint();
+    const observer = new ResizeObserver(paint);
+    observer.observe(c);
+    window.addEventListener("resize", paint);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", paint);
+    };
+  }, [classicChrome]);
 
   /* ─── pause blob animations on hover ─── */
   useEffect(() => {
@@ -551,6 +835,7 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
       return;
     }
     const update = () => {
+      if (entryRef.current) { annRafRef.current = requestAnimationFrame(update); return; }
       const ct = containerRef.current;
       if (!ct) { annRafRef.current = requestAnimationFrame(update); return; }
       const cr = ct.getBoundingClientRect();
@@ -601,10 +886,15 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
   }, [capture]);
 
   const morphToBlend = useCallback(() => {
+    if (galleryOnly) {
+      onGalleryExit?.();
+      return;
+    }
     if (morphTarget.current === 0) return;
     capture();
     morphTarget.current = 0;
-  }, [capture]);
+    onGalleryExit?.();
+  }, [galleryOnly, capture, onGalleryExit]);
 
   /* ─── navigate to gallery with specific blob selected ─── */
   const morphToGalleryAt = useCallback((blobIdx: number) => {
@@ -614,7 +904,23 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
     setActiveIdx(blobIdx);
     setHoveredIdx(null);
     morphToGallery();
-  }, [morphToGallery]);
+  }, [morphToGallery, gallerySlot]);
+
+  /* ─── open gallery on mount (homescreen G shortcut) ─── */
+  useEffect(() => {
+    if (galleryOnly || !openGallery || blobs.length === 0) return;
+    const defaultSlot = 0;
+    const id = requestAnimationFrame(() => {
+      // Second frame so blob layout is measurable for capture()
+      requestAnimationFrame(() => {
+        carouselTgt.current = defaultSlot;
+        carouselIdx.current = defaultSlot;
+        setActiveIdx(gallerySortOrder[defaultSlot] ?? 0);
+        morphToGallery();
+      });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [galleryOnly, openGallery, blobs.length, gallerySortOrder, morphToGallery]);
 
   /* ─── keyboard ─── */
   useEffect(() => {
@@ -641,9 +947,10 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
       return;
     }
     panDragDist.current = 0;
+    if (classicChrome) return; // landing: blobs stay put; Enter is the way in
     if (hoveredIdx !== null) return; // don't morph while hovering an annotation
     if (morphTarget.current === 0 && morphProgress.current < 0.1) {
-      // Default: open gallery at the newest event (slot 0)
+      // Default: open gallery at the oldest event (slot 0)
       const defaultSlot = 0;
       carouselTgt.current = defaultSlot;
       carouselIdx.current = defaultSlot;
@@ -655,7 +962,7 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
       morphToBlend();
       return;
     }
-  }, [morphToGallery, morphToBlend, hoveredIdx]);
+  }, [classicChrome, morphToGallery, morphToBlend, hoveredIdx]);
 
   /* ─── wheel ─── */
   const handleWheel = useCallback((e: React.WheelEvent) => {
@@ -753,24 +1060,308 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
     }
   }, []);
 
+  /* ─── landing header + captions: ink follows the field; captions
+        near the header or under another label blur in place. ─── */
+  useEffect(() => {
+    if (!classicChrome) return;
+    let raf = 0;
+    let last = performance.now();
+    const ENTER_DARK = 0.46;
+    const LEAVE_DARK = 0.58;
+    const INNER_PAD = 36;
+    const BAND = 90;
+    const TAU = 0.16;
+
+    const lumaAt = (px: number, py: number) => {
+      let luma = PAPER_LUMA;
+      for (let i = 0; i < blobs.length; i++) {
+        const el = blobEls.current[i];
+        if (!el) continue;
+        const br = el.getBoundingClientRect();
+        const rx = br.width / 2 || 1;
+        const ry = br.height / 2 || 1;
+        const nx = (px - (br.left + rx)) / rx;
+        const ny = (py - (br.top + ry)) / ry;
+        if (nx * nx + ny * ny > 1) continue;
+        const hex = COLOR_PALETTE[blobs[i].shape.colorIndex % COLOR_PALETTE.length].color;
+        luma = Math.min(luma, hexLuma(hex) * blobs[i].opacity);
+      }
+      return luma;
+    };
+
+    const onDarkFrom = (avg: number, was: boolean) =>
+      was ? avg < LEAVE_DARK : avg < ENTER_DARK;
+
+    const tick = (now: number) => {
+      raf = requestAnimationFrame(tick);
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const copy = headerCopyRef.current;
+      if (entryRef.current) return;
+      if (!copy) return;
+      const hr = copy.getBoundingClientRect();
+      if (hr.width < 2 || hr.height < 2) return;
+
+      const kx = (hr.left + hr.right) / 2;
+      const ky = (hr.top + hr.bottom) / 2;
+      const follow = 1 - Math.exp(-dt / TAU);
+
+      const xs = [0.18, 0.5, 0.82];
+      const ys = [0.22, 0.78];
+      let sum = 0;
+      let n = 0;
+      for (const fx of xs) {
+        for (const fy of ys) {
+          sum += lumaAt(hr.left + hr.width * fx, hr.top + hr.height * fy);
+          n++;
+        }
+      }
+      const headerDark = onDarkFrom(sum / (n || 1), headerOnDarkRef.current);
+      if (headerDark !== headerOnDarkRef.current) {
+        headerOnDarkRef.current = headerDark;
+        setHeaderOnDark(headerDark);
+      }
+
+      const laid = blobs.map((_, i) => {
+        const cap = captionEls.current[i];
+        if (!cap) return null;
+        const cr = cap.getBoundingClientRect();
+        if (cr.width < 2 || cr.height < 2) return null;
+        const cx = cr.left + cr.width / 2;
+        const cy = cr.top + cr.height / 2;
+        const z = cy + blobs[i].size * 0.12 + i * 0.01;
+        return { i, cr, cx, cy, z };
+      });
+      const ranked = laid
+        .filter((row): row is NonNullable<typeof row> => !!row)
+        .sort((a, b) => a.z - b.z);
+      const stackOf = new Array<number>(blobs.length).fill(0);
+      ranked.forEach((row, rank) => { stackOf[row.i] = rank; });
+
+      const cover = new Array<number>(blobs.length).fill(0);
+      for (const under of ranked) {
+        for (const over of ranked) {
+          if (over.z <= under.z) continue;
+          const ow = Math.min(under.cr.right, over.cr.right) - Math.max(under.cr.left, over.cr.left);
+          const oh = Math.min(under.cr.bottom, over.cr.bottom) - Math.max(under.cr.top, over.cr.top);
+          if (ow <= 0 || oh <= 0) continue;
+          const amount = (ow * oh) / (under.cr.width * under.cr.height);
+          if (amount > cover[under.i]) cover[under.i] = amount;
+        }
+      }
+
+      const nextFx: CaptionFx[] = blobs.map((_, i) => {
+        const prev = captionFxRef.current[i] ?? {
+          progress: 0,
+          overlap: 0,
+          stack: 0,
+        };
+        const row = laid[i];
+        if (!row) {
+          return {
+            ...prev,
+            progress: prev.progress + (0 - prev.progress) * follow,
+            overlap: prev.overlap + (0 - prev.overlap) * follow,
+          };
+        }
+
+        const { cr, cx, cy } = row;
+        const rx = hr.width / 2 + INNER_PAD + cr.width / 2;
+        const ry = hr.height / 2 + INNER_PAD + cr.height / 2;
+        const d = Math.hypot((cx - kx) / rx, (cy - ky) / ry);
+        const outer = 1 + BAND / Math.max(rx, ry);
+        const headerTarget = clamp((outer - d) / (outer - 1), 0, 1);
+
+        const progress = prev.progress + (headerTarget - prev.progress) * follow;
+        const overlap = prev.overlap + (cover[i] - prev.overlap) * follow;
+        return { progress, overlap, stack: stackOf[i] };
+      });
+
+      const changed =
+        nextFx.length !== captionFxRef.current.length ||
+        nextFx.some((fx, i) => {
+          const prev = captionFxRef.current[i];
+          return (
+            !prev ||
+            Math.abs(prev.progress - fx.progress) > 0.01 ||
+            Math.abs(prev.overlap - fx.overlap) > 0.01 ||
+            prev.stack !== fx.stack
+          );
+        });
+      if (changed) {
+        captionFxRef.current = nextFx;
+        setCaptionFx(nextFx);
+      }
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [classicChrome, blobs]);
+
   /* ─── derived ─── */
-  const showGooey = morphVal < 0.5;
-  const gooeyT = clamp(morphVal * 2.2, 0, 1);
+  const showGooey = morphVal < 0.5 && entryShrink < 0.34;
+  const gooeyT = clamp(Math.max(morphVal * 2.2, entryShrink * 3), 0, 1);
 
   // Connection lines: from hovered event's dot to each connected event's dot
   const hoveredConns = hoveredIdx !== null ? getConnections(hoveredIdx) : [];
+  const labelsFade = clamp(1 - morphVal * 5, 0, 1) * entryLabels;
+  const renderAnnotationMarks = (bind: boolean) => blobs.map((blob, i) => {
+    const a = annotations[i];
+    if (!a || (a.dotX === 0 && a.dotY === 0)) {
+      if (bind) captionEls.current[i] = null;
+      return null;
+    }
+    const isPulsating = connectionCount(i) > 2;
+    const isHovered = hoveredIdx === i;
+    const isConnectedToHovered = hoveredIdx !== null && hoveredConns.includes(i);
+    const dimmed = hoveredIdx !== null && !isHovered && !isConnectedToHovered;
+    const fx = classicChrome ? captionFx[i] : undefined;
+    const headerNear = fx?.progress ?? 0;
+    const overlap = fx?.overlap ?? 0;
+    const stack = fx?.stack ?? i;
+    const buried = headerNear > 0.45 || overlap > 0.45;
+    const captionColor = classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR;
+    const dotColor = classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR;
+    const visible = dimmed ? 0.2 : 1;
+    const soften = Math.max(headerNear, overlap) * 6;
+    const softenFilter = soften > 0.1 ? `blur(${soften}px)` : "none";
+
+    return (
+      <div
+        key={`${bind ? "a" : "m"}-${blob.id}`}
+        onMouseEnter={bind ? (e) => { e.stopPropagation(); setHoveredIdx(i); } : undefined}
+        onMouseLeave={bind ? () => setHoveredIdx(null) : undefined}
+        onClick={bind ? (e) => {
+          e.stopPropagation();
+          if (!classicChrome) morphToGalleryAt(i);
+        } : undefined}
+        style={{ pointerEvents: bind && !buried ? "auto" : "none" }}
+      >
+        <div
+          className="absolute"
+          style={{
+            left: `${a.dotX}px`,
+            top: `${a.dotY}px`,
+            width: BLOB_DOT,
+            height: BLOB_DOT,
+            borderRadius: "50%",
+            backgroundColor: dotColor,
+            transform: "translate(-50%, -50%)",
+            zIndex: 22 + stack,
+            opacity: dimmed ? 0.25 : 1,
+            filter: softenFilter,
+          }}
+        />
+        {isPulsating && (
+          <div
+            className="absolute"
+            style={{
+              left: `${a.dotX}px`,
+              top: `${a.dotY}px`,
+              width: BLOB_DOT,
+              height: BLOB_DOT,
+              borderRadius: "50%",
+              border: `${BLOB_RING_STROKE}px solid ${dotColor}`,
+              backgroundColor: "transparent",
+              boxSizing: "content-box",
+              transform: "translate(-50%, -50%)",
+              zIndex: 21 + stack,
+              opacity: dimmed ? 0.15 : 1,
+              filter: softenFilter,
+              animation: "ringPulse 2.5s ease-in-out infinite",
+              ["--ring-from" as string]: `${BLOB_DOT}px`,
+              ["--ring-to" as string]: `${BLOB_DOT * 5.6}px`,
+            }}
+          />
+        )}
+        <div
+          ref={bind ? (el) => { captionEls.current[i] = el; } : undefined}
+          className="absolute"
+          style={{
+            left: `${a.anchorX}px`,
+            top: `${a.anchorY}px`,
+            transform: a.textAlign === "right" ? "translateX(-100%)" : "translateX(0)",
+            zIndex: 22 + stack,
+            cursor: "pointer",
+            padding: "4px 8px",
+            margin: "-4px -8px",
+            color: captionColor,
+            pointerEvents: buried ? "none" : "auto",
+          }}
+        >
+          <div style={{ opacity: visible, filter: softenFilter }}>
+            <div
+              style={{
+                fontFamily: SERIF_CJK,
+                fontStyle: "normal",
+                fontSize: BLOB_CAPTION_SIZE,
+                color: "inherit",
+                opacity: 0.8,
+                letterSpacing: "0.06em",
+                marginBottom: 4,
+                whiteSpace: "nowrap",
+              }}
+            >
+              {blob.year}
+            </div>
+            <div
+              style={{
+                fontFamily: SERIF,
+                fontStyle: "italic",
+                fontSize: BLOB_CAPTION_SIZE,
+                color: "inherit",
+                opacity: 0.9,
+                lineHeight: blob.event.includes("\n") ? 1.5 : "normal",
+                whiteSpace: blob.event.includes("\n") ? "pre-line" : "nowrap",
+                letterSpacing: SERIF_ITALIC_TRACKING,
+              }}
+            >
+              {blob.event}
+            </div>
+            {blob.year === "2026" && (
+              <div
+                style={{
+                  fontFamily: "Georgia, serif",
+                  fontStyle: "italic",
+                  fontSize: 11,
+                  color: "inherit",
+                  opacity: 0.35,
+                  marginTop: 8,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  });
 
   return (
     <div
       ref={viewportRef}
-      className="relative w-full h-screen overflow-hidden cursor-pointer select-none"
-      style={{ background: "#ededee" }}
+      inert={!!landingArrival}
+      data-ink-stage={!landingArrival ? "field" : entryTime < INK_ENTRY.descEnd ? "desc" : entryTime < INK_ENTRY.headerEnd ? "header" : entryTime < INK_ENTRY.labelsEnd ? "labels"
+        : entryTime < INK_ENTRY.shrinkEnd ? "shrink" : entryTime < INK_ENTRY.pathEnd ? "gather" : entryTime < INK_ENTRY.pathHoldEnd ? "curve"
+        : entryTime < INK_ENTRY.unfoldEnd ? "unfold" : "artifacts"}
+      className="relative w-full h-dvh overflow-hidden cursor-pointer select-none"
+      style={{
+        background: classicChrome
+          ? (landingArrival ? `rgba(228,228,230,${entryPaper})` : LANDING_PAPER)
+          : (landingArrival ? `rgba(237,237,238,${entryPaper})` : PAPER),
+        isolation: classicChrome ? "isolate" : undefined,
+        // a finger pans the field (it is wider than a phone) rather than the page
+        touchAction: "none",
+      }}
       onClick={handleClick}
       onWheel={handleWheel}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onPointerDown={handleMouseDown}
+      onPointerMove={handleMouseMove}
+      onPointerUp={handleMouseUp}
+      onPointerCancel={handleMouseUp}
+      onPointerLeave={handleMouseUp}
     >
       {/* SVG Filters */}
       <svg className="absolute w-0 h-0" aria-hidden="true">
@@ -787,6 +1378,7 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
         </defs>
       </svg>
 
+      <div style={{ position: "absolute", inset: 0, ...fieldFadeStyle }}>
       {/* ═══ PANNABLE INNER CANVAS ═══ */}
       <div
         ref={containerRef}
@@ -796,11 +1388,13 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
           top: 0,
           width: `${canvasWidth}px`,
           height: `${canvasHeight}px`,
-          transform: morphVal < 0.05
-            ? `translate(${panState.x}px, ${panState.y}px)`
-            : `translate(${-(canvasWidth - vw) / 2 + vw * 0.15}px, ${-(canvasHeight - vh) / 2 - vh * 0.1}px)`,
+          transform: classicChrome && morphVal < 0.05 && !panState.x && !panState.y
+            ? undefined
+            : morphVal < 0.05
+              ? `translate(${panState.x}px, ${panState.y}px)`
+              : `translate(${-(canvasWidth - vw) / 2 + vw * 0.15}px, ${-(canvasHeight - vh) / 2 - vh * 0.1}px)`,
           transition: morphVal > 0.05 ? "transform 0.6s ease" : "none",
-          willChange: "transform",
+          willChange: classicChrome ? undefined : "transform",
         }}
       >
         {/* ═══ BLOB LAYER ═══ */}
@@ -824,7 +1418,7 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
                 animation: `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite,
                   blobMorph ${blob.animDuration * 1.3}s ease-in-out ${blob.animDelay}s infinite,
                   blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`,
-                willChange: "transform, left, top, width, height",
+                willChange: classicChrome ? undefined : "transform, left, top, width, height",
               }}
             />
           ))}
@@ -833,7 +1427,7 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
         {/* ═══ AMBIENT BLOBS ═══ */}
         <div
           className="absolute inset-0 pointer-events-none"
-          style={{ opacity: clamp(1 - morphVal * 3, 0, 1) }}
+          style={{ opacity: clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1) }}
         >
           <div className="absolute" style={{
             left: "20%", top: "30%",
@@ -898,135 +1492,34 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
           </svg>
         )}
 
-        {/* ═══ ANNOTATIONS ═══ */}
-        <div className="absolute inset-0" style={{ opacity: clamp(1 - morphVal * 5, 0, 1), zIndex: 19 }}>
-          {blobs.map((blob, i) => {
-            const a = annotations[i];
-            if (!a || (a.dotX === 0 && a.dotY === 0)) return null;
-            const cc = connectionCount(i);
-            const ts = textScale(i);
-            const isPulsating = cc > 2;
-            const isHovered = hoveredIdx === i;
-            const isConnectedToHovered = hoveredIdx !== null && hoveredConns.includes(i);
-            const dimmed = hoveredIdx !== null && !isHovered && !isConnectedToHovered;
-
-            return (
-              <div
-                key={`a-${blob.id}`}
-                onMouseEnter={(e) => { e.stopPropagation(); setHoveredIdx(i); }}
-                onMouseLeave={() => setHoveredIdx(null)}
-                onClick={(e) => { e.stopPropagation(); morphToGalleryAt(i); }}
-                style={{ pointerEvents: "auto" }}
-              >
-                {/* Dot */}
-                <div
-                  className="absolute"
-                  style={{
-                    left: `${a.dotX}px`,
-                    top: `${a.dotY}px`,
-                    width: 10,
-                    height: 10,
-                    borderRadius: "50%",
-                    backgroundColor: "#1a1a1a",
-                    transform: "translate(-50%, -50%)",
-                    zIndex: 22,
-                    opacity: dimmed ? 0.25 : 1,
-                    transition: "opacity 0.4s ease",
-                  }}
-                />
-                {/* Pulsating ring for highly-connected events */}
-                {isPulsating && (
-                  <div
-                    className="absolute"
-                    style={{
-                      left: `${a.dotX}px`,
-                      top: `${a.dotY}px`,
-                      width: 10,
-                      height: 10,
-                      borderRadius: "50%",
-                      border: "0.2px solid #1a1a1a",
-                      backgroundColor: "transparent",
-                      transform: "translate(-50%, -50%)",
-                      zIndex: 21,
-                      opacity: dimmed ? 0.15 : 1,
-                      animation: "ringPulse 2.5s ease-in-out infinite",
-                      transition: "opacity 0.4s ease",
-                    }}
-                  />
-                )}
-                {/* Text hit area */}
-                <div
-                  className="absolute"
-                  style={{
-                    left: `${a.anchorX}px`,
-                    top: `${a.anchorY}px`,
-                    transform: a.textAlign === "right" ? "translateX(-100%)" : "translateX(0)",
-                    zIndex: 22,
-                    opacity: dimmed ? 0.2 : 1,
-                    transition: "opacity 0.4s ease",
-                    cursor: "pointer",
-                    padding: "4px 8px",
-                    margin: "-4px -8px",
-                  }}
-                >
-                  {/* Year */}
-                  <div
-                    style={{
-                      fontFamily: SERIF,
-                      fontSize: 12,
-                      color: "#504A4A",
-                      opacity: 0.8,
-                      marginBottom: 4,
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {blob.year}
-                  </div>
-                  {/* Memory text */}
-                  <div
-                    style={{
-                      fontFamily: SERIF,
-                      fontSize: isMobile ? "clamp(12px, calc(12px + (16 - 12) * ((100vw - 390px) / (1024 - 390))), 16px)" : 16,
-                      color: "#2A2018",
-                      opacity: 0.9,
-                      lineHeight: blob.event.includes("\n") ? 1.5 : "normal",
-                      whiteSpace: blob.event.includes("\n") ? "pre-line" : "nowrap",
-                      letterSpacing: "0px",
-                    }}
-                  >
-                    {blob.event}
-                  </div>
-                  {/* Ellipsis for entry 15 (2026) */}
-                  {blob.year === "2026" && (
-                    <div
-                      style={{
-                        fontFamily: "Georgia, serif",
-                        fontStyle: "italic",
-                        fontSize: 11,
-                        color: "#2A2018",
-                        opacity: 0.35,
-                        marginTop: 8,
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      ...
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {!classicChrome && (
+          <div className="absolute inset-0" style={{ opacity: labelsFade, zIndex: 19 }}>
+            {renderAnnotationMarks(!classicChrome)}
+          </div>
+        )}
       </div>{/* end pannable inner canvas */}
+
+      {/* Grain sits on the blobs, under the landing type so exclusion can read the field. */}
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.48]"
+        style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryPaper : undefined }}
+      />
+      <div className="absolute inset-0 pointer-events-none" style={{
+        opacity: entryPaper,
+        background: classicChrome
+          ? "radial-gradient(ellipse at center, transparent 22%, rgba(0,0,0,0.2) 100%)"
+          : "radial-gradient(ellipse at center, transparent 32%, rgba(0,0,0,0.14) 100%)",
+      }} />
 
       {/* ═══ GALLERY TEXT ═══ */}
       <div
         className="absolute inset-0 pointer-events-none flex items-end justify-center"
-        style={{ opacity: clamp((morphVal - 0.65) / 0.35, 0, 1), zIndex: 20, paddingBottom: `${vh * 0.12}px` }}
+        style={{ opacity: clamp((morphVal - 0.65) / 0.35, 0, 1), zIndex: 20, paddingBottom: `${vh * 0.22}px` }}
       >
-        <div className="text-center" style={{ fontFamily: SERIF, fontStyle: "italic" }}>
-          <p style={{ color: "#2a2a2a", marginBottom: 6 }}>{blobs[activeIdx]?.event}</p>
-          <p style={{ color: "#999" }}>{blobs[activeIdx]?.year}</p>
+        <div className="text-center" style={{ fontFamily: SERIF }}>
+          <p style={{ color: CHROME_GRAY, marginBottom: 6, fontStyle: "italic", letterSpacing: SERIF_ITALIC_TRACKING }}>{blobs[activeIdx]?.event}</p>
+          <p style={{ color: "#999", fontStyle: "normal", fontFamily: SERIF_CJK }}>{blobs[activeIdx]?.year}</p>
         </div>
       </div>
 
@@ -1046,10 +1539,15 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
               height: "clamp(310px, 33.4vw, 430px)",
               position: "relative",
               overflow: "visible",
+              // The wrapper above is pointer-events:none so the carousel keeps
+              // the rest of the screen. The artifact itself has to take the
+              // pointer back, or OrbitControls never sees a drag and the form
+              // only ever appears to turn on its own clock.
+              pointerEvents: "auto",
             }}
           >
             <SceneViewer
-              modelPath={blobs[activeIdx].shape.modelPath}
+              form={blobs[activeIdx].shape.form}
               fluidity={blobs[activeIdx].shape.fluidity}
               evolve={blobs[activeIdx].shape.evolve}
               bumpAmount={blobs[activeIdx].shape.bumpAmount}
@@ -1085,132 +1583,267 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
         Scroll to browse &middot; Click to return
       </div>
 
+      {/* Wordmark stays through gallery; the rest of the homescreen chrome dissolves.
+          The classic landing overlay carries its own mark, so skip this one there. */}
+      {onNewMemory && !classicChrome && (
+        <PageHeader layout="absolute" style={{ zIndex: 26 }} />
+      )}
+
+      <GalleryViewToggle
+        view="carousel"
+        onToggle={onToggleGrid ?? (() => {})}
+        visible={morphVal > 0.65 && !!onToggleGrid}
+      />
+
       {/* ═══ HOMESCREEN OVERLAY (blend mode only) ═══ */}
       {onNewMemory && (
         <div
           className="absolute inset-0 pointer-events-none"
-          style={{
-            opacity: clamp(1 - morphVal * 4, 0, 1),
+          style={classicChrome ? {
+            mixBlendMode: LANDING_INK.mixBlendMode,
+            ...(landingArrival ? { opacity: 1 } : morphVal > 0 ? {
+              opacity: clamp(1 - morphVal * 4, 0, 1),
+              transition: "opacity 0.3s ease",
+            } : {}),
+          } : {
+            opacity: landingArrival ? 1 : clamp(1 - morphVal * 4, 0, 1),
             zIndex: 25,
-            transition: "opacity 0.3s ease",
+            transition: landingArrival ? "none" : "opacity 0.3s ease",
           }}
         >
-          {/* Top blur gradient */}
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: 0,
-              height: 300,
-              borderRadius: 0,
-              background: "linear-gradient(to bottom, rgba(27,27,27,0.4), rgba(129,129,129,0))",
-              backdropFilter: "blur(40px)",
-              WebkitBackdropFilter: "blur(40px)",
-              maskImage: "linear-gradient(to top, transparent, black)",
-              WebkitMaskImage: "linear-gradient(to top, transparent, black)",
-              zIndex: 1,
-            }}
-          />
+          {classicChrome ? (
+            <div
+              style={{
+                position: "absolute",
+                left: 0,
+                top: 0,
+                width: canvasWidth,
+                height: canvasHeight,
+                ...(labelsFade < 1 ? { opacity: labelsFade } : {}),
+              }}
+            >
+              {renderAnnotationMarks(true)}
+            </div>
+          ) : (
+            <>
+              <div
+                style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 222,
+                  borderRadius: 0,
+                  background: "linear-gradient(to top, rgba(27,27,27,0.4), rgba(129,129,129,0))",
+                  backdropFilter: "blur(40px)",
+                  WebkitBackdropFilter: "blur(40px)",
+                  maskImage: "linear-gradient(to bottom, transparent, black)",
+                  WebkitMaskImage: "linear-gradient(to bottom, transparent, black)",
+                  zIndex: 1,
+                }}
+              />
 
-          {/* Top texts */}
-          <p
-            style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              top: 30,
-              fontFamily: SERIF,
-              fontStyle: "normal",
-              color: "#e2e2e3",
-              fontSize: 12,
-              letterSpacing: "0.16px",
-              lineHeight: 1.5,
-              margin: 0,
-              textShadow: "0 2px 40px rgba(0,0,0,0.3)",
-              display: "flex",
-              alignItems: "center",
-              gap: 12,
-              zIndex: 2,
-            }}
-          >
-            <span>滲む</span>
-            <span>Nijimu</span>
-          </p>
-          <p
-            style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              top: 65,
-              fontFamily: SERIF,
-              color: "#D6DADB",
-              fontSize: "clamp(12px, calc(12px + (16 - 12) * ((100vw - 390px) / (1024 - 390))), 16px)",
-              letterSpacing: "0.24px",
-              lineHeight: 1.5,
-              margin: 0,
-              textShadow: "0px 4px 100px black",
-              textAlign: "center",
-              maxWidth: "90%",
-              zIndex: 2,
-            }}
-          >
-            The things you've loved don't disappear.
-            <br />
-            They dissolve into who you're becoming.{" "}
-          </p>
-
-          {/* Bottom blur gradient */}
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 222,
-              borderRadius: 0,
-              background: "linear-gradient(to top, rgba(27,27,27,0.4), rgba(129,129,129,0))",
-              backdropFilter: "blur(40px)",
-              WebkitBackdropFilter: "blur(40px)",
-              maskImage: "linear-gradient(to bottom, transparent, black)",
-              WebkitMaskImage: "linear-gradient(to bottom, transparent, black)",
-              zIndex: 1,
-            }}
-          />
-
-          {/* "New Memory" button */}
-          <div
-            onClick={(e) => {
-              e.stopPropagation();
-              onNewMemory();
-            }}
-            className="absolute"
-            style={{
-              bottom: 56,
-              left: "50%",
-              transform: "translateX(-50%)",
-              cursor: "pointer",
-              pointerEvents: "auto",
-              zIndex: 2,
-              width: "fit-content",
-            }}
-          >
-            <NewMomoryIdle />
-          </div>
+              <div
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNewMemory();
+                }}
+                className="absolute"
+                style={{
+                  bottom: 56,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  cursor: "pointer",
+                  pointerEvents: "auto",
+                  zIndex: 2,
+                  width: "fit-content",
+                }}
+              >
+                <NewMomoryIdle label={ctaLabel} showPlus={showPlus} />
+              </div>
+            </>
+          )}
         </div>
       )}
 
-      {/* Grain */}
-      <canvas
-        ref={canvasRef}
-        className="absolute inset-0 w-full h-full pointer-events-none opacity-40"
-        style={{ mixBlendMode: "overlay", imageRendering: "pixelated" }}
-      />
+      {classicChrome && onNewMemory && (
+        <div
+          aria-hidden
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            ...LANDING_MONO,
+            ...(landingArrival ? { opacity: 1 } : morphVal > 0 ? {
+              opacity: clamp(1 - morphVal * 4, 0, 1),
+            } : {}),
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              left: 0,
+              top: 0,
+              width: canvasWidth,
+              height: canvasHeight,
+              ...(labelsFade < 1 ? { opacity: labelsFade } : {}),
+            }}
+          >
+            {renderAnnotationMarks(false)}
+          </div>
+        </div>
+      )}
+      </div>
 
-      {/* Vignette */}
-      <div className="absolute inset-0 pointer-events-none" style={{
-        background: "radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.08) 100%)",
-      }} />
+      {classicChrome && onNewMemory && (
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            zIndex: 26,
+            ...(landingArrival ? { opacity: 1 } : morphVal > 0 ? {
+              opacity: clamp(1 - morphVal * 4, 0, 1),
+              transition: "opacity 0.3s ease",
+            } : {}),
+            ...headerFadeStyle,
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 28,
+            }}
+          >
+            <div
+              ref={headerCopyRef}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "stretch",
+                gap: 28,
+                width: "fit-content",
+              }}
+            >
+              <p
+                style={{
+                  fontFamily: SERIF,
+                  color: headerOnDark ? HEADER_LIGHT.desc : HEADER_INK.desc,
+                  fontSize: HEADER_DESC_SIZE,
+                  letterSpacing: "0.24px",
+                  lineHeight: 1.5,
+                  margin: 0,
+                  padding: 0,
+                  textAlign: "center",
+                  width: 0,
+                  minWidth: "100%",
+                  boxSizing: "border-box",
+                  opacity: entryDesc * (returnReveal && !headerShown ? 0 : 1),
+                  transition: returnReveal && revealArmed
+                    ? `opacity ${LANDING_RETURN.headerFadeMs}ms ease, ${HEADER_COLOR_FADE}`
+                    : HEADER_COLOR_FADE,
+                }}
+              >
+                An interactive memory sculpting tool to trace how memory evolves.
+              </p>
+              <button
+                type="button"
+                className="landing-enter-btn"
+                disabled={!!landingArrival}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onNewMemory();
+                }}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 16,
+                  margin: 0,
+                  padding: 0,
+                  border: "none",
+                  background: "transparent",
+                  appearance: "none",
+                  WebkitAppearance: "none",
+                  cursor: "pointer",
+                  pointerEvents: landingArrival || (returnReveal && !headerShown) ? "none" : "auto",
+                  color: headerOnDark ? HEADER_LIGHT.mark : HEADER_INK.mark,
+                  fontSize: "clamp(12px, calc(12px + (16 - 12) * ((100vw - 390px) / (1024 - 390))), 16px)",
+                  lineHeight: 1.5,
+                  transition: HEADER_COLOR_FADE,
+                }}
+              >
+                <span
+                  style={{
+                    fontFamily: SANS,
+                    fontSize: HEADER_DESC_SIZE + 1,
+                    letterSpacing: "0.01em",
+                    whiteSpace: "nowrap",
+                    marginRight: -4,
+                    opacity: entryHeader * (returnReveal && !headerShown ? 0 : 1),
+                    transition: returnReveal && revealArmed
+                      ? `opacity ${LANDING_RETURN.headerFadeMs}ms ease`
+                      : undefined,
+                  }}
+                >
+                  {ctaLabel}
+                </span>
+                {!markHeld && (
+                  <span
+                    ref={markRef}
+                    style={{
+                      fontFamily: SERIF_CJK,
+                      fontStyle: "normal",
+                      letterSpacing: PAGE_HEADER_MARK.letterSpacing,
+                      textTransform: "lowercase",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      color: "inherit",
+                    }}
+                  >
+                    <span>滲む</span>
+                    <span>nijimu</span>
+                  </span>
+                )}
+                <span className="landing-enter-arrow" aria-hidden style={{ opacity: entryHeader }}>
+                  <span className="landing-enter-stem" />
+                  <span className="landing-enter-caret" />
+                </span>
+              </button>
+            </div>
+          </div>
+          {markHeld && markFrom.current && (
+            <span
+              style={{
+                position: "fixed",
+                left: lerp(markFrom.current.left, vw / 2, entryMark),
+                top: lerp(markFrom.current.top, PAGE_HEADER_MARK.top, entryMark),
+                transform: "translateX(-50%)",
+                fontFamily: SERIF_CJK,
+                fontStyle: "normal",
+                fontSize: lerp(markFrom.current.fontSize, PAGE_HEADER_MARK.fontSize, entryMark),
+                letterSpacing: PAGE_HEADER_MARK.letterSpacing,
+                lineHeight: 1.5,
+                textTransform: "lowercase",
+                display: "flex",
+                alignItems: "center",
+                gap: lerp(markFrom.current.gap, PAGE_HEADER_MARK.gap, entryMark),
+                color: markInk,
+                whiteSpace: "nowrap",
+                margin: 0,
+                padding: 0,
+                zIndex: 50,
+                pointerEvents: "none",
+              }}
+            >
+              <span>滲む</span>
+              <span>nijimu</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ═══ KEYFRAMES ═══ */}
       <style>{`
@@ -1265,14 +1898,42 @@ export function BlobScene({ onNewMemory, hideAnnotations = false }: { onNewMemor
           50% { transform: translate(-50%, -50%) scale(1.6); opacity: 0.6; }
         }
         @keyframes ringPulse {
-          0% { transform: translate(-50%, -50%) scale(1); opacity: 0.8; }
-          100% { transform: translate(-50%, -50%) scale(5.6); opacity: 0; }
+          0% { width: var(--ring-from); height: var(--ring-from); opacity: 0.8; }
+          100% { width: var(--ring-to); height: var(--ring-to); opacity: 0; }
         }
         @keyframes connDash {
           to { stroke-dashoffset: -20; }
         }
         .connection-line-anim {
           animation: connDash 1.2s linear infinite;
+        }
+        .landing-enter-arrow {
+          display: flex;
+          align-items: center;
+          width: 0.42em;
+          height: 0.7em;
+          overflow: visible;
+        }
+        .landing-enter-stem {
+          display: block;
+          height: 1.25px;
+          width: 0;
+          flex-shrink: 0;
+          background: currentColor;
+          margin-right: -0.1em;
+          transition: width 0.28s ease;
+        }
+        .landing-enter-caret {
+          flex-shrink: 0;
+          width: 0.36em;
+          height: 0.36em;
+          border-top: 1.25px solid currentColor;
+          border-right: 1.25px solid currentColor;
+          transform: rotate(45deg);
+          box-sizing: border-box;
+        }
+        .landing-enter-btn:hover .landing-enter-stem {
+          width: 0.78em;
         }
         div::-webkit-scrollbar { display: none; }
       `}</style>

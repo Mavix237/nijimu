@@ -1,0 +1,69 @@
+/*
+ * Phone layout. The header's corner icons and back arrow read their seats
+ * from these variables, so a narrow screen can draw them closer together
+ * without every page knowing about breakpoints. Desktop values are the
+ * original fixed seats; the safe-area insets are zero there and keep the
+ * icons clear of a notch on a phone turned sideways.
+ */
+:root {
+  --chrome-top: 22px;
+  --chrome-icon: 36px;
+  /* Corner icons, counted from the right edge: music, profile, create /
+     gallery view, the vessel field's "in the air". */
+  --chrome-r0: calc(22px + env(safe-area-inset-right, 0px));
+  --chrome-r1: calc(68px + env(safe-area-inset-right, 0px));
+  --chrome-r2: calc(114px + env(safe-area-inset-right, 0px));
+  --chrome-r3: calc(156px + env(safe-area-inset-right, 0px));
+  /* The back arrow's left edge. */
+  --chrome-left: calc(30px + env(safe-area-inset-left, 0px));
+}
+
+@media (max-width: 600px) {
+  :root {
+    --chrome-icon: 32px;
+    --chrome-r0: calc(8px + env(safe-area-inset-right, 0px));
+    --chrome-r1: calc(40px + env(safe-area-inset-right, 0px));
+    --chrome-r2: calc(72px + env(safe-area-inset-right, 0px));
+    --chrome-r3: calc(104px + env(safe-area-inset-right, 0px));
+    --chrome-left: calc(12px + env(safe-area-inset-left, 0px));
+  }
+}
+
+/* The narrowest phones (320px): four icons still clear the centred mark. */
+@media (max-width: 359px) {
+  :root {
+    --chrome-icon: 30px;
+    --chrome-r0: calc(4px + env(safe-area-inset-right, 0px));
+    --chrome-r1: calc(34px + env(safe-area-inset-right, 0px));
+    --chrome-r2: calc(64px + env(safe-area-inset-right, 0px));
+    --chrome-r3: calc(94px + env(safe-area-inset-right, 0px));
+    --chrome-left: calc(8px + env(safe-area-inset-left, 0px));
+  }
+}
+
+html {
+  /* No pull-to-refresh or rubber-band behind full-screen scenes; pages
+     that scroll still scroll inside themselves. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Names under the header icons appear on hover. A touch screen has no
+   hover, and a tap would leave the name standing after focus. */
+@media (hover: none) {
+  .header-icon-label {
+    display: none;
+  }
+}
+
+/* The landing's lab dock is a desk tool; on a phone it covers the landing. */
+@media (max-width: 600px) {
+  .lab-dock {
+    display: none !important;
+  }
+}

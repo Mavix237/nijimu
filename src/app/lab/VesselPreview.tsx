@@ -117,7 +117,8 @@ export interface VesselTune {
   envAbove: number; envBelow: number; horizon: number; horizonSoft: number;
   bend: number; glassSoft: number; bodyAlpha: number; thickDark: number; highlight: number;
   // A saved feeling stains selected walls without adding opacity.
-  memoryTintHue: number; memoryTintChroma: number; memoryTintAmount: number;
+  // memoryTintSpread 1 lays that stain over the whole body; 0 keeps it to one shoulder.
+  memoryTintHue: number; memoryTintChroma: number; memoryTintAmount: number; memoryTintSpread: number;
   /* …and its highlights carry that colour (memoryFlash 1, set with the memory's
      colour; 0 leaves them the flow's own), swelling into it every so often */
   memoryFlash: number; flashEvery: number; flashGain: number;
@@ -174,7 +175,7 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   mono: 0, negative: 0,
   envAbove: 1, envBelow: 0.84, horizon: 0.06, horizonSoft: 0.35,
   bend: 0.75, glassSoft: 0.64, bodyAlpha: 0.85, thickDark: 0.21, highlight: 0.34,
-  memoryTintHue: 0, memoryTintChroma: 0, memoryTintAmount: 0,
+  memoryTintHue: 0, memoryTintChroma: 0, memoryTintAmount: 0, memoryTintSpread: 0,
   memoryFlash: 0, flashEvery: 4.5, flashGain: 1.1,
   keyAzimuth: -32, keyElevation: 64, keyIntensity: 1.08,
   flowGain: 1.21, flowSpeed: 0.8, flowSoft: 0.3, flowLift: 0.49, flowRise: 0.35, flowApart: 2.15,
@@ -894,6 +895,7 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform float uWarmth;
   uniform vec3 uMemoryTint;
   uniform float uMemoryTintAmount;
+  uniform float uMemoryTintSpread;
   uniform vec3 uPatch[3];
   /* distance (each already scaled by the haze): the view through the glass smeared
      further, the rim lines and the gathering of alpha at the silhouette letting go,
@@ -1166,12 +1168,17 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   }
   // A broad stain fixed to the glass: clear through the center and on the
   // opposite wall, faintly colored on one shoulder and its grazing edges.
+  // uMemoryTintSpread 1 drops the shoulder: the colour gathers all the way
+  // round where the wall turns edge-on, and the face stays clear.
   vec3 feelingTint(vec3 color, float facing) {
     if (uMemoryTintAmount <= 0.0) return color;
     vec3 dir = normalize(vModel + vec3(.001));
     float stainMask = smoothstep(-.15, .65, dot(dir, normalize(vec3(.8, .55, .15)))
       + (gNoise(vModel * 1.3) - .5) * .25);
-    float coverage = stainMask * (.18 + .82 * pow(clamp(1.0 - facing, 0.0, 1.0), .8)) * uMemoryTintAmount;
+    float g = clamp(1.0 - facing, 0.0, 1.0);
+    float shoulder = stainMask * (.18 + .82 * pow(g, .8));
+    float around = pow(g, 1.45);
+    float coverage = mix(shoulder * uMemoryTintAmount, around * min(1.0, uMemoryTintAmount * 1.75), uMemoryTintSpread);
     vec3 dye = uMemoryTint / max(.001, max(uMemoryTint.r, max(uMemoryTint.g, uMemoryTint.b)));
     return color * mix(vec3(1.0), dye, coverage);
   }
@@ -1316,11 +1323,14 @@ export const glassRefractFragment = /* glsl */ `
     // at a grazing angle the surface reflects the room instead
     vec3 refl = env(reflect(-v, nt).y);
     float mirror = pow(g, 4.0) * uRim * .6 * (1.0 - uHazeEdge * .7);
-    vec3 color = feelingTint(mix(body, refl, mirror), facing);
+    vec3 color = mix(body, refl, mirror);
     // the live bubble's rim: a dark line just inside the silhouette (its rimPower
-    // 3.3) — here the frame itself, darkened, so it still reads as glass
+    // 3.3) — here the frame itself, darkened, so it still reads as glass.
+    // the stain comes after it, so a spread stain stays on the rim instead of
+    // being mixed back out to the untinted body
     float rimLine = pow(g, 3.3) * uRim * (1.0 - uHazeEdge * .85);
     color = mix(color, body * .55, rimLine * .5);
+    color = feelingTint(color, facing);
     // the view is fully through the glass; what the alpha carries is how much the
     // glass itself asserts over the frame — more toward the edge, and in the feet
     float alpha = uBodyAlpha * mix(.35, 1.0, g * g) * uneven + uThickDark * .25 * foot + rimLine * .35 + mirror * .5;
@@ -1646,6 +1656,7 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uReveal: { value: 1 },
     uMemoryTint: { value: new THREE.Color("#ffffff") },
     uMemoryTintAmount: { value: 0 },
+    uMemoryTintSpread: { value: 0 },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
     uHazeWash: { value: 0 },
@@ -1778,6 +1789,7 @@ export function flashColor(hue: number, stainChroma: number): Rgb {
 export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   const { tune } = w;
   u.uMemoryTintAmount.value = tune.memoryTintAmount ?? 0;
+  u.uMemoryTintSpread.value = tune.memoryTintSpread ?? 0;
   u.uMemoryTint.value.set(oklchToHex({ l: .86, c: tune.memoryTintChroma ?? 0, h: tune.memoryTintHue ?? 0 }));
   u.uHazePhoto.value = tune.haze * tune.hazePhoto;
   u.uHazeEdge.value = tune.haze * tune.hazeEdge;

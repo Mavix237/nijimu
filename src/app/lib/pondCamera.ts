@@ -21,6 +21,10 @@ export const POND_SINK = {
 
 /** The light the eye passes through at the surface — water and air, not paper. */
 export const SINK_WASH = "#e3eae9";
+/** The light that takes the frame as the memory floats up to be named, and that the naming step opens from. */
+export const SURFACE_LIGHT = "#f4f6f5";
+/** How long the naming step takes to come out of that light. */
+export const SURFACE_LIGHT_OUT_MS = 1000;
 
 export interface PondSinkTarget { x: number; z: number }
 

@@ -170,4 +170,35 @@ assert.equal(value, .63);
 push.reset();
 assert.equal(frame(palm(1.2)), null, 'changing steps resets calibration');
 assert.equal(value, .63);
+const held = gesture.createDistancePush();
+let frozen = 1, clock = 0;
+const peek = hand => held.update(hand, 1, clock += 33, frozen);
+assert.equal(peek(palm(1.65)), null, 'lock acquisition does not jump');
+for (let i = 1; i <= 40; i++) peek(palm(1.65 - i / 40 * .85));
+const pulled = peek(palm(.8));
+assert.ok(pulled !== null && pulled < .85, 'an unapplied pull-back still accumulates so a hold can reopen');
+
+const { createGestureHold } = load('../src/app/lib/gestureHold.ts');
+const lock = createGestureHold();
+const reopen = gesture.createDistancePush();
+let seated = 0.2, clock2 = 0;
+const seat = (proposed) => {
+  clock2 += 33;
+  const next = lock.update(proposed, clock2, seated);
+  if (next.apply !== null) seated = next.apply;
+  return next;
+};
+seat(0.2);
+for (let i = 1; i <= 30; i++) seat(Math.min(1, 0.2 + i * 0.03));
+for (let i = 0; i < 20; i++) seat(seated);
+assert.equal(lock.engaged, true, 'a long push then a pause locks at the far end');
+const frozenFar = seated;
+reopen.update(palm(1.65), 1, clock2 += 33, frozenFar);
+let last = null;
+for (let i = 1; i <= 50; i++) {
+  last = reopen.update(palm(1.65 - i / 50 * 0.85), 1, clock2 += 33, frozenFar);
+  const result = lock.update(last !== null ? last : frozenFar, clock2, frozenFar);
+  if (result.apply !== null) seated = result.apply;
+}
+assert.ok(seated < frozenFar - 0.05, 'after the lock, a held pull-back writes the nearer value');
 console.log('memory distance: depth, projection, disappearance and palm-push gesture checks passed');

@@ -3,7 +3,7 @@ import { FLOW_PAGE } from "../lib/theme";
 
 /** Shared screen rows. Navigation stays above the content heading; the scene
  * remains interactive through empty grid cells. Used across the current flow. */
-export function FlowPageGrid({ heading, scene, actions, headingRef, headingStyle, actionsStyle, style, headingTop = FLOW_PAGE.headingTop }: {
+export function FlowPageGrid({ heading, scene, actions, headingRef, headingStyle, actionsStyle, style, headingTop = FLOW_PAGE.headingTop, actionBottom = FLOW_PAGE.actionBottom }: {
   heading?: ReactNode;
   scene?: ReactNode;
   actions?: ReactNode;
@@ -12,12 +12,13 @@ export function FlowPageGrid({ heading, scene, actions, headingRef, headingStyle
   actionsStyle?: CSSProperties;
   style?: CSSProperties;
   headingTop?: string;
+  actionBottom?: string;
 }) {
   return <div data-flow-grid style={{
     position: "absolute", inset: 0, display: "grid",
     // the side margin the header keeps (responsive.css; 20px off a phone)
     gridTemplateColumns: "var(--chrome-inset, 20px) minmax(0, 1fr) var(--chrome-inset, 20px)",
-    gridTemplateRows: `[navigation] ${FLOW_PAGE.navigationHeight}px [space] calc(${headingTop} - ${FLOW_PAGE.navigationHeight}px) [heading] max-content [scene] minmax(0, 1fr) [actions] max-content [footer] ${FLOW_PAGE.actionBottom}`,
+    gridTemplateRows: `[navigation] ${FLOW_PAGE.navigationHeight}px [space] calc(${headingTop} - ${FLOW_PAGE.navigationHeight}px) [heading] max-content [scene] minmax(0, 1fr) [actions] max-content [footer] ${actionBottom}`,
     pointerEvents: "none", zIndex: 30, ...style,
   }}>
     <div ref={headingRef} data-flow-heading style={{

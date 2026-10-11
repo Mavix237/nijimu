@@ -9,8 +9,9 @@ import { DistanceConstellation } from "./DistanceConstellation";
 import { FIELD_FOCAL, memoryDepth, type FieldTextBounds } from "./vesselField";
 import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
 import { getTranscription } from "../lib/transcribe";
-import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch } from "../lib/memoryRhythm";
+import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch, rhythmFromPinch } from "../lib/memoryRhythm";
 import { createDistancePush } from "../lib/memoryDistanceGesture";
+import { createGestureHold } from "../lib/gestureHold";
 import { advanceArtifactPose } from "../lib/artifactPose";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
@@ -105,7 +106,7 @@ const DISTANCE_MAX = DISTANCE_FAR;
 /** Soften the handled vessel as it goes far — a light layer blur over the
     existing frost, still leaving its contour. The first half of the slider
     stays almost sharp; the blur only gathers after DISTANCE_BLUR_FROM. */
-const DISTANCE_BLUR_PX = 14;
+const DISTANCE_BLUR_PX = 10;
 const DISTANCE_BLUR_FROM = 0.5;
 /** At far & faded the neighbours have moved this far along the gallery's depth range (memoryDepth's share): most have passed the eye. */
 const PREVIEW_TRAVEL = 0.75;
@@ -895,6 +896,8 @@ interface StageProps {
   captionRef: RefObject<HTMLDivElement | null>;
   /** The hold line, kept beside the strip as it floats. */
   hintRef: RefObject<HTMLParagraphElement | null>;
+  /** Brief ring behind the artifact when a gesture value holds. */
+  haloRef: RefObject<HTMLDivElement | null>;
   onFallStart: () => void;
   onSettled: () => void;
   onDescend: () => void;
@@ -917,7 +920,7 @@ function useKept<T>(make: () => T): T {
   return kept.current;
 }
 
-function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onAscended, onRewound }: StageProps) {
+function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, haloRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onAscended, onRewound }: StageProps) {
   const { camera, size, gl, scene } = useThree();
   const time = useRef(0);
   const jumped = useRef(false);
@@ -1779,6 +1782,23 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         : 1 - smoothProgress(t - descentAt.current, FORM_ASCENT_S[0], FORM_ASCENT_S[1]);
       scratch.v.copy(formAt).project(camera);
       touch.material.uniforms.uArrivalCenter.value.set(scratch.v.x * .5 + .5, scratch.v.y * .5 + .5);
+      const halo = haloRef.current;
+      if (halo) {
+        if (s.step) {
+          const cx = (scratch.v.x * .5 + .5) * size.width;
+          const cy = (-scratch.v.y * .5 + .5) * size.height;
+          scratch.forward.set(1, 0, 0).applyQuaternion(camera.quaternion).multiplyScalar(body.scale.x).add(formAt).project(camera);
+          const rx = Math.abs((scratch.forward.x * .5 + .5) * size.width - cx);
+          scratch.forward.set(0, 1, 0).applyQuaternion(camera.quaternion).multiplyScalar(body.scale.x).add(formAt).project(camera);
+          const ry = Math.abs((-scratch.forward.y * .5 + .5) * size.height - cy);
+          const vesselPx = Math.max(rx, ry) * 2;
+          const diam = Math.min(Math.min(size.width, size.height) * 0.52, Math.max(200, vesselPx * 1.48));
+          halo.style.opacity = "1";
+          halo.style.width = `${diam.toFixed(1)}px`;
+          halo.style.height = `${diam.toFixed(1)}px`;
+          halo.style.transform = `translate(${(cx - diam / 2).toFixed(1)}px, ${(cy - diam / 2).toFixed(1)}px)`;
+        } else halo.style.opacity = "0";
+      }
       body.visible = reveal > 0.001;
       const previousMorph = sm.morph;
       sm.morph = ease(sm.morph, s.morph, 7);
@@ -2000,6 +2020,8 @@ const easeMorph = (m: number) => m * m * (3 - 2 * m);
 const UNDER_INK = CHROME_GRAY;
 /** Signed shift of the handled vessel from the look point, as a fraction of the view. Negative sits higher. */
 const HANDLING_DROP = 0.01;
+/** Desktop camera window, bottom-right. Continue sits on its top edge. */
+const DESKTOP_CAMERA = { right: 28, bottom: 28, width: 128, height: 96 } as const;
 /** The gesture illustration in a phone's foot row sits in a square cell the
     size of the continue button across from it, so the camera capsule between
     them is centred on the screen whatever the step. Each illustration is scaled
@@ -2450,6 +2472,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const inputRef = useRef<HTMLInputElement>(null);
   const pickRef = useRef<HTMLButtonElement>(null);
   const hintRef = useRef<HTMLParagraphElement>(null);
+  const haloRef = useRef<HTMLDivElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [shotPhase, setPhase] = useState<Phase>(resume ? "color" : FROM === "wrap" ? "wrapping" : "choose");
@@ -2571,16 +2594,32 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     if (phase === "naming") nameRef.current?.focus();
   }, [phase]);
 
+  const [haloKey, setHaloKey] = useState(0);
+  const flashSettle = () => setHaloKey((key) => key + 1);
+  const gestureHold = useRef(createGestureHold());
+  const takeGesture = (proposed: number) => {
+    const result = gestureHold.current.update(proposed, performance.now(),
+      stepRef.current === "shape" ? stage.current.morph
+        : stepRef.current === "rhythm" ? m2Ref.current / RHYTHM_MAX
+        : Math.min(1, stage.current.frost / DISTANCE_MAX));
+    if (result.apply !== null) setSignal(result.apply);
+    if (result.locked) flashSettle();
+  };
   const setSignal = (value: number) => {
     const v = clamp01(value);
     if (stepRef.current === "shape") { stage.current.morph = v; setMorph(v); }
-    else if (stepRef.current === "rhythm") setEditedM2(rhythmValue(v * RHYTHM_MAX));
+    else if (stepRef.current === "rhythm") {
+      const next = rhythmValue(v * RHYTHM_MAX);
+      m2Ref.current = next;
+      setEditedM2(next);
+    }
     else if (stepRef.current === "distance") {
       // the gestures and the slider give a share of the way; the haze stops at DISTANCE_MAX
       const frost = v * DISTANCE_MAX;
       stage.current.frost = frost;
       setFrost(frost);
     }
+    gestureHold.current.sync(v);
   };
   const colorUvRef = useRef(colorUv);
   const pickColor = (u: number, v: number) => {
@@ -2590,6 +2629,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     stage.current.oklch = sampleHomePalette(uv.u, uv.v);
   };
   const colorHeldRef = useRef(false);
+  const colorLockUv = useRef({ u: 0.5, v: 0.5 });
+  const colorBreakSince = useRef<number | null>(null);
   const pinchFrames = useRef(0);
   /** Who last put hands in the water: the camera wins while it sees any. */
   const handsFrom = useRef<"camera" | "pointer" | null>(null);
@@ -2601,7 +2642,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     morphGate.current = createGestureGate(0.015);
     distancePush.current.reset();
     rhythmPinch.current.reset();
+    gestureHold.current.reset();
     colorHeldRef.current = false;
+    colorBreakSince.current = null;
     pinchFrames.current = 0;
     setColorHeld(false);
     stage.current.hands = [];
@@ -2609,7 +2652,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   }, [step]);
 
   /* Two palms apart for shape, a thumb–index pinch for rhythm, one palm pushing for
-     distance, a fingertip over the field for color (pinch to hold).
+     distance, a fingertip over the field for color (a held pinch keeps the colour
+     until the hand travels again). Shape, rhythm and distance hold after the
+     reading stays still; keeping the hands moving writes a new value.
      After the form surfaces, the camera starts only through the access dialog;
      dragging stays available when it is refused or no hand is seen. */
   // The tracker's files download from the hold onward, while the form rises;
@@ -2636,34 +2681,55 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       if (tab === "shape") {
         if (hands.length < 2) return;
         const distance = landmarkDistance(handCenter(hands[0]), handCenter(hands[1]));
-        if (morphGate.current.update(distance)) setSignal(distanceToMorph(distance));
+        if (morphGate.current.update(distance)) takeGesture(distanceToMorph(distance));
       } else if (tab === "rhythm") {
         const hand = hands[0];
         if (!hand) { rhythmPinch.current.reset(); return; }
         const video = videoRef.current;
-        const next = rhythmPinch.current.update(hand,
-          video?.videoHeight ? video.videoWidth / video.videoHeight : 1,
-          performance.now(), m2Ref.current);
-        if (next !== null) { m2Ref.current = next; setEditedM2(next); }
+        const aspect = video?.videoHeight ? video.videoWidth / video.videoHeight : 1;
+        const next = rhythmPinch.current.update(hand, aspect, performance.now(), m2Ref.current);
+        const live = rhythmFromPinch(hand, aspect);
+        // While held, the filter returns null on most frames (deadband). Feed
+        // the live aperture so a real pinch change can reopen the hold.
+        takeGesture(gestureHold.current.engaged && live !== null
+          ? live / RHYTHM_MAX
+          : (next !== null ? next : m2Ref.current) / RHYTHM_MAX);
       } else if (tab === "distance") {
         const video = videoRef.current;
+        const share = Math.min(1, stage.current.frost / DISTANCE_MAX);
         const next = distancePush.current.update(hands[0],
           video?.videoHeight ? video.videoWidth / video.videoHeight : 1,
-          performance.now(), stage.current.frost / DISTANCE_MAX);
-        if (next !== null) setSignal(next);
+          performance.now(), share);
+        takeGesture(next !== null ? next : share);
       } else if (tab === "color") {
         const hand = hands[0];
-        const pinch = landmarkDistance(hand[4], hand[8], true);
-        if (pinch < 0.052) {
-          pinchFrames.current += 1;
-          if (!colorHeldRef.current && pinchFrames.current >= 2) { colorHeldRef.current = true; setColorHeld(true); }
-        } else {
-          pinchFrames.current = 0;
-          if (colorHeldRef.current && pinch > 0.08) { colorHeldRef.current = false; setColorHeld(false); }
-        }
-        if (colorHeldRef.current) return;
         const nextU = 1 - map01(hand[8].x, 0.12, 0.88);
         const nextV = map01(hand[8].y, 0.16, 0.84);
+        const pinch = landmarkDistance(hand[4], hand[8], true);
+        if (pinch < 0.052) pinchFrames.current += 1;
+        else pinchFrames.current = 0;
+        if (!colorHeldRef.current && pinchFrames.current >= 8
+          && Math.hypot(nextU - colorUvRef.current.u, nextV - colorUvRef.current.v) < 0.05) {
+          colorHeldRef.current = true;
+          colorLockUv.current = { ...colorUvRef.current };
+          colorBreakSince.current = null;
+          setColorHeld(true);
+          flashSettle();
+        }
+        if (colorHeldRef.current) {
+          const travel = Math.hypot(nextU - colorLockUv.current.u, nextV - colorLockUv.current.v);
+          if (travel < 0.1) {
+            colorBreakSince.current = null;
+            return;
+          }
+          const now = performance.now();
+          if (colorBreakSince.current === null) colorBreakSince.current = now;
+          if (now - colorBreakSince.current < 560) return;
+          colorHeldRef.current = false;
+          colorBreakSince.current = null;
+          pinchFrames.current = 0;
+          setColorHeld(false);
+        }
         const current = colorUvRef.current;
         pickColor(current.u + (nextU - current.u) * 0.24, current.v + (nextV - current.v) * 0.24);
       }
@@ -2673,7 +2739,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       distancePush.current.reset();
       setHandsDetected(0);
       if (handsFrom.current === "camera") { handsFrom.current = null; stage.current.hands = []; }
-      if (colorHeldRef.current) { colorHeldRef.current = false; pinchFrames.current = 0; setColorHeld(false); }
+      pinchFrames.current = 0;
+      colorBreakSince.current = null;
+      gestureHold.current.idle();
     },
   });
   useEffect(() => {
@@ -2895,7 +2963,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
         dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
         <PortraitFit />
-        <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef}
+        <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef} haloRef={haloRef}
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
           onDescend={() => setPhase("descending")}
@@ -2907,6 +2975,11 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       </Canvas>) : null} />
       <div ref={glowRef} aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none",
         background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />
+      <div ref={haloRef} aria-hidden style={{
+        position: "absolute", left: 0, top: 0, pointerEvents: "none", zIndex: 7, opacity: 0,
+      }}>
+        {haloKey > 0 && <span key={haloKey} className="nijimu-settle-halo" />}
+      </div>
       <div ref={crossingRef} aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0,
         background: "rgba(232, 238, 236, 0.35)" }} />
       {/* The light that takes the frame as the eye nears the surface: frame and glass whiten and blur. */}
@@ -2953,10 +3026,12 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           seen through a slow shutter (ShutterCamera). The video itself is only
           for the hand tracker. */}
       <video ref={videoRef} playsInline muted aria-hidden
-        style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96, opacity: 0, pointerEvents: "none" }} />
+        style={{ position: "absolute", right: DESKTOP_CAMERA.right, bottom: DESKTOP_CAMERA.bottom,
+          width: DESKTOP_CAMERA.width, height: DESKTOP_CAMERA.height, opacity: 0, pointerEvents: "none" }} />
       {/* a phone seats it in the foot row instead (below, with the steps) */}
       {!compact && <ShutterCamera video={videoRef} active={!!step && tracking.isTracking}
-        style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96,
+        style={{ position: "absolute", right: DESKTOP_CAMERA.right, bottom: DESKTOP_CAMERA.bottom,
+          width: DESKTOP_CAMERA.width, height: DESKTOP_CAMERA.height,
           borderRadius: 10, transform: "scaleX(-1)", zIndex: 20, pointerEvents: "none",
           opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease" }} />}
 
@@ -3064,7 +3139,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           ...(compact
             ? { left: "var(--chrome-inset)", right: "var(--chrome-inset)",
               bottom: `calc(${UNDERWATER_PHONE.rowBottom} + ${UNDERWATER_PHONE.rowHeight + UNDERWATER_PHONE.sliderGap}px)` }
-            : { bottom: 124, left: "50%", transform: "translateX(-50%)" }) }}>
+            : { top: "78%", left: "50%", transform: "translate(-50%, -50%)" }) }}>
           {step === "shape" && <SpectrumSlider value={morph} onChange={setSignal} from="circle" to="flower"
             label="memory shape" valueText={`${Math.round(morph * 100)}% shaped`} style={sliderFill} />}
           {step === "rhythm" && <SpectrumSlider value={m2 / RHYTHM_MAX} onChange={setSignal} from="petals" to="bloom"
@@ -3084,7 +3159,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {step && <>
         <FlowPageGrid headingRef={handlingHeadingRef} style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
           headingTop={compact ? UNDERWATER_PHONE.headingTop : undefined}
+          actionBottom={compact ? undefined : `${DESKTOP_CAMERA.bottom}px`}
           headingStyle={{ marginTop: compact ? 0 : -28 }}
+          actionsStyle={compact ? { pointerEvents: leaving ? "none" : "auto" } : {
+            pointerEvents: leaving ? "none" : "auto",
+            alignSelf: "start",
+            height: DESKTOP_CAMERA.height,
+            minHeight: DESKTOP_CAMERA.height,
+            alignItems: "flex-start",
+          }}
           heading={<div key={step} className="nijimu-text-in" style={{ animation: textEnter() }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
@@ -3100,12 +3183,12 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
                 : <>{stepLines(step, transcript)[0]}<br />{stepLines(step, transcript)[1]}</>}
             </p>
           </div>}
-          actions={compact ? undefined : <PillButton label="continue" trailing="›" onClick={continueStep} />}
-          actionsStyle={{ pointerEvents: leaving ? "none" : "auto" }} />
+          actions={compact ? undefined : <PillButton label="continue" trailing="›" onClick={continueStep} />} />
         {!compact && <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
           opacity: (step === "distance" || tracking.isTracking) && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
           <GestureHint kind={step} active={gestureLive} style={{
-            top: "auto", left: "auto", right: 28 + 64, bottom: 28 + 96 + 12, transform: "translateX(50%)",
+            top: "auto", left: "auto", right: DESKTOP_CAMERA.right + DESKTOP_CAMERA.width / 2,
+            bottom: DESKTOP_CAMERA.bottom + DESKTOP_CAMERA.height + 12, transform: "translateX(50%)",
             // Keep the fist/open-palm reference available while adjusting distance,
             // including when the camera is off or a hand is already in frame.
             ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),

@@ -31,6 +31,8 @@ const clamp = (value: number) => Math.max(0, Math.min(1, value));
 export function createDistancePush() {
   let filtered: number | null = null;
   let applied = 0;
+  let preview = 0;
+  let lastCurrent = 0;
   let lastFrame = 0;
   const reset = () => { filtered = null; };
   return {
@@ -41,6 +43,7 @@ export function createDistancePush() {
       const signal = Math.log(size) / Math.log(1.65);
       if (filtered === null) {
         filtered = applied = signal;
+        preview = lastCurrent = current;
         lastFrame = now;
         return null;
       }
@@ -48,10 +51,19 @@ export function createDistancePush() {
       lastFrame = now;
       filtered += (signal - filtered) * (1 - Math.exp(-dt / 150));
       const delta = filtered - applied;
-      if (Math.abs(delta) < .006) return null;
-      applied = filtered;
-      const next = clamp(current + delta);
-      return next === current ? null : next;
+      // An external jump (slider, unlock apply) retargets the preview. Our
+      // own last return matches preview, so leftover signal can still reach 1.
+      if (Math.abs(current - lastCurrent) > 1e-4 && Math.abs(current - preview) > .02) preview = current;
+      if (Math.abs(delta) >= .006) {
+        applied = filtered;
+        preview = clamp(preview + delta);
+      }
+      lastCurrent = current;
+      // Keep reporting the integrated value while the page holds, so a
+      // pull-back after lock is one continuous gesture, not unused one-frame
+      // deltas against the frozen current.
+      if (Math.abs(preview - current) < 1e-6) return null;
+      return preview;
     },
   };
 }

@@ -12,7 +12,7 @@ const INTRO_SPLIT = 4900;
 const INTRO_TO = INK_ENTRY.growEnd - 270;
 const INTRO_FADE = 520;
 
-const HINT_DELAY_MS = 600;
+const HINT_DELAY_MS = 3500;
 
 const LINE_STYLE: CSSProperties = {
   position: "absolute",
@@ -82,7 +82,14 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
   const kind = atNewest
     ? touch ? "swipe-end" : "scroll-end"
     : touch ? "swipe-mid" : "scroll-mid";
-  const on = visible && settled && !leaving;
+  const ready = visible && settled && !leaving;
+  const [rested, setRested] = useState(false);
+  useEffect(() => {
+    if (!ready) { setRested(false); return; }
+    const t = window.setTimeout(() => setRested(true), HINT_DELAY_MS);
+    return () => window.clearTimeout(t);
+  }, [ready]);
+  const on = rested;
   const [shown, setShown] = useState(kind);
   if (on && kind !== shown) setShown(kind);
   const copy = shown === "swipe-end" ? "swipe once more to begin yours"
@@ -91,10 +98,10 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
     : <>keep scrolling or click <PlusMark /> to leave a memory of your own</>;
 
   return (
-    <p aria-live="polite" style={{ ...LINE_STYLE, zIndex: 31, opacity: on ? 1 : 0,
-      filter: on ? "none" : "blur(4px)", transition: `opacity 700ms ease ${on ? HINT_DELAY_MS : 0}ms, filter 700ms ease ${on ? HINT_DELAY_MS : 0}ms` }}>
+    <p className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE, zIndex: 31, opacity: on ? 1 : 0,
+      filter: on ? "none" : "blur(4px)", transition: "opacity 700ms ease, filter 700ms ease" }}>
       <style>{`
-        @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .38; } }
+        @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .566; } }
         .gallery-hint-breathe { animation: galleryHintBreathe 3.6s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .gallery-hint-breathe { animation: none; } }
       `}</style>

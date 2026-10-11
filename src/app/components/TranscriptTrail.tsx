@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { SANS } from "../lib/theme";
+import { SERIF } from "../lib/theme";
 
 /*
  * The selected memory's words, let fall behind the pointer.
@@ -18,11 +18,11 @@ import { SANS } from "../lib/theme";
 
 /** How many of the last words set down stay on the screen. */
 const TRAIL = 5;
-/** The words' size follows the screen's height: SIZE_VH of it, held between SIZE_MIN and SIZE_MAX px. */
-const SIZE_VH = 1.2;
-const SIZE_MIN = 8;
-const SIZE_MAX = 12;
-const LETTER_SPACING = 0.02;
+/** Same face and size as the memory's full transcript under the year. */
+const SIZE_VW = 0.9;
+const SIZE_MIN = 12;
+const SIZE_MAX = 14;
+const LETTER_SPACING = 0;
 /** Clear space between a word and the next, side by side (em), and their
     least distance one above the other (em, centre to centre). */
 const GAP_X_EM = 1.4;
@@ -30,7 +30,7 @@ const STEP_Y_EM = 3.6;
 /** A word shows this long after the pointer has set it down: the stagger. */
 const DELAY_MS = 140;
 const IN_MS = 380;
-const LIGHT_GRAY = "#ababb2";
+const LIGHT_GRAY = "#c4c4c9";
 /** Air kept around what the words avoid, px. */
 const AVOID_PAD = { x: 24, y: 14 };
 
@@ -66,8 +66,8 @@ function avoidRect(el: Element | null): Rect | null {
   };
 }
 
-const fontPx = () => Math.min(SIZE_MAX, Math.max(SIZE_MIN, (window.innerHeight * SIZE_VH) / 100));
-const fontOf = (px: number) => `${px}px ${SANS}`;
+const fontPx = () => Math.min(SIZE_MAX, Math.max(SIZE_MIN, (window.innerWidth * SIZE_VW) / 100));
+const fontOf = (px: number) => `${px}px ${SERIF}`;
 
 let measure: CanvasRenderingContext2D | null = null;
 /** A word's width on screen, px, as the span sets it. */
@@ -167,9 +167,10 @@ const placeStyle = (x: number, y: number): CSSProperties => ({
   left: x,
   top: y,
   transform: "translate(-50%, -50%)",
-  fontFamily: SANS,
-  fontSize: `clamp(${SIZE_MIN}px, ${SIZE_VH}vh, ${SIZE_MAX}px)`,
-  letterSpacing: `${LETTER_SPACING}em`,
+  fontFamily: SERIF,
+  fontSize: `clamp(${SIZE_MIN}px, ${SIZE_VW}vw, ${SIZE_MAX}px)`,
+  fontWeight: 400,
+  letterSpacing: LETTER_SPACING ? `${LETTER_SPACING}em` : undefined,
   lineHeight: 1,
   whiteSpace: "nowrap",
 });

@@ -1,9 +1,11 @@
-import { useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import { Link } from "react-router";
 import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
 import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
 import { BackButton } from "./BackButton";
+import { GalleryScrollHint, useTouchFirst } from "./GalleryOnboarding";
+import { setApexHover, useApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { TranscriptTrail } from "./TranscriptTrail";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
@@ -131,6 +133,46 @@ export const CAPTION_YEAR_STYLE: CSSProperties = {
   lineHeight: 1.35,
   textAlign: "center",
 };
+
+/** Space kept between the memory's words and the timescale. */
+const TRANSCRIPT_CLEARANCE = 24;
+
+/** The memory's own words, under its year. */
+const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
+  color: "#a4a4ab",
+  margin: "1.6em auto 0",
+  maxWidth: "60ch",
+  fontFamily: SERIF,
+  fontWeight: 400,
+  fontSize: "clamp(12px, 0.9vw, 14px)",
+  lineHeight: 1.6,
+  textAlign: "center",
+  textWrap: "pretty",
+  transition: "opacity 0.6s ease",
+};
+
+/** The words stop above `floorY`; when they would run past it, the last lines fade out. */
+function CaptionTranscript({ text, visible, floorY }: { text: string; visible: boolean; floorY: number }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const [room, setRoom] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    const space = Math.max(0, floorY - top);
+    setRoom(el.scrollHeight > space + 1 ? space : null);
+  }, [text, floorY, visible]);
+  const fade = "linear-gradient(to bottom, #000 calc(100% - 3.2em), transparent)";
+  return (
+    <p ref={ref} style={{
+      ...CAPTION_TRANSCRIPT_STYLE,
+      opacity: visible ? 1 : 0,
+      ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
+    }}>
+      {text}
+    </p>
+  );
+}
 
 /** Gap between the title and the year, in the caption block's own em. */
 export const CAPTION_TITLE_GAP = "0.8em";
@@ -287,6 +329,9 @@ export function PuddleDiveGallery({
   if (captionItem) lastCaptionRef.current = captionItem;
   const shownCaption = captionItem ?? lastCaptionRef.current;
   const rimSettled = Math.abs(rimAt - activeIdx) < 0.04;
+  const apexHover = useApexHover();
+  const touchFirst = useTouchFirst();
+  useEffect(() => () => setApexHover(false), []);
   const rimSettledRef = useRef(rimSettled);
   rimSettledRef.current = rimSettled;
   const pendingPondRef = useRef(false);
@@ -994,8 +1039,17 @@ export function PuddleDiveGallery({
           }}
         >
           {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
+          {!caption && !field?.on && shownCaption.transcript && (
+            <CaptionTranscript text={shownCaption.transcript} visible={rimSettled && (touchFirst || apexHover)}
+              floorY={viewport.h - (showTimeScale ? TS_BOTTOM_PX + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
+          )}
         </div>}
       </div>
+
+      {showArrows && !caption && !hideHeader && (
+        <GalleryScrollHint visible={yearsVisible} settled={rimSettled}
+          atNewest={!hasNewer} leaving={pondDeparture > 0} />
+      )}
 
       {/* ═══ ARROWS ═══ */}
       {showArrows && hasOlder && (

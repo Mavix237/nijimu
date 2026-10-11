@@ -8,6 +8,7 @@ import { DescentFlow, LiveVesselGallery, MemoryCarouselPage, MemoryPondPage, pre
 import { LIGHT_TIER } from "../lib/deviceTier";
 import { PageHeader } from "./PageHeader";
 import { BackButton } from "./BackButton";
+import { GalleryIntroLines } from "./GalleryOnboarding";
 import { useLandingReturn } from "../lib/landingReturn";
 import { INK_ENTRY, pickLandingGalleryIndex, type InkArrival } from "../lib/landingTransition";
 import { buildArchive } from "../lib/archive";
@@ -43,6 +44,7 @@ export function LandingPage() {
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [arrival, setArrival] = useState<InkArrival | null>(null);
   const [entryFocus, setEntryFocus] = useState<{ id: string; slot: number } | null>(null);
+  const [intro, setIntro] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [seenPath, setSeenPath] = useState(pathname);
   const [pondElapsed, setPondElapsed] = useState<number | null>(null);
@@ -192,6 +194,7 @@ export function LandingPage() {
     const archive = buildArchive();
     const slot = pickLandingGalleryIndex(archive.length);
     setEntryFocus({ id: archive[slot]?.id ?? "", slot });
+    setIntro(!reducedMotion);
     setArrival({ elapsed: 0, reducedMotion });
     setStartedAt(performance.now());
   };
@@ -252,6 +255,7 @@ export function LandingPage() {
             landingFocusSlot={entryFocus?.slot ?? 0} />
         </div>
       )}
+      {intro && arrival && !inGallery && !inPond && <GalleryIntroLines elapsed={arrival.elapsed} />}
       <span className="sr-only" role="status">{pondLeaving ? "returning to memories" : openingPond ? "opening the pond" : arrival && !inGallery ? "opening memories" : ""}</span>
     </main>
   );

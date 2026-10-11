@@ -5,6 +5,7 @@ import { formKey, type ArtifactForm } from "../lib/superformula";
 import { prepareFilmPhoto } from "../lib/filmLook";
 import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
+import { setApexHover } from "../lib/apexHover";
 import { useVesselParts, type VesselParts } from "./vesselBuilds";
 import { createEdgePrint } from "./filmStrip";
 import {
@@ -13,6 +14,14 @@ import {
   keyFrom, photoLoader, seedDirections, sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms,
   type Glass, type GlassMode, type Room, type Sheet, type SheetFace, type SheetMode, type VesselTune,
 } from "./VesselPreview";
+
+/* Hovered at the apex: a float of a few percent of the eye's distance and a
+   turn of about a minute a revolution, eased in and out as the mouse comes and goes. */
+const HOVER_BOB = 0.004;
+const HOVER_BOB_S = 4.5;
+const HOVER_SPIN = 0.11;
+const HOVER_EASE_S = 0.6;
+const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /*
  * One memory as the vessel, in a canvas of its own — what the gallery preview
@@ -179,14 +188,44 @@ function VesselObject({
   // at the apex the vessel is in hand: a drag turns the eye round it and up or down, as in the lab
   const onPickRef = useRef(onPick);
   onPickRef.current = onPick;
+  // a mouse resting on the vessel at the apex: it floats and turns, unless a drag has it in hand
+  const hover = useRef({ over: false, held: false, amount: 0, phase: 0 });
+  const body = useRef<THREE.Mesh>(null);
   useEffect(() => {
-    if (!focused) return;
+    if (!focused) {
+      hover.current.over = false;
+      hover.current.held = false;
+      setApexHover(false);
+      return;
+    }
     const el = gl.domElement;
     let last: { id: number; x: number; y: number } | null = null;
     let travelled = 0;
+    const ray = new THREE.Raycaster();
+    const ndc = new THREE.Vector2();
+    const setOver = (next: boolean) => {
+      hover.current.over = next;
+      setApexHover(next);
+      if (next) invalidate();
+    };
+    // the glass itself, not the square canvas it is drawn in
+    const hitBody = (e: PointerEvent) => {
+      if (!body.current) return false;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) return false;
+      ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, camera);
+      return ray.intersectObject(body.current, false).length > 0;
+    };
+    const enter = (e: PointerEvent) => {
+      if (e.pointerType !== "mouse" || last) return;
+      setOver(hitBody(e));
+    };
+    const leave = () => { if (!last) setOver(false); };
     const down = (e: PointerEvent) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
       last = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      hover.current.held = true;
       travelled = 0;
       try { el.setPointerCapture(e.pointerId); } catch { /* a pointer the browser no longer holds */ }
       if (!lockedRef.current) el.style.cursor = "grabbing";
@@ -205,11 +244,16 @@ function VesselObject({
     const up = (e: PointerEvent) => {
       if (!last || e.pointerId !== last.id) return;
       last = null;
+      hover.current.held = false;
       el.style.cursor = lockedRef.current ? "" : "grab";
+      if (e.pointerType === "mouse") setOver(hitBody(e));
       if (e.type === "pointerup" && travelled < 6) onPickRef.current?.();
     };
     el.style.cursor = locked ? "" : "grab";
     el.style.touchAction = "none";
+    el.addEventListener("pointerenter", enter);
+    el.addEventListener("pointermove", enter);
+    el.addEventListener("pointerleave", leave);
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
     el.addEventListener("pointerup", up);
@@ -217,12 +261,18 @@ function VesselObject({
     return () => {
       el.style.cursor = "";
       el.style.touchAction = "";
+      hover.current.over = false;
+      hover.current.held = false;
+      setApexHover(false);
+      el.removeEventListener("pointerenter", enter);
+      el.removeEventListener("pointermove", enter);
+      el.removeEventListener("pointerleave", leave);
       el.removeEventListener("pointerdown", down);
       el.removeEventListener("pointermove", move);
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
     };
-  }, [focused, gl, invalidate, locked]);
+  }, [focused, gl, camera, invalidate, locked]);
   useEffect(() => { invalidate(); }, [viewToken, invalidate]);
 
   const pass = useMemo(() => {
@@ -299,12 +349,22 @@ function VesselObject({
   const refract = glassMode === "refract";
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
     if (compiledFor.current !== glassMode) return;
-    if (focused && !still) yaw.current += tune.turn * Math.min(dt, 0.1);
+    const step = Math.min(dt, 0.1);
+    if (focused && !still) yaw.current += tune.turn * step;
+    const h = hover.current;
+    const want = focused && h.over && !h.held && !reducedMotion ? 1 : 0;
+    h.amount += (want - h.amount) * (1 - Math.exp(-step / HOVER_EASE_S));
+    if (h.amount > 1e-3) {
+      h.phase += step * (2 * Math.PI / HOVER_BOB_S);
+      if (!lockedRef.current) yaw.current -= HOVER_SPIN * h.amount * step;
+      invalidate();
+    }
     // the glow's clock: it moves only while the seat's frameloop runs (focused or moving); a still seat holds its frame
     glassU.uTime.value = clock.elapsedTime;
     const y = yaw.current, p = (pitch.current * Math.PI) / 180, d = built.distance;
-    camera.position.set(-Math.sin(y) * Math.cos(p) * d, LOOK_Y + Math.sin(p) * d, Math.cos(y) * Math.cos(p) * d);
-    camera.lookAt(0, LOOK_Y, 0);
+    const bob = HOVER_BOB * d * h.amount * Math.sin(h.phase);
+    camera.position.set(-Math.sin(y) * Math.cos(p) * d, LOOK_Y - bob + Math.sin(p) * d, Math.cos(y) * Math.cos(p) * d);
+    camera.lookAt(0, LOOK_Y - bob, 0);
     if (!refract) {
       view.layers.enableAll();
       renderer.render(scene, view);
@@ -339,6 +399,7 @@ function VesselObject({
       <shaderMaterial key={glassMode} transparent depthWrite={false} side={THREE.FrontSide}
         vertexShader={glassVertex} fragmentShader={refract ? glassRefractFragment : glassFragment} uniforms={glassU} />
     </mesh>
+    <mesh ref={body} geometry={built.glass.geometry} visible={false} frustumCulled={false} />
     {/* the distance's mist, as the editor shows it (the editor's post blur is the lab's own and is not drawn here) */}
     <Mist geometry={built.glass.geometry} uniforms={glassU} layer={refract ? FRONT_LAYER : 0} renderOrder={3} on={tune.haze * (tune.hazeMist + tune.hazeGlow) > 0} />
   </>;

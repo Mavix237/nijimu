@@ -1837,8 +1837,11 @@ export function BlobScene({
                   </span>
                 )}
                 <span className="landing-enter-arrow" aria-hidden style={{ opacity: entryHeader }}>
-                  <span className="landing-enter-stem" />
-                  <span className="landing-enter-caret" />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <path className="landing-enter-stem" d="M19 12H5" pathLength={1} />
+                    <path d="m12 5 7 7-7 7" />
+                  </svg>
                 </span>
               </button>
             </div>
@@ -1937,32 +1940,34 @@ export function BlobScene({
           animation: connDash 1.2s linear infinite;
         }
         .landing-enter-arrow {
-          display: flex;
-          align-items: center;
+          position: relative;
+          display: block;
           width: 0.42em;
           height: 0.7em;
           overflow: visible;
         }
+        .landing-enter-arrow svg {
+          position: absolute;
+          left: -0.5em;
+          top: 50%;
+          width: 1em;
+          height: 1em;
+          margin-top: -0.5em;
+          overflow: visible;
+          transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+        }
         .landing-enter-stem {
-          display: block;
-          height: 1.25px;
-          width: 0;
-          flex-shrink: 0;
-          background: currentColor;
-          margin-right: -0.1em;
-          transition: width 0.28s ease;
+          stroke-dasharray: 1 2;
+          stroke-dashoffset: 1;
+          transition: stroke-dashoffset 0.36s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        .landing-enter-caret {
-          flex-shrink: 0;
-          width: 0.36em;
-          height: 0.36em;
-          border-top: 1.25px solid currentColor;
-          border-right: 1.25px solid currentColor;
-          transform: rotate(45deg);
-          box-sizing: border-box;
+        .landing-enter-btn:hover .landing-enter-stem,
+        .landing-enter-btn:focus-visible .landing-enter-stem {
+          stroke-dashoffset: 0;
         }
-        .landing-enter-btn:hover .landing-enter-stem {
-          width: 0.78em;
+        .landing-enter-btn:hover .landing-enter-arrow svg,
+        .landing-enter-btn:focus-visible .landing-enter-arrow svg {
+          transform: translateX(3px);
         }
         div::-webkit-scrollbar { display: none; }
       `}</style>

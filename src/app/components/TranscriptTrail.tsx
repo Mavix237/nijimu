@@ -316,7 +316,7 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
       className="absolute pointer-events-none"
       style={{
         inset: 0,
-        opacity: visible ? 1 : 0,
+        opacity: visible ? 0.8 : 0,
         transition: "opacity 0.8s ease",
       }}
     >

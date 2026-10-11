@@ -50,15 +50,8 @@ const ARRIVE_SETTLE_VH = 3;
  */
 const NAMING_ROOM: Room = { above: "#f3f3ee", below: "#e6e6e6" };
 const NAMING_LIGHT = { envAbove: 1.09, envBelow: 1.09, thickDark: 0.06, rim: 0.67, highlight: 1, keyIntensity: 1.41 };
-/**
- * How the memory's colour sits on the glass here. "gallery" is the gallery's
- * own way: a thin stain (.22) on one shoulder and its grazing edges, the face
- * and the far wall clear. "rim" gathers the colour all the way round the
- * silhouette and leaves the face clear. chroma scales the colour step's pick.
- */
-type TintMode = "gallery" | "rim";
-const NAMING_TINT = { mode: "gallery" as TintMode, stain: 0.22, chroma: 1 };
-type NamingTint = typeof NAMING_TINT;
+/** The colour gathers around the rim, where the wall turns edge-on, and the face stays clear. */
+const NAMING_STAIN = 0.36;
 
 type NamingLight = typeof NAMING_LIGHT;
 /** The naming page's own light, laid out for tuning: the room it reflects, then the glass. */
@@ -124,15 +117,10 @@ export function PondNamingOverlay({
   const canvasRoom = useMemo(() => vesselCanvasScale(vessel.form, vessel.tune.morph), [vessel]);
   const [namingLight, setNamingLight] = useState<NamingLight>(NAMING_LIGHT);
   const [room, setRoom] = useState<Room>(NAMING_ROOM);
-  const [tint, setTint] = useState<NamingTint>(NAMING_TINT);
   const lit = useMemo(() => ({
     ...vessel.tune, ...namingLight,
-    ...(vessel.tune.memoryTintAmount > 0 ? {
-      memoryTintAmount: tint.stain,
-      memoryTintSpread: tint.mode === "rim" ? 1 : 0,
-      memoryTintChroma: vessel.tune.memoryTintChroma * tint.chroma,
-    } : {}),
-  }), [vessel, namingLight, tint]);
+    ...(vessel.tune.memoryTintAmount > 0 ? { memoryTintAmount: NAMING_STAIN, memoryTintSpread: 1 } : {}),
+  }), [vessel, namingLight]);
   /** Where the memory is (1 = below its seat, in the water; 0 = in its seat) and how far it has appeared. */
   const liftRef = useRef(0);
   const appearRef = useRef(rising ? 0 : 1);
@@ -341,11 +329,10 @@ export function PondNamingOverlay({
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />
 
-      <NamingLightPanel light={namingLight} room={room} tint={tint}
+      <NamingLightPanel light={namingLight} room={room}
         onLight={(key, value) => setNamingLight(prev => ({ ...prev, [key]: value }))}
         onRoom={(key, value) => setRoom(prev => ({ ...prev, [key]: value }))}
-        onTint={(key, value) => setTint(prev => ({ ...prev, [key]: value }))}
-        onReset={() => { setNamingLight(NAMING_LIGHT); setRoom(NAMING_ROOM); setTint(NAMING_TINT); }} />
+        onReset={() => { setNamingLight(NAMING_LIGHT); setRoom(NAMING_ROOM); }} />
 
       <div
         ref={washRef}
@@ -363,32 +350,21 @@ export function PondNamingOverlay({
   );
 }
 
-/** The naming page's light and colour, live: what settles here is what goes back into the constants. */
+/** The naming page's light, live: what settles here is what goes back into the constants. */
 function NamingLightPanel({
-  light, room, tint, onLight, onRoom, onTint, onReset,
+  light, room, onLight, onRoom, onReset,
 }: {
   light: NamingLight;
   room: Room;
-  tint: NamingTint;
   onLight: (key: keyof NamingLight, value: number) => void;
   onRoom: (key: keyof Room, value: string) => void;
-  onTint: <K extends keyof NamingTint>(key: K, value: NamingTint[K]) => void;
   onReset: () => void;
 }) {
-  const [tab, setTab] = useState<"light" | "colour">("light");
   const copy = () => {
     const nums = (o: Record<string, number>) => Object.entries(o).map(([k, v]) => `${k}: ${v}`).join(", ");
-    const text = `const NAMING_ROOM = { above: "${room.above}", below: "${room.below}" };\nconst NAMING_LIGHT = { ${nums(light)} };\nconst NAMING_TINT = { mode: "${tint.mode}" as TintMode, stain: ${tint.stain}, chroma: ${tint.chroma} };`;
+    const text = `const NAMING_ROOM = { above: "${room.above}", below: "${room.below}" };\nconst NAMING_LIGHT = { ${nums(light)} };\nconst NAMING_STAIN = ${NAMING_STAIN};`;
     void navigator.clipboard?.writeText(text);
   };
-  const tabButton = (id: "light" | "colour") => (
-    <button type="button" onClick={() => setTab(id)} aria-pressed={tab === id}
-      style={{ ...TEXT_BUTTON, textDecoration: tab === id ? "underline" : "none", opacity: tab === id ? 1 : 0.55 }}>{id}</button>
-  );
-  const modeButton = (id: TintMode, label: string) => (
-    <button type="button" onClick={() => onTint("mode", id)} aria-pressed={tint.mode === id}
-      style={{ ...TEXT_BUTTON, textDecoration: tint.mode === id ? "underline" : "none", opacity: tint.mode === id ? 1 : 0.55 }}>{label}</button>
-  );
   const row = (label: string, control: ReactNode, value: string) => (
     <label key={label} style={{ display: "grid", gridTemplateColumns: "78px 1fr 42px", alignItems: "center", gap: 8, marginTop: 8 }}>
       <span>{label}</span>
@@ -404,26 +380,12 @@ function NamingLightPanel({
   return (
     <div style={{ position: "absolute", top: 88, right: 24, zIndex: 4, width: 248, pointerEvents: "auto",
       color: CHROME_GRAY, fontFamily: SANS, fontSize: 12, lineHeight: 1.2 }}>
-      <div style={{ display: "flex", gap: 14, marginBottom: 12 }}>{tabButton("light")}{tabButton("colour")}</div>
-      {tab === "light" && <>
-        <p style={{ margin: "0 0 2px" }}>light</p>
-        {row("sky", <input type="color" aria-label="sky colour" value={room.above} onChange={e => onRoom("above", e.target.value)} />, room.above)}
-        {row("water", <input type="color" aria-label="water colour" value={room.below} onChange={e => onRoom("below", e.target.value)} />, room.below)}
-        {LIGHT_SLIDERS.filter(s => s.group === "light").map(s => row(s.label, slider(light[s.key], s.min, s.max, s.step, v => onLight(s.key, v)), light[s.key].toFixed(2)))}
-        <p style={{ margin: "16px 0 2px" }}>glass</p>
-        {LIGHT_SLIDERS.filter(s => s.group === "glass").map(s => row(s.label, slider(light[s.key], s.min, s.max, s.step, v => onLight(s.key, v)), light[s.key].toFixed(2)))}
-      </>}
-      {tab === "colour" && <>
-        <p style={{ margin: "0 0 6px" }}>where the colour sits</p>
-        <div style={{ display: "flex", gap: 14 }}>{modeButton("gallery", "one shoulder, as the gallery")}{modeButton("rim", "round the rim")}</div>
-        <p style={{ margin: "8px 0 0", opacity: 0.7, lineHeight: 1.4 }}>
-          {tint.mode === "gallery"
-            ? "a thin stain on one shoulder and its grazing edges; the face and the far wall stay clear."
-            : "the colour gathers all the way round where the wall turns edge-on; the face stays clear."}
-        </p>
-        {row("stain", slider(tint.stain, 0, 1, 0.01, v => onTint("stain", v)), tint.stain.toFixed(2))}
-        {row("chroma", slider(tint.chroma, 0, 3, 0.05, v => onTint("chroma", v)), `×${tint.chroma.toFixed(2)}`)}
-      </>}
+      <p style={{ margin: "0 0 2px" }}>light</p>
+      {row("sky", <input type="color" aria-label="sky colour" value={room.above} onChange={e => onRoom("above", e.target.value)} />, room.above)}
+      {row("water", <input type="color" aria-label="water colour" value={room.below} onChange={e => onRoom("below", e.target.value)} />, room.below)}
+      {LIGHT_SLIDERS.filter(s => s.group === "light").map(s => row(s.label, slider(light[s.key], s.min, s.max, s.step, v => onLight(s.key, v)), light[s.key].toFixed(2)))}
+      <p style={{ margin: "16px 0 2px" }}>glass</p>
+      {LIGHT_SLIDERS.filter(s => s.group === "glass").map(s => row(s.label, slider(light[s.key], s.min, s.max, s.step, v => onLight(s.key, v)), light[s.key].toFixed(2)))}
       <div style={{ display: "flex", gap: 14, marginTop: 14 }}>
         <button type="button" onClick={copy} style={TEXT_BUTTON}>copy values</button>
         <button type="button" onClick={onReset} style={TEXT_BUTTON}>reset</button>

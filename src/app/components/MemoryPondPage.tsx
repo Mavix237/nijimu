@@ -1,17 +1,21 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useHoldToCreate } from "../hooks/useHoldToCreate";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, RECORD_START_PATH } from "../lib/routes";
 import { CHROME_GRAY } from "../lib/colors";
 import { INSTRUCTION_SIZE, SANS, SERIF, SERIF_EXPOSURE } from "../lib/theme";
 import { POND_THOUGHTS, hasSeenPondInstruction, markPondInstructionSeen, pondPromptCue } from "../lib/pondPrompts";
-import { PerspectivePond, type PondTouch } from "./PerspectivePond";
+import { PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
 import { PondRecordingOverlay } from "./PondRecordingOverlay";
 import { PuddleTranscriptPage } from "./PuddleTranscriptPage";
 import { PondNamingOverlay } from "./PondNamingOverlay";
 import type { NamingSession } from "./NamingRim";
 
-export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, transcript = false, naming = null, onReady, onLeave, onNamingSaved, namingBackRef }: {
+export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, transcript = false, naming = null, onReady, onLeave, onNamingSaved, namingBackRef, covered = false, renderScene }: {
+  /** Another step owns the controls while the pond stays mounted underneath. */
+  covered?: boolean;
+  /** Reuse a host scene, including its camera, wave clock, and ripple uniforms. */
+  renderScene?: (props: PondProps) => ReactNode;
   arrival?: number; active?: boolean; reducedMotion?: boolean; recording?: boolean; transcript?: boolean;
   /** The naming step: the memory just made hangs over this same water. */
   naming?: NamingSession | null;
@@ -23,7 +27,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const overlaid = recording || transcript || !!naming;
+  const overlaid = covered || recording || transcript || !!naming;
   const sinkRef = useRef(0);
   const [touch, setTouch] = useState<PondTouch | null>(null);
   const promptRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -167,10 +171,15 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     setTouch({ ...at, serial: performance.now() });
   }, []);
 
+  const pondProps: PondProps = { arrival, reducedMotion, touch, cursorRef, holdRef: holdProgress,
+    hintRef, hintRevealRef: hintReveal, promptRefs, cueRef, onReady: ready, lifeReady,
+    promptRipples: !overlaid && active, sinkRef };
+
   return <section aria-label={naming ? "name your memory" : transcript ? "your spoken memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-ready={enabled}
     style={{ position: "absolute", inset: 0, overflow: "hidden", background: "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}>
-    <PerspectivePond arrival={arrival} reducedMotion={reducedMotion} touch={touch} cursorRef={cursorRef} holdRef={holdProgress} hintRef={hintRef} hintRevealRef={hintReveal} promptRefs={promptRefs} cueRef={cueRef} onReady={ready} lifeReady={lifeReady} promptRipples={!overlaid} sinkRef={sinkRef} />
-    <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />
+    {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
+    {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
+
     {POND_THOUGHTS.map((thought, i) => <div key={thought.text} ref={el => { promptRefs.current[i] = el; }} data-pond-prompt={i} aria-hidden="true"
       style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SERIF_EXPOSURE, fontWeight: 400, fontSynthesis: "none", fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
       {thought.text}

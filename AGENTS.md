@@ -4,6 +4,21 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Pond → recording dialog continuity (2026-10-10)
+
+`LandingPage` now hosts `/memory/pond`, `/record/start`, `/record/transcript`,
+and `/record/descent` under the same route parent and retains one `DescentFlow`
+through them. Opening or closing “Before you begin” only changes its chrome;
+there is no canvas replacement or water-clock reset. `MemoryPondPage.renderScene`
+lets its invitation/hold controls inhabit that scene. `PondWater` shares Stage's
+wave uniform objects for halo, prompt ripples, pointer trails and touches;
+Stage owns the camera and clock, and renders the single water surface.
+The base camera uses `pondCamera.ts`, including gallery-to-pond arrival.
+Prompt ripples stop spawning when the dialog opens but existing waves decay.
+Naming keeps its separate, established above-water host and frame handoff.
+Browser verification should compare `canvas[data-pond-scene]` across pond,
+dialog, sample transcript, highlight and photo entry, as well as dialog close.
+
 ## Current flow layout and archived screens (2026-10-10)
 
 `FlowPageGrid` owns heading and primary-action rows throughout the current
@@ -51,8 +66,8 @@ water and reflected light extend into a slower haze for an open-ocean horizon.
 These settings live in `pondCamera.ts` and the pond surface shader.
 
 Recording → sample/highlight → photo continuity: `/record/start`,
-`/record/transcript` and `/record/descent` are children of one `DescentFlow`
-route layout. Recording and transcript/highlight chrome render over its live
+`/record/transcript` and `/record/descent` share `LandingPage` with the pond
+invitation; that layout keeps one `DescentFlow` mounted. Recording and transcript/highlight chrome render over its live
 pond; changing the route keeps the same Canvas, Stage, camera,
 water clock and wave uniforms. The film's emergence clock starts only when the
 photo step opens. Assessment reads the final transcript on that handoff (never

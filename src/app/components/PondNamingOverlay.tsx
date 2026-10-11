@@ -3,12 +3,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject }
 import { useNavigate } from "react-router";
 import { carouselFrame } from "../lib/carouselLayout";
 import { POND_SINK, SINK_WASH, pondSinkWash } from "../lib/pondCamera";
-import { DESCENT_PATH } from "../lib/routes";
+import { DESCENT_STEP_PATHS } from "../lib/routes";
 import { VesselArtifact, vesselCanvasScale } from "../lab/VesselArtifact";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { draftArtifactOf, resumeColorState } from "../lib/namingDraft";
 import { formKey } from "../lib/superformula";
 import { ARTIFACT_LIGHT, useArtifactGlow } from "./ArtifactGlow";
+import { FLOW_PAGE } from "../lib/theme";
 import { FlowPageGrid } from "./FlowPageGrid";
 import {
   useNamingRim,
@@ -82,6 +83,7 @@ export function PondNamingOverlay({
   const navigate = useNavigate();
   const viewport = useViewport();
   const frame = carouselFrame(viewport.w, viewport.h);
+  const artifactTop = `max(24px, calc(50% - ${frame.size / 2}px - ${FLOW_PAGE.namingArtifactRaise}))`;
   const { state } = session;
 
   const washRef = useRef<HTMLDivElement>(null);
@@ -157,7 +159,7 @@ export function PondNamingOverlay({
   const sinkBack = (flow: NameFlowState) => {
     if (leaving.current) return;
     leaving.current = true;
-    const go = () => navigate(DESCENT_PATH, { state: resumeColorState({ ...flow, memoryId: flow.memoryId ?? session.draftId }) });
+    const go = () => navigate(DESCENT_STEP_PATHS.color, { state: resumeColorState({ ...flow, memoryId: flow.memoryId ?? session.draftId }) });
     if (reducedMotion || !sinkRef) {
       go();
       return;
@@ -219,7 +221,7 @@ export function PondNamingOverlay({
         style={{
           position: "absolute",
           left: `calc(50% - ${frame.size / 2}px)`,
-          top: `max(24px, calc(50% - ${frame.size / 2}px))`,
+          top: artifactTop,
           width: frame.size,
           height: frame.size,
           transform: rising ? `translateY(${LIFT_VH}vh)` : "translateY(0)",
@@ -244,7 +246,7 @@ export function PondNamingOverlay({
         actions={rim.actions}
         actionsStyle={{ position: "absolute", gridRow: "scene", alignSelf: "start",
           // Follow the artifact's lower edge, including its minimum top inset.
-          top: `max(${frame.size + 48}px, calc(50% + ${frame.size / 2 + 24}px))` }}
+          top: `calc(${artifactTop} + ${frame.size + 24}px)` }}
         headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />

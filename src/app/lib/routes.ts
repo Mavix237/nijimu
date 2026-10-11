@@ -17,6 +17,24 @@ export const TRANSCRIPT_PATH = "/record/transcript";
     The same scene as /lab/descent, without the lab's knobs. */
 export const DESCENT_PATH = "/record/descent";
 
+/** Each handling step is a history entry within the same underwater scene. */
+export const DESCENT_STEP_PATHS = {
+  shape: "/record/descent/shape",
+  rhythm: "/record/descent/rhythm",
+  distance: "/record/descent/distance",
+  color: "/record/descent/color",
+} as const;
+export type DescentStep = keyof typeof DESCENT_STEP_PATHS;
+
+export function descentStepForPath(pathname: string): DescentStep | null {
+  return (Object.keys(DESCENT_STEP_PATHS) as DescentStep[])
+    .find(step => DESCENT_STEP_PATHS[step] === pathname) ?? null;
+}
+
+export function isDescentPath(pathname: string): boolean {
+  return pathname === DESCENT_PATH || descentStepForPath(pathname) !== null;
+}
+
 /** Archived MediaPipe shape steps. Kept for the archived implementation only;
     live bookmarks redirect to DESCENT_PATH and there are no home shortcuts. */
 export const SHAPE_GROW_PATH = "/record/shape/grow";

@@ -1,7 +1,7 @@
 import { FlowPageGrid } from "../components/FlowPageGrid";
 import { vesselTint } from "../lib/vesselTint";
 import { holdSurfaceFrame } from "../lib/surfaceHandoff";
-import { SINK_WASH } from "../lib/pondCamera";
+import { pondCameraPose, POND_CAMERA_HEIGHT, POND_CAMERA_Z, POND_LOOK as SURFACE_LOOK, SINK_WASH } from "../lib/pondCamera";
 import { DistanceConstellation } from "./DistanceConstellation";
 import { FIELD_FOCAL, memoryDepth } from "./vesselField";
 import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
@@ -11,8 +11,9 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
-import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
+import { CAROUSEL_PATH, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
 import { PuddleTranscriptPage } from "../components/PuddleTranscriptPage";
+import { MemoryPondPage } from "../components/MemoryPondPage";
 import { PondRecordingOverlay } from "../components/PondRecordingOverlay";
 import { BackButton } from "../components/BackButton";
 import { saveMemory } from "../lib/memoryStore";
@@ -31,7 +32,7 @@ import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, TITLE } from "../lib/th
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
-import { POND_WAVES_GLSL } from "../components/PerspectivePond";
+import { PondWater, type PondProps, POND_WAVES_GLSL } from "../components/PerspectivePond";
 import { PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { PillButton } from "../components/PillButton";
@@ -86,10 +87,10 @@ type Phase =
   | "choose" | "falling" | "floating" | "descending"
   | "shape" | "rhythm" | "distance" | "color"
   | "wrapping" | "rising" | "naming" | "saved";
-type Step = "shape" | "rhythm" | "distance" | "color";
+type Step = DescentStep;
 
-const POND_CAMERA = new THREE.Vector3(0, 2.8, 10);
-const POND_LOOK = new THREE.Vector3(0, 0.05, -24);
+const POND_CAMERA = new THREE.Vector3(0, POND_CAMERA_HEIGHT - .15, POND_CAMERA_Z);
+const POND_LOOK = SURFACE_LOOK.clone();
 /** Where the film comes to rest — lower third of the pond view. */
 const FILM_AT = new THREE.Vector3(0, 0, 2);
 const FILM_YAW = 0.14;
@@ -727,6 +728,8 @@ interface FallRequest {
 /** What the page hands the stage, frame by frame, without re-rendering it. */
 interface StageState {
   photoReady: boolean;
+  /** Route changes seek the existing scene without resetting its water clock. */
+  view: "surface" | "underwater" | null;
   surfaceLight: number;
   captureSurface?: () => void;
   voicePulses: VoiceRippleSpot[];
@@ -747,6 +750,7 @@ interface StageState {
 }
 
 interface StageProps {
+  pond?: PondProps;
   stage: RefObject<StageState>;
   /** Assigned by the page when the run starts, so the page can save it. */
   form: ArtifactForm;
@@ -782,7 +786,7 @@ function useKept<T>(make: () => T): T {
   return kept.current;
 }
 
-function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onRewound }: StageProps) {
+function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onRewound }: StageProps) {
   const { camera, size, gl, scene } = useThree();
   const time = useRef(0);
   const jumped = useRef(false);
@@ -1220,6 +1224,27 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       s.wrap = from === "wrap";
     }
 
+    if (s.view !== null) {
+      if (s.view === "surface") {
+        descentAt.current = null;
+        reachedBottom.current = false;
+        hold.current = 0;
+        wasHolding.current = false;
+        s.holding = false;
+        filmGone.current = 0;
+        filmUniforms.uFade.value = 1;
+        filmUniforms.uSink.value = 0;
+      } else {
+        // A history return skips the arrival, retaining the handled artifact.
+        descentAt.current ??= t - 60;
+        reachedBottom.current = true;
+        filmGone.current = 1;
+        hold.current = 1;
+        filmUniforms.uSink.value = 1;
+      }
+      s.view = null;
+    }
+
     /* The camera, in order: still on the pond; down the descent path; drawn
        back for the wrap; up the rise path; still again, on the named memory. */
     const { cameraAt, lookAt, formAt } = scratch;
@@ -1260,8 +1285,8 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       lookAt.copy(DESCENT_LOOK.getPoint(1)).lerp(scratch.wrapLook, k);
       formAt.lerp(scratch.wrapForm, k);
     } else if (descentAt.current === null) {
-      cameraAt.copy(POND_CAMERA);
-      lookAt.copy(POND_LOOK);
+      if (pond) pondCameraPose(pond.arrival, 0, null, cameraAt, lookAt);
+      else { cameraAt.copy(POND_CAMERA); lookAt.copy(POND_LOOK); }
     } else {
       const k = Math.min(1, (t - descentAt.current) / DESCENT_S);
       const u = flowProgress(k, 0, 1);
@@ -1476,7 +1501,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       if (!settled.current && t - landedAt.current > SETTLE_S) { settled.current = true; onSettled(); }
     }
 
-    if (settled.current && descentAt.current === null) {
+    if (s.photoReady && settled.current && descentAt.current === null) {
       if (s.holding && !wasHolding.current) drop(FILM_AT.x, FILM_AT.z, t, 0.55);
       wasHolding.current = s.holding;
       hold.current = s.holding
@@ -1636,6 +1661,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
   });
 
   return <>
+    {pond && <PondWater {...pond} sharedWaves={waves} />}
     <mesh frustumCulled={false} renderOrder={-10}>
       <planeGeometry args={[2, 2]} />
       <shaderMaterial name="volume" transparent depthTest={false} depthWrite={false}
@@ -2017,14 +2043,19 @@ function Timeline({ transport, tune, onChange, onFocus }: {
   );
 }
 
-function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport> }) {
+interface PondEntryProps { arrival?: number; active?: boolean; onReady?: () => void; onLeave?: () => void }
+
+function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport>; pondEntry?: PondEntryProps }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [resume] = useState(() => location.state?.resumeStep === "color" ? location.state : null);
+  const routeStep = lab ? null : descentStepForPath(location.pathname);
+  const [resume] = useState(() => routeStep || location.state?.resumeStep === "color" ? location.state ?? {} : null);
   const from = resume ? "color" : FROM;
   const restoredForm = useMemo(() => resume ? formFromState(resume) : null, [resume]);
   const recording = !lab && location.pathname === RECORD_START_PATH;
-  const prelude = recording || (!lab && location.pathname === TRANSCRIPT_PATH);
+  const reading = !lab && location.pathname === TRANSCRIPT_PATH;
+  const invitation = !lab && !recording && !reading && !isDescentPath(location.pathname);
+  const prelude = invitation || recording || reading;
   const [reducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   // The route can receive a completed transcription while this same scene is
   // mounted. Read its latest words and ID when moving from highlighting to film.
@@ -2064,6 +2095,7 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
   m2Ref.current = m2;
   const stage = useRef<StageState>({
     photoReady: !prelude,
+    view: null,
     surfaceLight: 0,
     voicePulses: [],
     request: null, holding: false, step: null,
@@ -2080,11 +2112,18 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
   const hintRef = useRef<HTMLParagraphElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [phase, setPhase] = useState<Phase>(resume ? "color" : FROM === "wrap" ? "wrapping" : "choose");
+  const [shotPhase, setPhase] = useState<Phase>(resume ? "color" : FROM === "wrap" ? "wrapping" : "choose");
+  const phase: Phase = routeStep ?? shotPhase;
   const [loading, setLoading] = useState<string | null>(null);
   const [lifted, setLifted] = useState<string | null>(null);
   const [morph, setMorph] = useState(stage.current.morph);
   const [frost, setFrost] = useState(stage.current.frost);
+  useEffect(() => {
+    if (lab) return;
+    stage.current.view = routeStep ? "underwater" : "surface";
+    if (!routeStep) setPhase(lifted ? "floating" : "choose");
+    // Only a path change seeks the scene; edits and draft snapshots do not.
+  }, [lab, location.pathname]);
   // opening on the wrap, the still is on the film before the stage mounts
   const [ready, setReady] = useState(from === null);
   useEffect(() => {
@@ -2227,16 +2266,54 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
   const [leaving, setLeaving] = useState(false);
   const exitRaf = useRef(0);
   const exitStarted = useRef(false);
+  const navigatingStep = useRef(false);
   useEffect(() => () => {
     cancelAnimationFrame(exitRaf.current);
     stage.current.captureSurface = undefined;
   }, []);
-  const continueStep = () => {
+  useEffect(() => {
+    // Browser Back can interrupt the glow before it hands off to naming.
+    cancelAnimationFrame(exitRaf.current);
+    stage.current.captureSurface = undefined;
+    stage.current.surfaceLight = 0;
+    exitStarted.current = false;
+    setLeaving(false);
+  }, [location.pathname]);
+
+  const draftState = () => ({
+    ...location.state,
+    memoryId, transcript, highlightedWords, highlightedWordIndices: highlightedIndices,
+    assignment, memoryAssignment: assignment, form,
+    morphProgress: stage.current.morph,
+    look: { ...(lifted ? { photoUrl: lifted } : {}), oklch: stage.current.oklch, vividness: 1 - stage.current.frost },
+    shape: { form, fluidity: 0, evolve: stage.current.morph, bumpAmount: 0 },
+  });
+  const rememberDraft = async () => {
+    const state = draftState();
+    // Update this entry before pushing the next one, so returning from naming
+    // (which has a separate host) restores the final edits, including colour.
+    await navigate(location.pathname + location.search, { replace: true, state });
+    return state;
+  };
+  const goStep = async (next: Step) => {
+    if (lab) { setPhase(next); return; }
+    if (navigatingStep.current) return;
+    navigatingStep.current = true;
+    try {
+      const state = await rememberDraft();
+      await navigate(DESCENT_STEP_PATHS[next] + location.search, { state });
+    } finally {
+      navigatingStep.current = false;
+    }
+  };
+  const continueStep = async () => {
     if (exitStarted.current) return;
-    if (phase === "shape") setPhase("rhythm");
-    else if (phase === "rhythm") setPhase("distance");
-    else if (phase === "distance") setPhase("color");
+    if (phase === "shape") await goStep("rhythm");
+    else if (phase === "rhythm") await goStep("distance");
+    else if (phase === "distance") await goStep("color");
     else if (phase === "color") {
+      exitStarted.current = true;
+      if (!lab) await rememberDraft();
       // The last step leaves the water the way the naming pond expects:
       // the eye is still under, and the memory comes up with it to be named.
       const oklch = stage.current.oklch;
@@ -2260,7 +2337,6 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
           shape: { form, fluidity: 0, evolve: stage.current.morph, bumpAmount: 0 },
         },
       });
-      exitStarted.current = true;
       if (reducedMotion) { go(); return; }
       setLeaving(true);
       const start = performance.now();
@@ -2341,30 +2417,32 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
       background: resume ? SINK_WASH : "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}
       onPointerMove={pointerAsHand}
       onPointerLeave={pointerOut}>
-      {ready && <Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
+      <MemoryPondPage {...pondEntry} active={invitation && (pondEntry?.active ?? true)}
+        reducedMotion={reducedMotion} covered={!invitation}
+        renderScene={pond => ready ? (<Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
         onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
         dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
-        <Stage stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef}
+        <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef}
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
           onDescend={() => setPhase("descending")}
-          onUnder={() => setPhase("shape")}
+          onUnder={() => { void goStep("shape"); }}
           onWrapped={() => { stage.current.rise = true; setPhase("rising"); }}
           onRisen={() => setPhase("naming")}
           onRewound={(to) => setPhase(to)} />
-      </Canvas>}
+      </Canvas>) : null} />
       <div ref={glowRef} aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none",
         background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />
       <div ref={crossingRef} aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0,
         background: "rgba(232, 238, 236, 0.35)" }} />
 
-      <PageHeader layout="absolute" carousel={lab ? false : undefined} />
+      {!invitation && <PageHeader layout="absolute" carousel={lab ? false : undefined} />}
       {recording && <>
         <BackButton onClick={() => navigate(MEMORY_POND_PATH)} />
         <PondRecordingOverlay reducedMotion={reducedMotion}
           onVoicePulse={pulse => { stage.current.voicePulses.push(pulse); }} />
       </>}
-      {prelude && !recording && <>
+      {reading && <>
         <BackButton onClick={() => navigate(RECORD_START_PATH, { state: location.state })} />
         <PuddleTranscriptPage />
       </>}
@@ -2488,7 +2566,7 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
           style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>fewer folds</span><span>more folds</span></div>
         {morph < .05 && <div style={{ textAlign: "center", marginTop: 8 }}>
-          <button type="button" onClick={() => setPhase("shape")} style={{ border: 0, background: "none", color: "inherit", font: "inherit", textDecoration: "underline", cursor: "pointer" }}>add some shape to reveal its folds</button>
+          <button type="button" onClick={() => { void goStep("shape"); }} style={{ border: 0, background: "none", color: "inherit", font: "inherit", textDecoration: "underline", cursor: "pointer" }}>add some shape to reveal its folds</button>
         </div>}
       </div>}
       {step === "distance" && <div style={{ position: "absolute", bottom: 105, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
@@ -2578,7 +2656,7 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
   );
 }
 
-function DescentShell({ lab }: { lab: boolean }) {
+function DescentShell({ lab, pondEntry }: { lab: boolean; pondEntry?: PondEntryProps }) {
   const [run, setRun] = useState(0);
   // the knobs outlive a run, so "again" replays with the sliders where they were
   const [tune, setTune] = useState<WrapTune>(WRAP_TUNE_DEFAULT);
@@ -2590,7 +2668,7 @@ function DescentShell({ lab }: { lab: boolean }) {
   const [focus, setFocus] = useState<string | null>(null);
   return (
     <>
-      <DescentRun key={run} lab={lab} onAgain={() => { transport.current.active = false; setRun((r) => r + 1); }} tune={tuneRef} transport={transport} />
+      <DescentRun key={run} lab={lab} pondEntry={pondEntry} onAgain={() => { transport.current.active = false; setRun((r) => r + 1); }} tune={tuneRef} transport={transport} />
       {lab && <>
         <WrapTunePanel tune={tune} onChange={setTune} focus={focus} />
         <Timeline transport={transport} tune={tune} onChange={setTune} onFocus={setFocus} />
@@ -2613,7 +2691,7 @@ export function DescentPrototype() {
   return <DescentShell lab />;
 }
 
-/** Shared pond for recording, transcript and photo/descent. */
-export function DescentFlow() {
-  return <DescentShell lab={false} />;
+/** Shared scene from the pond invitation through recording, transcript and descent. */
+export function DescentFlow(props: PondEntryProps) {
+  return <DescentShell lab={false} pondEntry={props} />;
 }

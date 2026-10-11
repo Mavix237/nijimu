@@ -8,6 +8,7 @@ import {
   MEMORY_FIELD_PATH,
   MEMORY_POND_PATH,
   DESCENT_PATH,
+  DESCENT_STEP_PATHS,
   NAMING_PATH,
   RECORD_START_PATH,
   TRANSCRIPT_PATH,
@@ -28,7 +29,7 @@ import { EditColorPage } from "./components/EditColorPage";
 import { EditTexturePage } from "./components/EditTexturePage";
 import { StyleGuidePage } from "./components/StyleGuidePage";
 import { MemoryMeaningLab } from "./lab/MemoryMeaningLab";
-import { DescentFlow, DescentPrototype } from "./lab/DescentPrototype";
+import { DescentPrototype } from "./lab/DescentPrototype";
 import { FilmPreview } from "./lab/FilmPreview";
 import { VesselPreview } from "./lab/VesselPreview";
 import { VesselGalleryPreview } from "./lab/VesselGalleryPreview";
@@ -119,7 +120,7 @@ const router = createBrowserRouter([
     Component: RootLayout,
     children: [
       {
-        /* Landing, the dive carousel, the pond, and
+        /* Landing, gallery, pond, recording, transcript, descent and
            naming share one layout: Enter preloads the gallery behind the ink,
            saving a memory
            turns the naming rim into that same gallery in place. The children
@@ -129,22 +130,16 @@ const router = createBrowserRouter([
           { path: "/", element: null },
           { path: CAROUSEL_PATH, element: null },
           { path: MEMORY_POND_PATH, element: null },
+          { path: RECORD_START_PATH, element: null },
+          { path: TRANSCRIPT_PATH, element: null },
+          { path: DESCENT_PATH, element: null },
+          ...Object.values(DESCENT_STEP_PATHS).map(path => ({ path, element: null })),
           { path: NAMING_PATH, element: null },
         ],
       },
       { path: MEMORY_FIELD_PATH, Component: HomePage },
       { path: "/lab/gallery", Component: VesselGalleryPreview },
       { path: "/lab/meaning", Component: MemoryMeaningLab },
-      {
-        // Recording, highlighting and photo selection share one living pond.
-        // The parent canvas is retained when only this child route changes.
-        Component: DescentFlow,
-        children: [
-          { path: RECORD_START_PATH, element: null },
-          { path: TRANSCRIPT_PATH, element: null },
-          { path: DESCENT_PATH, element: null },
-        ],
-      },
       { path: "/record/shape/:step", Component: ArchivedShapeRedirect },
       { path: "/record/saved", Component: MemorySavedPage },
       { path: "/memory/scroll", Component: MemoryScrollPage },

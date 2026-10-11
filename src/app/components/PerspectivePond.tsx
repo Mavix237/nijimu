@@ -403,7 +403,17 @@ const ringShadowFragment = /* glsl */ `
   }
 `;
 
-interface PondProps {
+export interface PondWaveUniforms extends Record<string, THREE.IUniform> {
+  uTime: { value: number };
+  uDrops: { value: THREE.Vector4[] };
+  uTrails: { value: THREE.Vector4[] };
+  uTrailControls: { value: THREE.Vector4[] };
+  uTrailTimes: { value: THREE.Vector2[] };
+  uSheetDrop: { value: THREE.Vector4 };
+  uSheetShape: { value: THREE.Vector4 };
+}
+
+export interface PondProps {
   arrival: number;
   reducedMotion: boolean;
   touch: PondTouch | null;
@@ -422,7 +432,9 @@ interface PondProps {
   sinkTargetRef?: RefObject<PondSinkTarget | null>;
 }
 
-function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hintRevealRef, promptRefs, cueRef, onReady, lifeReady = true, promptRipples = true, sinkRef, sinkTargetRef }: PondProps) {
+/** The invitation's halo and ripples can inhabit the descent's existing scene.
+ * With shared waves, the host owns the clock, camera, and water surface. */
+export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hintRevealRef, promptRefs, cueRef, onReady, lifeReady = true, promptRipples = true, sinkRef, sinkTargetRef, sharedWaves }: PondProps & { sharedWaves?: PondWaveUniforms }) {
   const { camera, size, gl } = useThree();
   const time = useRef(0);
   const ready = useRef(false);
@@ -441,7 +453,7 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
   const plane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), []);
   const point = useMemo(() => new THREE.Vector3(), []);
   const look = useMemo(() => new THREE.Vector3(), []);
-  const uniforms = useMemo(() => ({
+  const ownUniforms = useMemo(() => ({
     uTime: { value: 0 },
     uDrops: { value: Array.from({ length: POND_DROP_SLOTS }, () => new THREE.Vector4(0, 0, 0, 0)) },
     uTrails: { value: Array.from({ length: POND_TRAIL_SLOTS }, () => new THREE.Vector4()) },
@@ -450,6 +462,7 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
     uSheetDrop: { value: new THREE.Vector4(0, 0, 0, 0) },
     uSheetShape: { value: new THREE.Vector4(1, 1, 1, 0) },
   }), []);
+  const uniforms = sharedWaves ?? ownUniforms;
   const ringUniforms = useMemo(() => ({
     uProgress: { value: 0 },
     uOpacity: { value: 0 },
@@ -471,20 +484,27 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
   }, [gl, onReady]);
 
   useFrame((_, delta) => {
-    if (!document.hidden && !reducedMotion) time.current += Math.min(delta, .05);
-    uniforms.uTime.value = time.current;
+    if (sharedWaves) time.current = sharedWaves.uTime.value;
+    else {
+      if (!document.hidden && !reducedMotion) time.current += Math.min(delta, .05);
+      uniforms.uTime.value = time.current;
+    }
     // This is a perspective camera, never a CSS-flattened overhead texture.
     const cameraArrival = reducedMotion ? 1 : arrival;
-    pondCameraPose(cameraArrival, sinkRef?.current ?? 0, sinkTargetRef?.current ?? null, camera.position, look);
-    camera.lookAt(look);
-    camera.updateMatrixWorld();
+    if (!sharedWaves) {
+      pondCameraPose(cameraArrival, sinkRef?.current ?? 0, sinkTargetRef?.current ?? null, camera.position, look);
+      camera.lookAt(look);
+      camera.updateMatrixWorld();
+    }
     if (!ready.current) { ready.current = true; onReady(); }
     const cue = cueRef.current;
     const thought = POND_THOUGHTS[cue.index];
     // Slot zero belongs to the only visible prompt. Old prompt ripples cannot
     // accumulate; the other slots are reserved for the user's own touches.
-    uniforms.uDrops.value[0].set(size.width < 600 ? 0 : thought.x, thought.z,
-      reducedMotion ? -1.5 : time.current - cue.age, lifeReady && promptRipples ? cue.ripple : 0);
+    if (promptRipples) {
+      uniforms.uDrops.value[0].set(size.width < 600 ? 0 : thought.x, thought.z,
+        reducedMotion ? -1.5 : time.current - cue.age, lifeReady ? cue.ripple : 0);
+    }
     if (touch && touch.serial !== seenTouch.current) {
       seenTouch.current = touch.serial;
       tapAt.current = time.current;
@@ -571,10 +591,10 @@ function Water({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hin
   });
 
   return <>
-    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -900]}>
+    {!sharedWaves && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -900]}>
       <planeGeometry args={[2000, 2000]} />
       <shaderMaterial transparent vertexShader={vertexShader} fragmentShader={fragmentShader} uniforms={uniforms} />
-    </mesh>
+    </mesh>}
     <mesh ref={ringShadow} visible={false} renderOrder={2} frustumCulled={false}>
       <ringGeometry args={[RING_RADIUS - HALO_REACH, RING_RADIUS + HALO_REACH, 192, 16]} />
       <shaderMaterial transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
@@ -621,7 +641,7 @@ export function PerspectivePond(props: PondProps) {
     <Canvas camera={{ ...POND_LENS, position: [0, 2.2, 10] }}
       dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }} fallback={fallback}
       style={{ position: "absolute", inset: 0 }}>
-      <Water {...props} />
+      <PondWater {...props} />
     </Canvas>
   </PondBoundary>;
 }

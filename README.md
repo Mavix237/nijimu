@@ -16,6 +16,11 @@ Run `npm run dev` to start the development server.
 - `/ripple`: home canvas where memories sit as a watercolor puddle, blob field, or ripple field
 - `/record/start`: speak a memory aloud — the recording step of the create flow
 - `/record/transcript`: shows the spoken words and word highlights
+- `/record/descent`: choose a photo, let the film settle, then hold to descend
+- `/record/descent/shape`: shape the memory underwater
+- `/record/descent/rhythm`: adjust the form's folds and rhythm
+- `/record/descent/distance`: choose the memory's distance in the constellation
+- `/record/descent/color`: choose its colour / feeling
 - `/record/name`: give the memory a title and year
 - `/record/saved`: confirmation after editing a saved memory
 - `/memory/scroll`: vertical list of memories with a live 3D preview
@@ -29,6 +34,14 @@ Run `npm run dev` to start the development server.
 
 The profile has no page of its own: the profile button opens a glass popup over
 whatever page you are on.
+
+The create flow gives each underwater step its own browser-history entry.
+Back from distance returns to rhythm, then shape, then the photo/film step;
+Forward retraces those entries. These routes keep the same canvas, water clock,
+photo and current edits mounted. Returning from naming restores the handled
+memory at colour. Direct underwater URLs open that step using a carried draft,
+or the sample form when no draft is available. `/lab/descent` keeps its separate
+animation controls; `/record/shape/:step` remains an older-bookmark redirect.
 
 
 ## Fonts

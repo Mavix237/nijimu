@@ -59,6 +59,8 @@ export const FLOW_PAGE = {
   navigationHeight: 76,
   headingTop: "clamp(132px, 22vh, 176px)",
   headingWidth: "min(28em, 100%)",
+  /** Naming vessel, above the centre of the scene once the rise has landed. */
+  namingArtifactRaise: "12vh",
   actionHeight: 45,
   actionBottom: "max(40px, env(safe-area-inset-bottom))",
 } as const;

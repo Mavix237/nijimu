@@ -16,7 +16,7 @@ import { saveMemory, type MemoryLook } from "../lib/memoryStore";
 import { draftColorIndex, draftShapeOf } from "../lib/namingDraft";
 export { draftColorIndex, draftShapeOf, draftAsSaved } from "../lib/namingDraft";
 import type { MemoryAssignment } from "../lib/memoryShape";
-import { CAROUSEL_PATH, DESCENT_PATH } from "../lib/routes";
+import { CAROUSEL_PATH, DESCENT_STEP_PATHS } from "../lib/routes";
 import {
   formKey,
   getArtifactMesh,
@@ -547,7 +547,7 @@ export function useNamingRim(
       if (saving) return;
       const flow = state ?? {};
       if (handlersRef.current.onExit) handlersRef.current.onExit(flow);
-      else navigate(DESCENT_PATH, { state: resumeColorState(flow) });
+      else navigate(DESCENT_STEP_PATHS.color, { state: resumeColorState(flow) });
     },
   };
 }

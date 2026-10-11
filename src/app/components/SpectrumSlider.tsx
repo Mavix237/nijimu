@@ -103,6 +103,12 @@ type Props = {
   style?: CSSProperties;
 };
 
+/** Each end's seat: the same width at both ends, whatever its glyph draws. */
+const END_BOX: CSSProperties = {
+  flex: "0 0 26px", width: 26, minWidth: 0, height: 26, overflow: "visible",
+  display: "flex", alignItems: "center", justifyContent: "center",
+};
+
 /** The handling steps' slider: a hairline between two glyphs of the spectrum's ends. */
 export function SpectrumSlider({ value, onChange, from, to, label, valueText, keyStep = 0.05, style }: Props) {
   const track = useRef<HTMLDivElement>(null);
@@ -159,7 +165,10 @@ export function SpectrumSlider({ value, onChange, from, to, label, valueText, ke
           .spectrum-knob { transition-duration: 120ms; }
         }
       `}</style>
-      <span style={{ flex: "0 0 26px", height: 26, display: "flex", alignItems: "center", justifyContent: "center" }}><SpectrumGlyph end={from} /></span>
+      {/* both ends hold exactly 26px: the haze glyph is drawn 47px wide for its
+          blur, and a flex item never shrinks below its content, so its box grew
+          and pushed the ruler off centre. Its soft edge now spills past evenly. */}
+      <span style={END_BOX}><SpectrumGlyph end={from} /></span>
       <div className="spectrum-slider" role="slider" tabIndex={0} aria-label={label}
         aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(v * 100)} aria-valuetext={valueText}
         data-dragging={dragging || undefined}
@@ -174,7 +183,7 @@ export function SpectrumSlider({ value, onChange, from, to, label, valueText, ke
           <span className="spectrum-knob" />
         </span>
       </div>
-      <span style={{ flex: "0 0 26px", height: 26, display: "flex", alignItems: "center", justifyContent: "center" }}><SpectrumGlyph end={to} /></span>
+      <span style={END_BOX}><SpectrumGlyph end={to} /></span>
     </div>
   );
 }

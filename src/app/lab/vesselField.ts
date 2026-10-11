@@ -191,15 +191,16 @@ export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDep
         x = (cx - left < right - cx ? left : right) - viewport.w * .5;
       } else {
         // an upright phone's copy spans the width, so a sideways step leaves the
-        // screen: take the shortest way out of the copy — sideways, above or
-        // below, each clearing it entirely — that keeps the neighbour on the
+        // screen: take the shortest way out of the copy — sideways or below,
+        // each clearing it entirely — that keeps the neighbour on the
         // screen and out of the form's space; failing that, one on the screen;
         // failing that, the desktop's sideways step
         const formY = viewport.h * (.5 + foreground.shift);
         const left = b.left - pad, right = b.right + pad;
-        // above or below already clears the copy, so those may also slide in from a side edge
+        // below already clears the copy, so it may also slide in from a side edge;
+        // never above it — that is the header's ground
         const inside = Math.min(viewport.w - pad, Math.max(pad, cx));
-        const ways = [{ x: left, y: cy }, { x: right, y: cy }, { x: inside, y: b.top - pad }, { x: inside, y: b.bottom + pad }];
+        const ways = [{ x: left, y: cy }, { x: right, y: cy }, { x: inside, y: b.bottom + pad }];
         const onScreen = (p: { x: number; y: number }) => p.x >= pad && p.x <= viewport.w - pad && p.y >= pad && p.y <= viewport.h - pad;
         const offForm = (p: { x: number; y: number }) => !(Math.abs(p.x - viewport.w * .5) < clearance && Math.abs(p.y - formY) < clearance);
         const nearest = (list: { x: number; y: number }[]) => list.sort((p, q) => Math.hypot(p.x - cx, p.y - cy) - Math.hypot(q.x - cx, q.y - cy))[0];

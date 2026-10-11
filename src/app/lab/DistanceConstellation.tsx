@@ -27,11 +27,36 @@ interface Context {
 /** The gallery's real glass, draped photos and edited forms, in the shot's one
  * WebGL context. All neighbours share its refraction target and camera. */
 export function DistanceConstellation(props: Context) {
-  const memories = useMemo(() => buildArchive().map((item, index) => ({
-    id: item.id, index, state: galleryStateFor(item), place: memoryFieldPlace(index, item.look?.vividness),
-  })), []);
+  const { size } = useThree();
+  const phone = size.width <= 600 && size.width < size.height;
+  const memories = useMemo(() => {
+    const all = buildArchive().map((item, index) => ({
+      id: item.id, index, state: galleryStateFor(item), place: memoryFieldPlace(index, item.look?.vividness),
+    }));
+    if (!phone) return all;
+    // An upright phone holds fewer: in order, each kept only if it starts clear
+    // of those already kept, up to PHONE_NEIGHBOURS — the field stays legible
+    // round the form instead of crowding a narrow screen.
+    const viewport = { w: size.width, h: size.height };
+    const kept: { x: number; y: number }[] = [];
+    return all.filter((memory) => {
+      if (kept.length >= PHONE_NEIGHBOURS) return false;
+      const seat = distancePreviewSeat(memory.index, memory.place, FIELD_FOCAL, viewport);
+      if (kept.some((k) => Math.hypot(k.x - seat.x, k.y - seat.y) < PHONE_NEIGHBOUR_GAP)) return false;
+      kept.push({ x: seat.x, y: seat.y });
+      return true;
+    });
+    // the viewport is read once a phone is known: turning it keeps the same set
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone]);
   return <>{memories.map(memory => <Neighbor key={memory.id} {...props} {...memory} />)}</>;
 }
+
+/** How many neighbours an upright phone shows, and the least room between their starting places (px). */
+const PHONE_NEIGHBOURS = 8;
+const PHONE_NEIGHBOUR_GAP = 80;
+/** Over how many px a phone's neighbour fades as it rises past the top of the copy, into the header's ground. */
+const PHONE_TOP_FADE = 48;
 
 type NeighborProps = Context & { index: number; state: VesselState; place: ReturnType<typeof memoryFieldPlace> };
 
@@ -111,7 +136,12 @@ function NeighborBody({ index, state, place, stage, anchor, depth: chosenDepth, 
     root.current.traverse(child => {
       if (child instanceof THREE.Mesh && child.layers.isEnabled(FRONT_LAYER)) child.renderOrder = 100 - seat.depth * 2;
     });
-    uniforms.g.uReveal.value = uniforms.s.uReveal.value = seat.opacity;
+    // on an upright phone nothing rises into the header: a neighbour carried up
+    // past the top of the copy as the field follows the memory fades there
+    const copyTop = size.width <= 600 && size.width < size.height ? bounds?.top : undefined;
+    const below = copyTop === undefined ? 1
+      : Math.min(1, Math.max(0, (y - seat.size / 2 - (copyTop - PHONE_TOP_FADE)) / PHONE_TOP_FADE));
+    uniforms.g.uReveal.value = uniforms.s.uReveal.value = seat.opacity * below;
     uniforms.g.uTime.value += dt;
     gl.getDrawingBufferSize(uniforms.g.uResolution.value);
   });

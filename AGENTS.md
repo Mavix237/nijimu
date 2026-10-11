@@ -212,11 +212,27 @@ is a live canvas.
   wrapped copy takes the nearest way out — sideways, above or below — that is
   on screen and clear of the form. Desktop placement is unchanged.
   `check-memory-distance.mjs` now asserts the clear space by the short side.
+  An upright phone shows at most 8 neighbours (in order, each kept only if it
+  starts ≥80 px from those kept), never steps one above the copy, and fades
+  any carried up past the copy's top (DistanceConstellation.tsx).
+- SpectrumSlider ends are fixed 26 px boxes (`END_BOX`, min-width 0): the haze
+  glyph is drawn 47 px wide and had widened its box, pushing the ruler off
+  centre on the distance step. Phone copy: label 10 px, instructions 11 px.
 - Glass panes (profile, dialogs): `IridescentSheen` draws premultiplied into
   a premultiplied canvas — the unpremultiplied canvas it used is composited
   differently by Safari and likely read as a bright white rim there (not
   seen in Chrome; Safari itself was not checked). On phones `GlassPane` uses
   blur(26px) and a denser tint, since the pane covers the gallery's vessels.
+
+## Dialog action rows (2026-10-11)
+
+All GlassPane action buttons use `PaneOptions` / `PaneOption`, including profile
+and memory reading. Full-width rows have 1px top/bottom rules in
+`GALLERY_TRANSCRIPT.color` (trail ink); adjacent rows share one rule, with zero
+group gap and zero button margins. The last button has no bottom rule.
+Padding supplies the touch area. Reading's
+bottom anchoring belongs to the options wrapper (`atFoot`), never an inline
+margin on the button.
 
 ## Phone layout (2026-10-10)
 

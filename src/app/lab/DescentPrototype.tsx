@@ -2010,8 +2010,6 @@ const hintRowScale = (kind: "shape" | "rhythm" | "distance" | "color") =>
   Math.min(HINT_ROW_CELL / GESTURE_EXTENT[kind].h, HINT_ROW_CELL / GESTURE_EXTENT[kind].w);
 
 /* The gesture ranges, as ShapeGrowPage reads them. */
-/** The instructions under each handling step's title: a narrower measure than the heading row. */
-const UNDERWATER_INSTRUCTION_WIDTH = "24em";
 const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string] }> = {
   shape: {
     mark: "形",
@@ -3081,12 +3079,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           headingStyle={{ marginTop: compact ? 0 : -28 }}
           heading={<div key={step} className="nijimu-text-in" style={{ animation: textEnter() }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
-            <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
+            <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
             </p>
-            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`, maxWidth: UNDERWATER_INSTRUCTION_WIDTH,
+            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`, ...(compact ? { maxWidth: UNDERWATER_PHONE.instructionWidth } : {}),
               fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK }}>
-              {STEP_COPY[step].lines.map((line) => <span key={line} style={{ display: "block", textWrap: "balance" }}>{line}</span>)}
+              {/* a phone's narrower measure wraps each sentence; balanced, no word is left alone */}
+              {compact
+                ? STEP_COPY[step].lines.map((line) => <span key={line} style={{ display: "block", textWrap: "balance" }}>{line}</span>)
+                : <>{STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}</>}
             </p>
           </div>}
           actions={compact ? undefined : <PillButton label="continue" trailing="›" onClick={continueStep} />}

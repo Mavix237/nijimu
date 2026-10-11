@@ -5,7 +5,7 @@
  */
 
 import { GlassPane } from "./GlassPane";
-import { PillButton } from "./PillButton";
+import { PaneOption, PaneOptions } from "./PaneOption";
 import { useLandingReturn } from "../lib/landingReturn";
 import { NOTE_SIZE, SERIF, SERIF_EXPOSURE, TITLE, META } from "../lib/theme";
 
@@ -155,12 +155,9 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
         </div>
       </div>
 
-      <PillButton
-        label="exit to landing page"
-        onClick={beginReturn}
-        variant="outline"
-        style={{ marginTop: 2, flexShrink: 0 }}
-      />
+      <PaneOptions>
+        <PaneOption label="exit to landing page" onClick={beginReturn} />
+      </PaneOptions>
     </GlassPane>
   );
 }

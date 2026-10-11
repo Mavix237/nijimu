@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CHROME_GRAY } from "../lib/colors";
 import { BODY_SIZE, NOTE_SIZE, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
-import { PillButton } from "./PillButton";
+import { PaneOption, PaneOptions } from "./PaneOption";
 
 /** The space GlassPane keeps between its rows when centred (its `gap`). */
 const PANE_GAP = "clamp(20px, 4vh, 30px)";
@@ -93,7 +93,9 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
           </p>
 
           {/* at the foot of the pane when the words are short, after them when they run on */}
-          <PillButton label="close" variant="outline" onClick={onClose} style={{ flexShrink: 0, marginTop: "auto" }} />
+          <PaneOptions atFoot>
+            <PaneOption label="close" onClick={onClose} />
+          </PaneOptions>
         </>
       )}
     </GlassPane>

@@ -6,7 +6,7 @@
  */
 
 import type { CSSProperties, ReactNode } from "react";
-import { BODY_SIZE, BUTTON_SIZE_SM, SANS, SERIF, TITLE } from "../lib/theme";
+import { BODY_SIZE, BUTTON_SIZE_SM, GALLERY_TRANSCRIPT, SANS, SERIF, TITLE } from "../lib/theme";
 import { PANE_INK } from "../lib/colors";
 
 export const PANE_TITLE: CSSProperties = {
@@ -36,9 +36,9 @@ const DOT_PX = 16;
 const DOT_REST = 5 / DOT_PX;
 const MARK_PX = 18;
 
-export function PaneOptions({ children }: { children: ReactNode }) {
+export function PaneOptions({ children, atFoot = false }: { children: ReactNode; atFoot?: boolean }) {
   return (
-    <div className="nijimuPaneOptions">
+    <div className="nijimuPaneOptions" data-at-foot={atFoot}>
       {children}
       <style>{PANE_OPTION_CSS}</style>
     </div>
@@ -147,17 +147,23 @@ const PANE_OPTION_CSS = `
 .nijimuPaneOptions {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: clamp(12px, 2.2vh, 16px);
+  align-items: stretch;
+  width: 100%;
+  flex-shrink: 0;
+  gap: 0;
 }
+.nijimuPaneOptions[data-at-foot="true"] { margin-top: auto; }
 .nijimuPaneOption {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
-  margin: -4px -8px;
-  padding: 4px 8px;
+  margin: 0;
+  padding: 12px 0;
+  min-height: 44px;
+  width: 100%;
   border: none;
-  border-radius: 8px;
+  border-block: 1px solid ${GALLERY_TRANSCRIPT.color};
+  border-radius: 0;
   background: transparent;
   font-family: ${SANS};
   font-size: ${BUTTON_SIZE_SM};
@@ -169,6 +175,8 @@ const PANE_OPTION_CSS = `
   -webkit-tap-highlight-color: transparent;
   transition: color 240ms ease, opacity 200ms ease;
 }
+.nijimuPaneOption + .nijimuPaneOption { border-top: 0; }
+.nijimuPaneOption:last-of-type { border-bottom: 0; }
 .nijimuPaneOption[data-primary="true"] { font-weight: 500; }
 .nijimuPaneOption:disabled { cursor: default; opacity: 0.5; }
 .nijimuPaneOption:focus { outline: none; }

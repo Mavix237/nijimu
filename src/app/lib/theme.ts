@@ -86,8 +86,12 @@ export const FLOW_PAGE = {
 
 /** Phone-only handling layout: shape, rhythm, distance and colour. */
 export const UNDERWATER_PHONE = {
-  headingTop: "max(env(safe-area-inset-top, 0px), clamp(118px, 17dvh, 140px))",
-  instructionSize: 13,
+  headingTop: "max(env(safe-area-inset-top, 0px), clamp(104px, 15dvh, 124px))",
+  /** The step's English name under its character, and the instructions below. */
+  labelSize: 10,
+  instructionSize: 11,
+  /** The instructions' measure, narrower than the heading row (≈ 220px at 11px). */
+  instructionWidth: "20em",
   instructionGap: 14,
   /** How far below the view's centre the handled form sits, as a share of the view's height. */
   artifactDrop: .015,

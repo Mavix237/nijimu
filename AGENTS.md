@@ -45,10 +45,12 @@ fallback. Labs and memory-revisit editors remain available.
 
 The handling flow is now shape → rhythm → distance → colour. Rhythm changes
 only `ArtifactForm.side.m` (set 2, latitude), 0–16 in quarter steps; its slider
-and full-screen drag are alternatives to a relative open-palm roll gesture.
-`memoryRhythm.ts` owns the edit and angle mapping. Acquiring/reacquiring a hand
-anchors at the current value; closing the hand releases it. Hand edits are
-limited to 10 Hz. The edited form travels through naming/save as the artifact's
+and full-screen drag are alternatives to a one-hand thumb–index aperture gesture.
+`memoryRhythm.ts` maps the fingertip gap relative to wrist-to-middle-knuckle
+length, with camera-aspect correction: closed is m2=0, a wide gap is m2=16.
+Acquisition eases from the current value; losing tracking holds the value.
+A 120ms smoothing filter, quarter steps, a small deadband, and a 10Hz edit limit
+keep landmark tremor from rebuilding the mesh. `RHYTHM_PINCH` holds calibration. The edited form travels through naming/save as the artifact's
 form; the original assessment is retained. A spherical morph hides its folds;
 the UI then offers a return to shape. The neighbour preview uses the gallery's
 existing irregular positions, with depth `2.4 + galleryDepth * 2.8` and added
@@ -802,12 +804,25 @@ The shot is the live create route after the transcript (`/record/descent`).
 `/lab/descent` is the same shot with its knobs. The earlier shape pages stay
 reachable from the landing dock.
 
+The underwater header keeps an explicit Back control: color → distance →
+rhythm → shape → photo/hold-to-descend. It snapshots the current draft through
+the same navigation as Continue, retaining edits and the mounted water scene,
+including on direct step entry. Back during the color-to-naming glow cancels
+the pending handoff. The lab follows the same sequence in local phase state.
+
 Done inside the lab since the first cut:
 
-- The three underwater steps take the same MediaPipe gestures as
- `ShapeGrowPage` through `useHandTracking` (two palms apart → shape, one
- palm opening → frost, fingertip over the field → color, pinch to hold), with
- the same ranges. The full-screen drag and the field's own pointer handling
+- The underwater steps use MediaPipe through `useHandTracking`: two palms
+ apart → shape, thumb–index aperture → rhythm, an open palm pushing toward
+ the camera → greater distance/blur, fingertip over the field → color
+ (pinch to hold). Distance uses `memoryDistanceGesture.ts`: aspect-corrected
+ wrist/knuckle size estimates proximity, calibrated on acquisition; pulling
+ back reverses it. Finger spread does not set distance. Smoothing/deadband
+ suppress jitter; a folded, edge-on, clipped or lost hand holds the value and
+ reanchors on return. The animated distance hint shows an approaching palm.
+ Synthetic push/pull, clamp, loss/reacquisition and camera-aspect checks live
+ in `scripts/check-memory-distance.mjs`; live-camera feel needs user testing.
+ The full-screen drag and the field's own pointer handling
  stay as the fallback when the camera is refused or no hand is seen; the hint
  under the copy says "drag across…" then, and "or drag across…" when the
  camera is live. A small greyed camera window sits bottom-right while a step
@@ -1366,13 +1381,18 @@ into a faint glass stain (strength .22, chroma × .65). The shared glass shader
 applies it on one broad shoulder and grazing edges, using transmission color
 without adding alpha or whitening the photo. Descent reduces the uniform room
 cast from .4 to .06; naming/gallery use their neutral room plus this same stain.
-Standalone vessel studies default to zero stain. Rhythm's open-palm roll remains
-unchanged; pinch-and-slide, a finger fan, and two-hand twisting were suggested as
-alternatives, pending the user's choice.
+Standalone vessel studies default to zero stain. Rhythm now uses the thumb–index
+aperture interaction described above, superseding the earlier gesture proposals.
 
 **Highlighted phrases (2026-10-10).** A highlight can be a run of words.
 `PuddleTranscriptPage` saves each run of neighbouring highlighted words as one
 phrase in `highlightedWords` and draws it as one continuous band; the curated
 `HIGHLIGHTS` in `memoryData.ts` mix single words with short phrases.
-`TranscriptTrail` matches each phrase in order in the transcript; finding any
-of its words inks the whole phrase on one line at its first unobstructed cell.
+`TranscriptTrail` matches each phrase in order in the transcript. The trail no
+longer uses a grid: the pointer lets the transcript's words fall in order
+wherever it is, one each time it has moved clear of the last (`GAP_X_EM`,
+`STEP_Y_EM`), each showing `DELAY_MS` after it is set down. The last `TRAIL`
+stay; the oldest comes apart into grains on the trail's canvas (`grainsOf`
+reads the word back from a 2D canvas; `SWEEP_S`, `GRAIN_SPEED`, `GRAIN_LIFE`),
+drifting away from the line. A highlighted phrase is set down whole and keeps
+the ink hold and wash rather than coming apart.

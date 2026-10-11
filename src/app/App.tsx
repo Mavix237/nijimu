@@ -21,6 +21,7 @@ import {
   type LandingReturnPhase,
 } from "./lib/landingReturn";
 import { MemorySavedPage } from "./components/MemorySavedPage";
+import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
 import { ProfilePanel } from "./components/ProfilePanel";
 import { MemoryScrollPage } from "./components/MemoryScrollPage";
 import { RevisitMemoryPage } from "./components/RevisitMemoryPage";
@@ -200,19 +201,22 @@ function GlobalControls({
     onProfileOpenChange(false);
   }, [pathname, onProfileOpenChange]);
 
+  const [nameShown, setNameShown] = useState<"profile" | "music" | null>(null);
+
   const iconButtonStyle = {
     position: "fixed" as const,
     zIndex: 99999,
+    boxSizing: "border-box" as const,
     width: 36,
-    height: 36,
-    borderRadius: "50%",
+    height: 36 + HEADER_ICON_LABEL_PAD,
+    padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
+    borderRadius: 0,
     border: "none",
     background: "transparent",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: 0,
   };
 
   const iconStroke = CHROME_GRAY;
@@ -222,8 +226,12 @@ function GlobalControls({
       {!onLanding && (
         <button
           onClick={() => onProfileOpenChange(!profileOpen)}
-          title="Profile"
+          aria-label="profile"
           aria-expanded={profileOpen}
+          onMouseEnter={() => setNameShown("profile")}
+          onMouseLeave={() => setNameShown(null)}
+          onFocus={() => setNameShown("profile")}
+          onBlur={() => setNameShown(null)}
           style={{
             ...iconButtonStyle,
             top: 22,
@@ -233,6 +241,7 @@ function GlobalControls({
             pointerEvents: phase === "idle" ? "auto" : "none",
           }}
         >
+          <HeaderIconLabel name="profile" shown={nameShown === "profile"} />
           <svg
             width="16"
             height="16"
@@ -251,9 +260,14 @@ function GlobalControls({
 
       <button
         onClick={() => setMuted((m) => !m)}
-        title={muted ? "Unmute" : "Mute"}
+        aria-label={muted ? "unmute" : "mute"}
+        onMouseEnter={() => setNameShown("music")}
+        onMouseLeave={() => setNameShown(null)}
+        onFocus={() => setNameShown("music")}
+        onBlur={() => setNameShown(null)}
         style={{ ...iconButtonStyle, top: 22, right: 22 }}
       >
+        <HeaderIconLabel name="music" shown={nameShown === "music"} />
         {muted ? (
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />

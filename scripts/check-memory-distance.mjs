@@ -66,4 +66,80 @@ for (const viewport of [{ w: 1280, h: 720 }, { w: 390, h: 844 }]) {
     assert.equal(end.opacity, 0, 'the dispersed reference field still passes completely out of view');
   }
 }
-console.log('memory distance: monotonic depth, legacy placement, projection and far disappearance passed');
+const gesture = load('../src/app/lib/memoryDistanceGesture.ts');
+// A face-on, open hand in height-normalized camera coordinates. Transforming
+// the whole hand models forward/back travel without changing finger spread.
+function palm(scale = 1, aspect = 1, rotation = 0, mirror = 1) {
+  const points = Array.from({ length: 21 }, () => [0, 0]);
+  points[0] = [0, .12];
+  for (const [mcp, x, y] of [[5, -.065, 0], [9, -.02, -.02], [13, .025, -.01], [17, .065, .015]]) {
+    points[mcp] = [x, y];
+    points[mcp + 1] = [x, y - .055];
+    points[mcp + 2] = [x, y - .09];
+    points[mcp + 3] = [x, y - .13];
+  }
+  return points.map(([x, y]) => ({
+    x: .5 + mirror * scale * (x * Math.cos(rotation) - y * Math.sin(rotation)) / aspect,
+    y: .5 + scale * (x * Math.sin(rotation) + y * Math.cos(rotation)),
+  }));
+}
+const base = gesture.openPalmSize(palm());
+for (const aspect of [1, 4 / 3, 16 / 9]) {
+  for (const rotation of [0, .6, -1]) {
+    for (const mirror of [-1, 1]) {
+      assert.ok(Math.abs(gesture.openPalmSize(palm(1, aspect, rotation, mirror), aspect) - base) < 1e-10,
+        'palm measurement is independent of aspect, roll and mirror');
+    }
+  }
+}
+assert.ok(Math.abs(gesture.openPalmSize(palm(1.6)) / base - 1.6) < 1e-10);
+const spread = palm();
+for (const tip of [8, 12, 16, 20]) spread[tip].x += (tip < 14 ? -.03 : .03);
+assert.equal(gesture.openPalmSize(spread), base, 'finger spread does not drive distance');
+const fist = palm();
+for (const tip of [8, 12, 16, 20]) fist[tip] = { ...fist[tip - 3] };
+const edgeOn = palm().map(p => ({ x: .5 + (p.x - .5) * .1, y: p.y }));
+const corrupt = palm(); corrupt[9].x = NaN;
+for (const hand of [undefined, [], fist, edgeOn, corrupt, palm(.05), palm(10)]) {
+  assert.equal(gesture.openPalmSize(hand), null, 'invalid, folded, clipped or edge-on hands hold the setting');
+}
+const push = gesture.createDistancePush();
+let value = .25, time = 0;
+const frame = hand => {
+  const next = push.update(hand, 1, time += 33, value);
+  if (next !== null) value = next;
+  assert.ok(Number.isFinite(value) && value >= 0 && value <= 1);
+  return next;
+};
+assert.equal(frame(palm()), null, 'acquisition preserves the current value');
+for (let i = 0; i < 90; i++) frame(palm(1 + Math.sin(i) * .001));
+assert.equal(value, .25, 'stationary landmark jitter is ignored');
+for (let i = 1; i <= 60; i++) {
+  const before = value;
+  frame(palm(1 + i / 60 * .65));
+  assert.ok(value >= before, 'pushing closer increases distance and blur');
+  assert.ok(value - before < .05, 'smoothing avoids large jumps');
+}
+for (let i = 0; i < 40; i++) frame(palm(1.65));
+assert.equal(value, 1, 'a comfortable push reaches full blur');
+for (let i = 0; i < 20; i++) frame(palm(1.45));
+assert.ok(value < .8, 'pulling back reverses after reaching the limit');
+for (let i = 1; i <= 60; i++) {
+  const before = value;
+  frame(palm(1.45 - i / 60 * .65));
+  assert.ok(value <= before, 'pulling back brings the artifact closer and clearer');
+}
+for (let i = 0; i < 40; i++) frame(palm(.8));
+assert.equal(value, 0, 'pulling back reaches clear');
+value = .63;
+frame(undefined);
+assert.equal(frame(palm(1.8)), null, 'reacquisition at a different depth cannot jump');
+for (let i = 0; i < 20; i++) frame(palm(1.8));
+assert.equal(value, .63);
+frame(fist);
+assert.equal(frame(palm(.7)), null, 'reopening anchors at the current setting');
+assert.equal(value, .63);
+push.reset();
+assert.equal(frame(palm(1.2)), null, 'changing steps resets calibration');
+assert.equal(value, .63);
+console.log('memory distance: depth, projection, disappearance and palm-push gesture checks passed');

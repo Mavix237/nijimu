@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { CHROME_GRAY } from "../lib/colors";
+import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./HeaderIconLabel";
 
 /** Top-right switch between the G-key carousel and the card grid.
  *  Sits left of the profile / music chrome (those are at right 68 and 22).
@@ -21,41 +23,48 @@ export function GalleryViewToggle({
   icon?: "view" | "plus";
   label?: string;
 }) {
+  const [nameShown, setNameShown] = useState(false);
   if (!visible) return null;
 
   const toGrid = view === "carousel";
   const title = label ?? (icon === "plus"
     ? "create a new memory"
     : toGrid ? "grid view" : "gallery view");
+  const name = icon === "plus" ? "new" : title.split(" ")[0]?.toLowerCase() || "gallery";
 
   return (
     <button
       type="button"
-      title={title}
       aria-label={title}
       onClick={(event) => {
         event.stopPropagation();
         onToggle();
       }}
+      onMouseEnter={() => setNameShown(true)}
+      onMouseLeave={() => setNameShown(false)}
+      onFocus={() => setNameShown(true)}
+      onBlur={() => setNameShown(false)}
       style={{
         position: "fixed",
         top: 22,
         right: 114,
         zIndex: 99999,
+        boxSizing: "border-box",
         width: 36,
-        height: 36,
+        height: 36 + HEADER_ICON_LABEL_PAD,
+        padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
         border: "none",
         background: "transparent",
         cursor: "pointer",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        padding: 0,
         opacity: 0.85,
         pointerEvents: "auto",
         animation: enterAnimation,
       }}
     >
+      <HeaderIconLabel name={name} shown={nameShown} />
       {icon === "plus" ? (
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
           <rect x="1.5" y="1.5" width="13" height="13" stroke={CHROME_GRAY} strokeWidth="1.2" />

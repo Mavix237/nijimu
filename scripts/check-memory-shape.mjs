@@ -58,11 +58,60 @@ assert.equal(resume.look, carried.look, 'Back keeps the chosen photo, color and 
 assert.equal(resume.memoryId, carried.memoryId);
 assert.equal(resume.transcript, carried.transcript);
 
-assert.equal(rhythm.rhythmFromRoll(8, 0, 0), 8, 'hand acquisition keeps current value');
-assert.equal(rhythm.rhythmFromRoll(8, Math.PI / 4, 0), 12);
-assert.equal(rhythm.rhythmFromRoll(8, -Math.PI / 4, 0), 4);
-assert.equal(rhythm.rhythmFromRoll(8, -Math.PI + .01, Math.PI - .01), 8, 'angle wrapping does not jump the dial');
-assert.equal(rhythm.palmRoll([]), null);
+// Absolute thumb–index aperture: closed -> 0, wider -> more m2. Distances
+// are relative to the palm, independent of camera aspect, scale, and mirroring.
+const pinchHand = (ratio, aspect = 1, scale = 1, mirrored = false) => {
+  const hand = Array.from({ length: 21 }, () => ({ x: 0, y: 0 }));
+  hand[0] = { x: 0, y: .2 };
+  hand[9] = { x: 0, y: .1 };
+  hand[4] = { x: 0, y: 0 };
+  hand[8] = { x: ratio * .1 / aspect, y: 0 };
+  return hand.map(p => ({ x: .5 + p.x * scale * (mirrored ? -1 : 1), y: .3 + p.y * scale }));
+};
+const { closed, open } = rhythm.RHYTHM_PINCH;
+const middleGap = (closed + open) / 2;
+assert.equal(rhythm.rhythmFromPinch(pinchHand(0)), 0);
+assert.equal(rhythm.rhythmFromPinch(pinchHand(open + .1)), 16);
+assert.ok(Math.abs(rhythm.rhythmFromPinch(pinchHand(middleGap)) - 8) < 1e-9);
+for (const aspect of [1, 4/3, 16/9]) for (const scale of [.5, 1, 1.8]) for (const mirror of [false, true]) {
+  assert.ok(Math.abs(rhythm.rhythmFromPinch(pinchHand(middleGap, aspect, scale, mirror), aspect) - 8) < 1e-9);
+}
+let previousTarget = -1;
+for (let gap = 0; gap < 1.7; gap += .025) {
+  const target = rhythm.rhythmFromPinch(pinchHand(gap));
+  assert.ok(target >= previousTarget && target >= 0 && target <= 16);
+  previousTarget = target;
+}
+assert.equal(rhythm.rhythmFromPinch([]), null);
+assert.equal(rhythm.rhythmFromPinch(pinchHand(open, 1, .01)), null, 'unreliable tiny palm is ignored');
+const invalidHand = pinchHand(open); invalidHand[4].x = NaN;
+assert.equal(rhythm.rhythmFromPinch(invalidHand), null);
+const pinch = rhythm.createRhythmPinch();
+let currentM = 8, now = 0, previousEditAt = -Infinity;
+assert.equal(pinch.update(pinchHand(open + .1), 1, now, currentM), null, 'acquisition eases from the current form');
+for (let frame = 1; frame <= 150; frame++) {
+  now += 16;
+  const next = pinch.update(pinchHand(open + .1), 1, now, currentM);
+  if (next !== null) {
+    assert.ok(next >= currentM && next <= 16);
+    assert.ok(now - previousEditAt >= 100, 'mesh updates stay under 10 Hz');
+    assert.equal(next * 4, Math.round(next * 4));
+    currentM = next; previousEditAt = now;
+  }
+}
+assert.equal(currentM, 16, 'wide aperture reaches maximum');
+assert.equal(pinch.update([], 1, now + 16, currentM), null, 'tracking loss holds the current form');
+assert.equal(pinch.update(pinchHand(0), 1, now += 32, currentM), null, 'reacquisition starts from the held value');
+for (let frame = 1; frame <= 150; frame++) {
+  const next = pinch.update(pinchHand(0), 1, now += 16, currentM);
+  if (next !== null) { assert.ok(next <= currentM); currentM = next; }
+}
+assert.equal(currentM, 0, 'closed aperture reaches minimum');
+pinch.reset(); currentM = 8;
+for (let frame = 0; frame < 120; frame++) {
+  const gap = middleGap + Math.sin(frame) * .005;
+  assert.equal(pinch.update(pinchHand(gap), 1, now += 16, currentM), null, 'small landmark jitter does not rebuild the mesh');
+}
 for (const category of geometry.ARTIFACT_CATEGORIES) {
   const base = geometry.baseForm(category);
   for (const m2 of [0, .25, 4, 9.25, 16]) {

@@ -5,13 +5,14 @@ import { pondCameraPose, POND_CAMERA_HEIGHT, POND_CAMERA_Z, POND_LOOK as SURFACE
 import { DistanceConstellation } from "./DistanceConstellation";
 import { FIELD_FOCAL, memoryDepth } from "./vesselField";
 import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
-import { RHYTHM_MAX, withRhythm, rhythmValue, palmRoll, rhythmFromRoll } from "../lib/memoryRhythm";
+import { RHYTHM_MAX, withRhythm, rhythmValue, createRhythmPinch } from "../lib/memoryRhythm";
+import { createDistancePush } from "../lib/memoryDistanceGesture";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
-import { CAROUSEL_PATH, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
+import { CAROUSEL_PATH, DESCENT_PATH as DESCENT_ROUTE, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
 import { PuddleTranscriptPage } from "../components/PuddleTranscriptPage";
 import { MemoryPondPage } from "../components/MemoryPondPage";
 import { PondRecordingOverlay } from "../components/PondRecordingOverlay";
@@ -20,7 +21,6 @@ import { saveMemory } from "../lib/memoryStore";
 import {
   createGestureGate,
   handCenter,
-  handOpenness,
   landmarkDistance,
   useHandTracking,
 } from "../hooks/useHandTracking";
@@ -136,6 +136,8 @@ const VESSEL_ROOM: Room = { above: "#e6e7ea", below: "#ffffff" };
 const WATER_WASH = 1.0;
 /** Complete the pale background before the form finishes its underwater ascent. */
 const WASH_IN_S: [number, number] = [1.8, 5.5];
+/** A little depth before the form appears, clearing with its pale reveal. */
+const DESCENT_SHADE = 0.08;
 
 /* The wrap: the view draws back and tilts up so the film overhead and the
    form below are both in frame, and the form lifts a little toward the light;
@@ -299,6 +301,7 @@ const PREVIEW_FROST = unitParam("frost");
     chroma — and uTint lets the chosen color settle into those clouds. */
 const VOLUME_GLSL = /* glsl */ `
   uniform float uWash;
+  uniform float uDescentShade;
   uniform vec3 uTint;
   uniform float uTintAmount;
   uniform float uClock;
@@ -336,7 +339,7 @@ const VOLUME_GLSL = /* glsl */ `
     vec3 washed = mix(paper, c, .08) + (cloud - .5) * .035;
     // only a breath of it: the colour step's water stays the paper of the distance step
     washed = mix(washed, uTint, uTintAmount * (.04 + .07 * cloud));
-    return mix(c, washed, uWash);
+    return mix(c, washed, uWash) * (1.0 - uDescentShade);
   }
 `;
 
@@ -914,6 +917,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   const water = useMemo(() => ({
     uSurfaceLight: { value: 0 },
     uWash: { value: 0 },
+    uDescentShade: { value: 0 },
     uTint: { value: new THREE.Color("#a4b6be") },
     uTintAmount: { value: 0 },
     uClock: { value: 0 },
@@ -1344,6 +1348,10 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     // background until after the form had finished surfacing.
     sm.wash = riseAt.current !== null ? ease(sm.wash, 0, .55) : WATER_WASH * washIn;
     water.uWash.value = sm.wash;
+    // Both the underside and the full-frame water share this brief darker tone.
+    // It is gone by the pale wash's end, before the form finishes climbing.
+    water.uDescentShade.value = descentAt.current === null ? 0
+      : DESCENT_SHADE * (1 - smoothProgress(t - descentAt.current, FORM_REVEAL_S[0], WASH_IN_S[1]));
     water.uClock.value = t;
     water.uSurfaceLight.value = s.surfaceLight;
     touch.material.uniforms.uSurfaceLight.value = s.surfaceLight;
@@ -1723,12 +1731,12 @@ const STEP_COPY: Record<Step, { title: string; lines: [string, string]; drag: st
   },
   rhythm: {
     title: "rhythm",
-    lines: ["let its contours find their rhythm.", "tilt an open palm left or right, like turning a dial."],
+    lines: ["let its contours find their rhythm.", "spread thumb and index finger for more folds; pinch for fewer."],
     drag: "or drag across to change its rhythm",
   },
   distance: {
     title: "distance",
-    lines: ["time blurs the edges, not the feeling.", "let this memory settle nearer, or farther away."],
+    lines: ["time blurs the edges, not the feeling.", "push your open palm toward the camera to send it farther into the blur."],
     drag: "or drag across to move it deeper into the constellation",
   },
   color: {
@@ -1741,10 +1749,6 @@ const STEP_COPY: Record<Step, { title: string; lines: [string, string]; drag: st
 /** Two palms together → sphere; apart → the settled form. */
 function distanceToMorph(distance: number): number {
   return clamp01((distance - 0.15) / (0.55 - 0.15));
-}
-/** Fist → 0, open palm → 1. */
-function opennessToUnit(openness: number): number {
-  return clamp01((openness - 0.09) / (0.28 - 0.09));
 }
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
@@ -2181,13 +2185,13 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   /** Who last put hands in the water: the camera wins while it sees any. */
   const handsFrom = useRef<"camera" | "pointer" | null>(null);
   const morphGate = useRef(createGestureGate(0.015));
-  const frostGate = useRef(createGestureGate(0.015));
-  const rhythmDial = useRef<{ angle: number; value: number; at: number } | null>(null);
+  const distancePush = useRef(createDistancePush());
+  const rhythmPinch = useRef(createRhythmPinch());
   useEffect(() => {
     // fresh baselines each step, so a hand already in frame does not jump the form
     morphGate.current = createGestureGate(0.015);
-    frostGate.current = createGestureGate(0.015);
-    rhythmDial.current = null;
+    distancePush.current.reset();
+    rhythmPinch.current.reset();
     colorHeldRef.current = false;
     pinchFrames.current = 0;
     setColorHeld(false);
@@ -2195,7 +2199,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     handsFrom.current = null;
   }, [step]);
 
-  /* Two palms apart for shape, a palm roll for rhythm, one palm opening for
+  /* Two palms apart for shape, a thumb–index pinch for rhythm, one palm pushing for
      distance, a fingertip over the field for color (pinch to hold).
      The camera opens when the form surfaces; the drag below stays as
      the fallback when it is refused or no hand is seen. */
@@ -2218,24 +2222,18 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         if (morphGate.current.update(distance)) setSignal(distanceToMorph(distance));
       } else if (tab === "rhythm") {
         const hand = hands[0];
-        if (!hand) return;
-        // Fold the hand to release the dial; opening it again re-anchors at
-        // the current value, so tracking loss and either hand cannot jump it.
-        if (handOpenness(hand) < landmarkDistance(hand[0], hand[9], true) * .75) { rhythmDial.current = null; return; }
+        if (!hand) { rhythmPinch.current.reset(); return; }
         const video = videoRef.current;
-        const angle = palmRoll(hand, video?.videoHeight ? video.videoWidth / video.videoHeight : 1);
-        if (angle === null) return;
-        const now = performance.now();
-        if (!rhythmDial.current) { rhythmDial.current = { angle, value: m2Ref.current, at: now }; return; }
-        // Geometry and cloth are rebuilt only for deliberate quarter-step
-        // edits, capped at ten per second while the hand is moving.
-        if (now - rhythmDial.current.at < 100) return;
-        rhythmDial.current.at = now;
-        setEditedM2(rhythmFromRoll(rhythmDial.current.value, angle, rhythmDial.current.angle));
+        const next = rhythmPinch.current.update(hand,
+          video?.videoHeight ? video.videoWidth / video.videoHeight : 1,
+          performance.now(), m2Ref.current);
+        if (next !== null) { m2Ref.current = next; setEditedM2(next); }
       } else if (tab === "distance") {
-        const openness = handOpenness(hands[0]);
-        // open palm frosts the glass; a fist clears it
-        if (frostGate.current.update(openness)) setSignal(opennessToUnit(openness));
+        const video = videoRef.current;
+        const next = distancePush.current.update(hands[0],
+          video?.videoHeight ? video.videoWidth / video.videoHeight : 1,
+          performance.now(), stage.current.frost);
+        if (next !== null) setSignal(next);
       } else if (tab === "color") {
         const hand = hands[0];
         const pinch = landmarkDistance(hand[4], hand[8], true);
@@ -2254,7 +2252,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       }
     },
     onNoHands: () => {
-      rhythmDial.current = null;
+      rhythmPinch.current.reset();
+      distancePush.current.reset();
       setHandsDetected(0);
       if (handsFrom.current === "camera") { handsFrom.current = null; stage.current.hands = []; }
       if (colorHeldRef.current) { colorHeldRef.current = false; pinchFrames.current = 0; setColorHeld(false); }
@@ -2295,16 +2294,33 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     await navigate(location.pathname + location.search, { replace: true, state });
     return state;
   };
-  const goStep = async (next: Step) => {
-    if (lab) { setPhase(next); return; }
+  const goStep = async (next: Step | null) => {
+    if (lab) {
+      if (next === null) stage.current.view = "surface";
+      setPhase(next ?? (lifted ? "floating" : "choose"));
+      return;
+    }
     if (navigatingStep.current) return;
     navigatingStep.current = true;
     try {
       const state = await rememberDraft();
-      await navigate(DESCENT_STEP_PATHS[next] + location.search, { state });
+      await navigate((next === null ? DESCENT_ROUTE : DESCENT_STEP_PATHS[next]) + location.search, { state });
     } finally {
       navigatingStep.current = false;
     }
+  };
+  const backStep = () => {
+    if (!step || navigatingStep.current) return;
+    // Back also cancels the light-to-naming handoff before it can navigate.
+    cancelAnimationFrame(exitRaf.current);
+    stage.current.captureSurface = undefined;
+    stage.current.surfaceLight = 0;
+    exitStarted.current = false;
+    setLeaving(false);
+    const previous: Record<Step, Step | null> = {
+      shape: null, rhythm: "shape", distance: "rhythm", color: "distance",
+    };
+    void goStep(previous[step]);
   };
   const continueStep = async () => {
     if (exitStarted.current) return;
@@ -2447,7 +2463,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         <PuddleTranscriptPage />
       </>}
       {!prelude && <>
-      {lab && <p style={{ ...META, position: "absolute", top: 26, left: 28, margin: 0, zIndex: 20 }}>lab — descent</p>}
+      {lab && <p style={{ ...META, position: "absolute", top: 26, left: step ? 76 : 28, margin: 0, zIndex: 20 }}>lab — descent</p>}
+      {step && <BackButton onClick={backStep} />}
       {!lab && (phase === "choose" || phase === "floating") && (
         <BackButton onClick={() => navigate(TRANSCRIPT_PATH, {
           state: {
@@ -2601,9 +2618,12 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           actions={<PillButton label="continue" trailing="›" onClick={continueStep} />}
           actionsStyle={{ pointerEvents: leaving ? "none" : "auto" }} />
         <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
-          opacity: tracking.isTracking && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
+          opacity: (step === "distance" || tracking.isTracking) && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
           <GestureHint kind={step} active={gestureLive} style={{
             top: "auto", left: "auto", right: 28 + 64, bottom: 28 + 96 + 12, transform: "translateX(50%)",
+            // Keep the fist/open-palm reference available while adjusting distance,
+            // including when the camera is off or a hand is already in frame.
+            ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),
           }} />
         </div>
       </>}

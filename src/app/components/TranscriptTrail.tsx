@@ -13,7 +13,7 @@ import { SANS } from "../lib/theme";
  * older the fainter; the oldest, when a new one comes, comes apart into grains
  * that drift away from the line and go out. The words are a light grey.
  *
- * The words the memory's highlight step lifted out are italic and underlined,
+ * The words the memory's highlight step lifted out are italic,
  * in the darker ink of the memory's name in the caption, and are not part of
  * the trail's fading: once set down, one holds at full ink for a while after
  * the trail has moved on, then washes out — it bleeds and spreads like ink let
@@ -406,9 +406,6 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
             style={{
               display: "block",
               fontStyle: "italic",
-              textDecoration: "underline",
-              textDecorationThickness: "0.06em",
-              textUnderlineOffset: "0.2em",
               transformOrigin: "center",
               animation:
                 `trailIn ${IN_MS}ms ease-out ${DELAY_MS}ms both, ` +

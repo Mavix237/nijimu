@@ -1385,8 +1385,9 @@ Standalone vessel studies default to zero stain. Rhythm now uses the thumb–ind
 aperture interaction described above, superseding the earlier gesture proposals.
 
 **Highlighted phrases (2026-10-10).** A highlight can be a run of words.
-`PuddleTranscriptPage` saves each run of neighbouring highlighted words as one
-phrase in `highlightedWords` and draws it as one continuous band; the curated
+`PuddleTranscriptPage` caps a drag at two words (`MAX_HIGHLIGHT`), saves each
+run of neighbouring highlighted words as phrases of at most two in
+`highlightedWords` and draws a run as one continuous band; the curated
 `HIGHLIGHTS` in `memoryData.ts` mix single words with short phrases.
 `TranscriptTrail` matches each phrase in order in the transcript. The trail no
 longer uses a grid: the pointer lets the transcript's words fall in order
@@ -1395,4 +1396,4 @@ wherever it is, one each time it has moved clear of the last (`GAP_X_EM`,
 stay; the oldest comes apart into grains on the trail's canvas (`grainsOf`
 reads the word back from a 2D canvas; `SWEEP_S`, `GRAIN_SPEED`, `GRAIN_LIFE`),
 drifting away from the line. A highlighted phrase is set down whole and keeps
-the ink hold and wash rather than coming apart.
+the ink hold and wash (italic, no underline) rather than coming apart.

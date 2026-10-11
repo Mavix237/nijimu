@@ -35,15 +35,19 @@ interface PuddleTranscriptState {
   cameraPermission?: "pending" | "granted" | "denied";
 }
 
+/** The most words one highlight takes. */
+const MAX_HIGHLIGHT = 2;
+
 /** The highlighted words as they are lifted out: each run of neighbouring
-    words is one phrase, so "orange peels" stays together. */
+    words is one phrase, so "orange peels" stays together — a longer run, made
+    of highlights side by side, is lifted out a pair at a time. */
 function highlightedPhrases(words: string[], indices: Set<number>): string[] {
   const phrases: string[] = [];
   let run: string[] = [];
   const sorted = Array.from(indices).sort((a, b) => a - b);
   sorted.forEach((i, k) => {
     run.push(words[i]);
-    if (sorted[k + 1] !== i + 1) {
+    if (sorted[k + 1] !== i + 1 || run.length === MAX_HIGHLIGHT) {
       phrases.push(run.join(" "));
       run = [];
     }
@@ -227,8 +231,10 @@ export function PuddleTranscriptPage() {
   const handleMouseEnter = (wordIndex: number) => {
     if (!highlightMode || !isSelecting || selectionStart === null) return;
 
-    const start = Math.min(selectionStart, wordIndex);
-    const end = Math.max(selectionStart, wordIndex);
+    // a highlight is a word or two, never more: the drag reaches one word past where it began
+    const reach = Math.max(-(MAX_HIGHLIGHT - 1), Math.min(MAX_HIGHLIGHT - 1, wordIndex - selectionStart));
+    const start = Math.min(selectionStart, selectionStart + reach);
+    const end = Math.max(selectionStart, selectionStart + reach);
 
     const newSelection = new Set<number>();
     for (let i = start; i <= end; i++) {

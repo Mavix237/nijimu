@@ -30,7 +30,7 @@ export function GalleryViewToggle({
   const title = label ?? (icon === "plus"
     ? "create a new memory"
     : toGrid ? "grid view" : "gallery view");
-  const name = icon === "plus" ? "new" : title.split(" ")[0]?.toLowerCase() || "gallery";
+  const name = icon === "plus" ? "create" : title.split(" ")[0]?.toLowerCase() || "gallery";
 
   return (
     <button

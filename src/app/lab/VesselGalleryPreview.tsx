@@ -16,6 +16,7 @@ import {
 } from "./VesselPreview";
 import { VesselArtifact, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
 import { LabPushButton } from "./LabPushButton";
+import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "../components/HeaderIconLabel";
 import {
   DOLLY_IN, DOLLY_MAX, DOLLY_MIN, FIELD_FOCAL, blendSeat, easeFlight, memoryFieldPlace, fieldSeat, surfacingSeat,
   type FieldCamera,
@@ -270,19 +271,26 @@ class FieldDriver {
 
 /** The switch between the years and the field, beside the gallery's own chrome (the plus sits at right 114). */
 function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  const [nameShown, setNameShown] = useState(false);
   const title = on ? "back along the years" : "see them in the air";
+  const name = on ? "years" : "constellation";
   return (
     <button
       type="button"
-      title={title}
       aria-label={title}
       onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      onMouseEnter={() => setNameShown(true)}
+      onMouseLeave={() => setNameShown(false)}
+      onFocus={() => setNameShown(true)}
+      onBlur={() => setNameShown(false)}
       style={{
-        position: "fixed", top: 22, right: 156, zIndex: 99999, width: 36, height: 36,
+        position: "fixed", top: 22, right: 156, zIndex: 99999, boxSizing: "border-box",
+        width: 36, height: 36 + HEADER_ICON_LABEL_PAD, padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
         border: "none", background: "transparent", cursor: "pointer",
-        display: "flex", alignItems: "center", justifyContent: "center", padding: 0, opacity: 0.85,
+        display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.85,
       }}
     >
+      <HeaderIconLabel name={name} shown={nameShown} />
       {on ? (
         // the years: the curve with its seats along it
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>

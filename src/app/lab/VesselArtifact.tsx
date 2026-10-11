@@ -3,10 +3,13 @@ import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { formKey, type ArtifactForm } from "../lib/superformula";
 import { prepareFilmPhoto } from "../lib/filmLook";
+import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
+import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
+import { useVesselParts, type VesselParts } from "./vesselBuilds";
 import { createEdgePrint } from "./filmStrip";
 import {
-  BLANK_PHOTO, FOV, FRONT_LAYER, LOOK_Y, Mist, PITCH_MAX, PITCH_MIN, airFor, backdropVertex, blitFragment, buildDrapedSheet, buildGlass, buildSheet,
-  createGlassUniformSet, createSheetUniformSet, fitSheetSize, glassFragment, glassRefractFragment, glassVertex, hash2,
+  BLANK_PHOTO, FOV, FRONT_LAYER, LOOK_Y, Mist, PITCH_MAX, PITCH_MIN, airFor, backdropVertex, blitFragment, buildGlass,
+  createGlassUniformSet, createSheetUniformSet, glassFragment, glassRefractFragment, glassVertex, hash2,
   keyFrom, photoLoader, seedDirections, sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms,
   type Glass, type GlassMode, type Room, type Sheet, type SheetFace, type SheetMode, type VesselTune,
 } from "./VesselPreview";
@@ -39,8 +42,13 @@ export interface VesselArtifactProps {
   /** A settled neighbour: nothing moves, the canvas draws on demand. */
   still: boolean;
   frameloop: "always" | "demand";
-  /** Keys the built geometry, so a seat that leaves and comes back does not rebuild its cloth. */
+  /** Names this seat's memory and version. The glass and cloth themselves are
+      cached by their contents (vesselBuilds.ts), so a seat that leaves and
+      comes back, or the same memory elsewhere, does not rebuild its cloth. */
   cacheKey: string;
+  /** Place in the build queue, lowest first: the gallery passes the seat's
+      distance from the apex. The focused seat defaults to 0, others to 1. */
+  priority?: number;
   /** The strip's size in the glass; fitted to the cavity (`fitSheetSize`) unless given. */
   sheetSize?: number;
   /** The wall angle (degrees) the eye opens on; the sheet's own `anchorAngle` unless given, so a picture hung off it sits to one side. */
@@ -60,7 +68,6 @@ export interface VesselArtifactProps {
 }
 
 interface Built { glass: Glass; sheet: Sheet; distance: number }
-const builds = new Map<string, Built>();
 
 /* ───────── the photos, shared by every seat that shows one ─────────
    One texture per URL for the visit: a seat that mounts, leaves and comes
@@ -79,6 +86,8 @@ export function loadSeatPhoto(url: string): Promise<SeatPhoto> {
   let pending = photosLoading.get(url);
   if (!pending) {
     pending = photoLoader.loadAsync(url).then((t) => {
+      // every seat's context holds its own copy: no larger than the seat can show
+      (t as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = scaledImage(t.image as HTMLImageElement, SEAT_PHOTO_MAX);
       const image = t.image as { width: number; height: number };
       const photo = { texture: prepareFilmPhoto(t), aspect: image.width / image.height };
       photos.set(url, photo);
@@ -141,34 +150,9 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
   return scale;
 }
 
-/** The glass and its sheet for one memory, built once per key and kept; a new key for the same memory replaces the old build. */
-function buildVessel(key: string, form: ArtifactForm, morph: number, tune: VesselTune, sheetMode: SheetMode, seed: number, sheetSizeGiven?: number): Built {
-  const have = builds.get(key);
-  if (have) return have;
-  const id = key.split("|")[0];
-  for (const [k, b] of builds) {
-    if (k !== key && k.split("|")[0] === id) {
-      b.glass.geometry.dispose(); b.sheet.geometry.dispose();
-      builds.delete(k);
-    }
-  }
-  const glass = buildGlass(form, morph);
-  // the strip sized to this cavity, so a small or narrow form holds a smaller sheet
-  const sheetSize = sheetSizeGiven ?? fitSheetSize(glass);
-  const sheet = sheetMode === "draped"
-    ? buildDrapedSheet(glass, tune.inset, {
-      sheetSize, anchorAngle: tune.anchorAngle, anchorHeight: tune.anchorHeight, tilt: tune.tilt, contact: tune.contact,
-      sag: tune.sag, peel: tune.peel, curl: tune.curl, twist: tune.twist, gap: tune.gap, soft: tune.soft,
-    })
-    : buildSheet(glass, tune.inset, tune.arc, tune.band, tune.lift, tune.foldScale, seed);
-  const built = { glass, sheet, distance: frameVessel(glass.positions).distance };
-  builds.set(key, built);
-  return built;
-}
-
 function VesselObject({
-  form, morph, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, cacheKey, sheetSize, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady,
-}: VesselArtifactProps) {
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady,
+}: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
   // the pressed sheet has no one place, so it opens at a turn of its own
@@ -242,7 +226,7 @@ function VesselObject({
   useEffect(() => { invalidate(); }, [viewToken, invalidate]);
 
   const pass = useMemo(() => {
-    const target = new THREE.WebGLRenderTarget(1, 1, { samples: 4, depthBuffer: true, stencilBuffer: false });
+    const target = new THREE.WebGLRenderTarget(1, 1, { samples: RT_SAMPLES, depthBuffer: true, stencilBuffer: false });
     const blit = new THREE.ShaderMaterial({
       vertexShader: backdropVertex, fragmentShader: blitFragment,
       uniforms: { tScene: { value: target.texture } },
@@ -262,7 +246,7 @@ function VesselObject({
     invalidate();
   }, [pass, gl, size, invalidate]);
 
-  const built = useMemo(() => buildVessel(cacheKey, form, morph, tune, sheetMode, seed, sheetSize), [cacheKey, form, morph, tune, sheetMode, seed, sheetSize]);
+  const built = useMemo<Built>(() => ({ ...parts, distance: frameVessel(parts.glass.positions).distance }), [parts]);
   const edgePrint = useMemo(() => createEdgePrint(1 + Math.floor(hash2(seed, 7.7) * 36)), [seed]);
   useEffect(() => () => edgePrint.dispose(), [edgePrint]);
   const key = keyFrom(tune.keyAzimuth, tune.keyElevation);
@@ -361,15 +345,23 @@ function VesselObject({
 }
 
 export function VesselArtifact(props: VesselArtifactProps) {
+  // the canvas waits for its glass and cloth: the queue builds them a memory at a
+  // time, nearest first, so neither the settle nor the context and its shaders
+  // arrive for every seat on the same frame
+  const parts = useVesselParts({
+    form: props.form, morph: props.morph, tune: props.tune, sheetMode: props.sheetMode ?? "draped",
+    seed: props.seed, sheetSize: props.sheetSize,
+  }, props.priority ?? (props.focused ? 0 : 1));
+  if (!parts) return <div style={{ width: "100%", height: "100%" }} />;
   return (
     // offsetSize: the seat is scaled by a CSS transform along the curve, and a resize observer does not see
     // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
     // that tiny size and stretched when it reached the apex
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
-      dpr={[1, 2]} gl={{ antialias: true, alpha: true }} frameloop={props.frameloop}
+      dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       style={{ width: "100%", height: "100%" }}>
-      <VesselObject {...props} />
+      <VesselObject {...props} parts={parts} />
     </Canvas>
   );
 }

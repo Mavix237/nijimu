@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { CHROME_GRAY } from "../lib/colors";
-import { SERIF, TITLE, NOTE_SIZE } from "../lib/theme";
+import { SERIF, TITLE, NOTE_SIZE, INSTRUCTION_SIZE } from "../lib/theme";
 import { beginTranscription } from "../lib/transcribe";
 import svgPathsStop from "../../imports/svg-hpzn3032f5";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
@@ -187,65 +187,51 @@ export function PondRecordingOverlay({
         }
       `}</style>
 
-      <FlowPageGrid heading={<>
-      <div
-        style={{
-          margin: 0,
-          ...TITLE,
-          color: CHROME_GRAY,
-          width: "100%",
-          textAlign: "center",
-          ...leaveStyle,
-        }}
-      >
-        <ParticleText
-          text="What's been lingering on your mind?"
-          seed={41}
-          animate={!reducedMotion}
-          delay={QUESTION_DELAY_S}
-          sweep={QUESTION_SWEEP_S}
-          wrap
-        />
-      </div>
-
-      <div
-        style={{
-          width: "min(28em, 100%)",
-          margin: "24px auto 0",
-          textAlign: "center",
-          ...noteStyle,
-          ...leaveStyle,
-        }}
-      >
-        <ParticleText
-          text="Start with a moment, feeling, or detail that stayed with you. Don’t worry about finding the perfect words, just speak naturally until you feel you’ve finished telling your story."
-          seed={53}
-          animate={!reducedMotion}
-          delay={NOTE_1_DELAY_S}
-          sweep={NOTE_SWEEP_S}
-          wrap
-        />
-      </div>
-
-      {(recorder.isRecording || troubleMessage) && (
-        <p
-          style={{
-            margin: 0,
-            marginTop: 24,
-            ...noteStyle,
-            ...leaveStyle,
-            opacity: leaving ? 0 : troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
-            transition: "opacity 0.4s ease",
-            animation: reducedMotion ? "none" : "puddleRecIn 0.8s ease backwards",
-          }}
-        >
-          {troubleMessage ?? `Recording...(${recorder.duration}s)`}
-        </p>
-      )}
-
-      </>}
+      <FlowPageGrid heading={
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28, ...leaveStyle }}>
+          <div style={{ ...TITLE, margin: 0, color: CHROME_GRAY, width: "100%", textAlign: "center" }}>
+            <ParticleText
+              text="What's been lingering on your mind?"
+              seed={41}
+              animate={!reducedMotion}
+              delay={QUESTION_DELAY_S}
+              sweep={QUESTION_SWEEP_S}
+              wrap
+            />
+          </div>
+          <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6,
+            width: "min(28em, 100%)", display: "flex", flexDirection: "column", gap: 14, textAlign: "center" }}>
+            <ParticleText
+              text="Start with a moment, feeling, or detail that stayed with you."
+              seed={53}
+              animate={!reducedMotion}
+              delay={NOTE_1_DELAY_S}
+              sweep={NOTE_SWEEP_S}
+              wrap
+            />
+            <ParticleText
+              text="Don’t worry about finding the perfect words, just speak naturally until you feel you’ve finished telling your story."
+              seed={59}
+              animate={!reducedMotion}
+              delay={NOTE_1_DELAY_S + NOTE_SWEEP_S}
+              sweep={NOTE_SWEEP_S}
+              wrap
+            />
+          </div>
+        </div>
+      }
       actionsStyle={{ pointerEvents: buttonIn && !leaving ? "auto" : "none", ...fadeStyle(buttonIn) }} actions={
-        !recorder.isRecording ? (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+        {(recorder.isRecording || troubleMessage) && (
+          <p role={troubleMessage ? "alert" : "timer"} aria-label={troubleMessage ? undefined : "recording duration"}
+            style={{ ...noteStyle, maxWidth: "28em", textAlign: "center", fontVariantNumeric: "tabular-nums",
+              opacity: troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
+              transition: "opacity 0.4s ease",
+              animation: reducedMotion ? "none" : "puddleRecIn 0.8s ease backwards" }}>
+            {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`}
+          </p>
+        )}
+        {!recorder.isRecording ? (
           <div
             style={{
               display: "flex",
@@ -273,7 +259,8 @@ export function PondRecordingOverlay({
               </svg>
             }
           />
-        )
+        )}
+        </div>
       } />
     </div>
   );

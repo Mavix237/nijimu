@@ -893,6 +893,7 @@ export function PuddleDiveGallery({
                     still: !focused && rimSettled,
                     frameloop: focused || !rimSettled || pondDeparture > 0 ? "always" : "demand",
                     haze: depth.haze,
+                    offset,
                   }) : <SceneViewer
                     measureUnscaled
                     form={slotItem.shape.form}

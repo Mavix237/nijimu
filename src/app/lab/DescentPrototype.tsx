@@ -1,7 +1,9 @@
+import { createAscentBloom } from "../lib/ascentBloom";
+import { ascentLightAt, ASCENT_LIGHT_GLSL } from "../lib/ascentLight";
 import { FlowPageGrid } from "../components/FlowPageGrid";
 import { vesselTint } from "../lib/vesselTint";
 import { holdSurfaceFrame } from "../lib/surfaceHandoff";
-import { pondCameraPose, POND_CAMERA_HEIGHT, POND_CAMERA_Z, POND_LOOK as SURFACE_LOOK, SINK_WASH, SURFACE_LIGHT as WHITEOUT } from "../lib/pondCamera";
+import { pondCameraPose, POND_CAMERA_HEIGHT, POND_CAMERA_Z, POND_LOOK as SURFACE_LOOK, SINK_WASH } from "../lib/pondCamera";
 import { DistanceConstellation } from "./DistanceConstellation";
 import { FIELD_FOCAL, memoryDepth, type FieldTextBounds } from "./vesselField";
 import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
@@ -60,8 +62,10 @@ import {
   sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms, type Room, type SheetUniformSet, type VesselTune,
 } from "./VesselPreview";
 import photoA from "../../assets/memory-photo.jpg";
-import photoB from "../../assets/memory-photo-02.png";
+import photoB from "../../assets/memory-photo-02.jpg";
 import { PortraitFit, viewHalfTan } from "../lib/portraitView";
+import { readPhoto } from "../lib/photoSize";
+import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
 
 /*
  * Lab: the whole shot from the photo to the named memory, in one canvas.
@@ -348,52 +352,20 @@ const VOLUME_GLSL = /* glsl */ `
 `;
 
 /* The surface seen from under it, and the folds of light on it. Shared by the
-   pond plane (the ceiling itself) and the full-frame water (the shafts). */
+   pond plane and the full-frame underwater atmosphere. */
 const CEILING_GLSL = /* glsl */ `
+  ${ASCENT_LIGHT_GLSL}
   uniform float uCeiling;
-  float uwBreath(float t, float phase, float rate) {
-    return 0.55 + 0.45 * sin(t * rate + phase) * (0.75 + 0.25 * sin(t * rate * 0.37 + phase * 1.7));
-  }
-  float uwFolds(vec2 p, float t) {
-    vec2 q = p + 0.38 * vec2(sin(p.y * 1.25), cos(p.x * 1.05));
-    float a = sin(q.x * 2.0 + sin(q.y * 0.9) * 0.8);
-    float b = sin(q.y * 1.8 + sin(q.x * 0.75) * 0.9);
-    float c = sin((q.x + q.y) * 1.35 + sin((q.x - q.y) * 1.1) * 0.7);
-    float la = 1.0 - abs(a), lb = 1.0 - abs(b), lc = 1.0 - abs(c);
-    float phase = sin(p.x * 0.6 + p.y * 0.45) * 2.2 + cos(p.x * 0.33 - p.y * 0.7) * 1.6;
-    float ba = uwBreath(t, phase, 0.55);
-    float bb = uwBreath(t, phase + 2.1, 0.43);
-    float bc = uwBreath(t, phase + 4.2, 0.67);
-    float lines = pow(la, 3.0) * 0.4 * ba + pow(lb, 3.0) * 0.4 * bb + pow(lc, 2.5) * 0.3 * bc;
-    float cells = pow(la * lb, 1.6) * 0.5 * (ba + bb) * 0.5 + pow(lb * lc, 1.6) * 0.35 * (bb + bc) * 0.5;
-    return (lines + cells) * 1.25;
-  }
   vec3 ceilingSurface(vec2 p, vec3 eye, vec2 flow, vec3 normal) {
     // Mirror only the viewpoint. The overhead water keeps the top surface's
     // actual ripple normals, drifting ribbons and fine grain, at the same
     // world coordinates and clock; no independent tiled caustic texture.
     vec3 mirroredEye = normalize(eye - vec3(p.x, 0.0, p.y));
-    return pondSurfaceColor(p, flow, normal, mirroredEye);
-  }
-  // Shafts: the surface light followed down into the water along the eye's ray,
-  // as far as reach, strongest just under the surface and thinning with depth.
-  vec3 ceilingRays(vec3 dir, float reach) {
-    vec3 lightDir = normalize(vec3(0.42, -1.0, 0.55));
-    float jitter = hash(gl_FragCoord.xy);
-    vec3 rays = vec3(0.0);
-    const int STEPS = 8;
-    for (int i = 0; i < STEPS; i++) {
-      float f = (float(i) + jitter) / float(STEPS);
-      float dist = 0.4 + f * reach;
-      vec3 p = cameraPosition + dir * dist;
-      vec2 entry = (p - lightDir * (p.y / lightDir.y)).xz;
-      float depth = max(0.0, -p.y);
-      float folds = pow(uwFolds(entry * 0.55, uTime), 1.5);
-      rays += folds * exp(-depth * 0.24) * exp(-dist * 0.06);
-    }
-    rays /= float(STEPS);
-    float band = smoothstep(-0.7, 0.05, dir.y);
-    return rays * vec3(.95, .97, .96) * 0.9 * band;
+    vec3 surface = pondSurfaceColor(p, flow, normal, mirroredEye);
+    // The existing surface reflection brightens as the eye rises toward it.
+    // The same sun transmits through this water onto the vessel below.
+    float facing = max(0.0, dot(normal, pondSunDirection()));
+    return surface + vec3(1.0, .985, .955) * uAscentIncident * (.025 + .10 * facing);
   }
   // A shared background for the plane and the full-frame water. As the eye
   // rises, a broad gradient picks up the surface's pale reflected sky. The
@@ -408,12 +380,9 @@ const CEILING_GLSL = /* glsl */ `
     vec2 s = dir.xz / max(.25, dir.y + .45);
     float shaft = pow(noise(vec2(s.x * 3.0 + uTime * .05, s.y * .6)), 3.0);
     color += shaft * smoothstep(-.2, .5, dir.y) * .08 * (1.0 - uWash * .7) * (1.0 - uCeiling);
-    // The former dir.y < .2 cutoff drew a visible horizontal colour band.
-    // Ease the shafts into the surface instead, identically in both passes.
-    if (uCeiling > .001) {
-      float shaftFade = 1.0 - smoothstep(-.06, .32, dir.y);
-      color += ceilingRays(dir, 9.0) * uCeiling * shaftFade;
-    }
+    // Light enters broadly from above. The luminous vessel supplies the later
+    // spill through the rendered bloom pass; there is no shaft in the volume.
+    color += vec3(1.0, .985, .955) * skyGradient * uAscentIncident * .025;
     return color;
   }
 `;
@@ -687,6 +656,9 @@ const touchFragment = /* glsl */ `
   uniform float uArrivalBlur;
   uniform vec2 uViewport;
   uniform vec2 uArrivalCenter;
+  uniform sampler2D tAscentBloom;
+  uniform float uAscentBloom;
+  uniform float uAscentExposure;
   varying vec2 vUv;
   float touchHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float touchNoise(vec2 p) {
@@ -746,15 +718,30 @@ const touchFragment = /* glsl */ `
       float mask = 1.0 - smoothstep(.38, .65, length((vUv - uArrivalCenter) * aspect));
       c = mix(c, soft / weight, mask);
     }
+    // Real HDR light from the glass diffuses into the surrounding water.
+    // Keep the source's lit contours visible before the whole eye adapts.
+    if (uAscentBloom > .001) {
+      vec3 glow = texture2D(tAscentBloom, vUv + shift).rgb;
+      vec3 spill = vec3(1.0) - exp(-glow * (1.2 + 2.2 * uAscentBloom));
+      vec3 white = vec3(.956863, .964706, .960784);
+      c.rgb = mix(min(c.rgb, white), white, spill);
+      // Only the final beat saturates the exposure, after the artifact has lit
+      // its surroundings, matching the naming shot's incoming surface light.
+      float exposure = 1.0 - exp(-9.0 * pow(uAscentExposure, 3.0));
+      c.rgb = mix(c.rgb, white, exposure);
+      c.a = mix(c.a, 1.0, exposure);
+    }
     gl_FragColor = c;
   }
 `;
 
-/** The crystal dissolves into the water (#e3eae9) as the color step leaves. */
+/** Light transmitted through the pond catches the glass and photo, then blooms. */
 function surfaceShader(fragment: string) {
-  return `uniform float uSurfaceLight;\n${fragment.replace("void main()", "void surfaceBase()")}
+  return `${ASCENT_LIGHT_GLSL}\nuniform float uSurfaceLight;\n${fragment.replace("void main()", "void surfaceBase()")}
     void main() {
       surfaceBase();
+      float light = ascentIllumination(vWorld, normalize(vNormalW)) * uAscentRadiance;
+      gl_FragColor.rgb += vec3(1.0, .985, .955) * light * .65;
       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.890196, 0.917647, 0.913725), uSurfaceLight);
       gl_FragColor.a *= 1.0 - uSurfaceLight;
     }`;
@@ -810,8 +797,7 @@ interface StageState {
     are one movement with the rise. */
 const ASCEND_S = 6.5;
 const ASCEND_TO_Y = -0.8;
-/** Over this share of the ascent the frame whitens and blurs — the scene's own cut to the naming step. */
-const WHITEOUT_SPAN: [number, number] = [0.846, 0.97];
+
 
 interface StageProps {
   pond?: PondProps;
@@ -826,7 +812,6 @@ interface StageProps {
   crossingRef: RefObject<HTMLDivElement | null>;
   glowRef: RefObject<HTMLDivElement | null>;
   /** The light that takes the frame as the eye nears the surface on the ascent. */
-  whiteoutRef: RefObject<HTMLDivElement | null>;
   /** The button laid over the hanging strip; kept on it as it sways. */
   pickRef: RefObject<HTMLButtonElement | null>;
   captionRef: RefObject<HTMLDivElement | null>;
@@ -854,7 +839,7 @@ function useKept<T>(make: () => T): T {
   return kept.current;
 }
 
-function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, whiteoutRef, pickRef, captionRef, hintRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onAscended, onRewound }: StageProps) {
+function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onAscended, onRewound }: StageProps) {
   const { camera, size, gl, scene } = useThree();
   const time = useRef(0);
   const jumped = useRef(false);
@@ -988,8 +973,16 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     uSheetDrop: { value: new THREE.Vector4(0, 0, 0, 0) },
     uSheetShape: { value: new THREE.Vector4(1, 1, 1, 0) },
   }));
+  const illumination = useKept(() => ({
+    uAscentIncident: { value: 0 },
+    uAscentRadiance: { value: 0 },
+    uAscentBloom: { value: 0 },
+    uAscentExposure: { value: 0 },
+    uMemoryPosition: { value: FORM_AT.clone() },
+  }));
   const under = useMemo(() => ({ value: 0 }), []);
   const water = useMemo(() => ({
+    ...illumination,
     uWash: { value: 0 },
     uDescentShade: { value: 0 },
     uCeiling: { value: 0 },
@@ -1040,7 +1033,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
      target the glass's walls then sample (FRONT_LAYER), displaced along their
      normals; the touch pass below takes the finished frame from there. */
   const refract = useMemo(() => {
-    const target = new THREE.WebGLRenderTarget(1, 1, { samples: 4, depthBuffer: true, stencilBuffer: false });
+    const target = new THREE.WebGLRenderTarget(1, 1, { samples: RT_SAMPLES, type: THREE.HalfFloatType, depthBuffer: true, stencilBuffer: false });
     const blit = new THREE.ShaderMaterial({
       vertexShader: backdropVertex, fragmentShader: blitFragment,
       uniforms: { tScene: { value: target.texture } },
@@ -1058,12 +1051,12 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     const u = createSheetUniformSet(filmUniforms.uEdgePrint.value);
     u.uReveal.value = 0;
     u.uDevelop.value = PRINT_EARLY ? 1.45 : 0;
-    return { ...u, uSurfaceLight: { value: 0 } };
+    return { ...u, ...illumination, uSurfaceLight: { value: 0 } };
   });
   const glassU = useMemo(() => {
     const u = createGlassUniformSet(refract.target.texture);
     u.uReveal.value = 0;
-    return { ...u, uSurfaceLight: { value: 0 } };
+    return { ...u, ...illumination, uSurfaceLight: { value: 0 } };
   }, [refract]);
   const vesselTune = useMemo(() => ({ ...VESSEL_TUNE }), []);
   const vesselKey = useMemo(() => keyFrom(VESSEL_TUNE.keyAzimuth, VESSEL_TUNE.keyElevation), []);
@@ -1097,13 +1090,17 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   /* The touch pass: the scene is drawn to a target, then to the screen through
      the water around the hands. The quad copies the frame as it is where
      nothing bends it. */
+  const ascentBloom = useMemo(createAscentBloom, []);
+  useEffect(() => () => ascentBloom.dispose(), [ascentBloom]);
   const touch = useMemo(() => {
-    const target = new THREE.WebGLRenderTarget(1, 1, { samples: 4, depthBuffer: true, stencilBuffer: false });
+    const target = new THREE.WebGLRenderTarget(1, 1, { samples: RT_SAMPLES, type: THREE.HalfFloatType, depthBuffer: true, stencilBuffer: false });
     const material = new THREE.ShaderMaterial({
       vertexShader: touchVertex,
       fragmentShader: touchFragment,
       uniforms: {
+        ...illumination,
         tScene: { value: target.texture },
+        tAscentBloom: { value: ascentBloom.texture },
         uHand: { value: [new THREE.Vector2(-10, -10), new THREE.Vector2(-10, -10)] },
         uWake: { value: [new THREE.Vector2(), new THREE.Vector2()] },
         uPress: { value: [0, 0] },
@@ -1130,10 +1127,11 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     const dpr = gl.getPixelRatio();
     const w = Math.max(1, Math.round(size.width * dpr)), h = Math.max(1, Math.round(size.height * dpr));
     touch.target.setSize(w, h);
+    ascentBloom.resize(w, h);
     refract.target.setSize(w, h);
     touch.material.uniforms.uAspect.value = size.width / size.height;
     touch.material.uniforms.uViewport.value.set(size.width, size.height);
-  }, [touch, refract, gl, size]);
+  }, [touch, refract, ascentBloom, gl, size]);
   /* Three binds a material's uniform holders once, when its program is first
      acquired, and never reads `material.uniforms` again. A Fast Refresh (any
      save while the lab is open) recomputes every memo above, so the materials
@@ -1182,6 +1180,9 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       view.layers.enableAll();
       renderer.setRenderTarget(touch.target);
       renderer.render(scene, view);
+    }
+    if (illumination.uAscentBloom.value > .001) {
+      ascentBloom.render(renderer, touch.target.texture, illumination.uAscentBloom.value);
     }
     renderer.setRenderTarget(null);
     renderer.render(touch.scene, touch.camera);
@@ -1401,15 +1402,21 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     // surface — the same framing, carried up into the light under the ceiling.
     if (s.ascend && ascendAt.current === null && wrapAt.current === null && riseAt.current === null) ascendAt.current = t;
     if (!s.ascend) { ascendAt.current = null; ascended.current = false; }
-    let whiteout = 0;
+    let ascentProgress = 0;
     if (ascendAt.current !== null) {
       const k = Math.min(1, (t - ascendAt.current) / ASCEND_S);
       const u = k * k * (3 - 2 * k);
       const lift = u * Math.max(0, ASCEND_TO_Y - cameraAt.y);
       cameraAt.y += lift; lookAt.y += lift; formAt.y += lift;
-      whiteout = smoothProgress(k, WHITEOUT_SPAN[0], WHITEOUT_SPAN[1]);
+      ascentProgress = k;
       if (k >= 1 && !ascended.current) { ascended.current = true; onAscended(); }
     }
+    gl.domElement.dataset.ascentProgress = ascentProgress.toFixed(2);
+    const light = ascentLightAt(ascentProgress);
+    illumination.uAscentIncident.value = light.incident;
+    illumination.uAscentRadiance.value = light.radiance;
+    illumination.uAscentBloom.value = light.bloom;
+    illumination.uAscentExposure.value = light.exposure;
     // the orbit: once the wrap has begun, the view can be turned about its look point to watch from another
     // side; it is let go over the rise's crossing to the pond view, so the named memory is seen from the pond
     let yawDeg = knobs.orbitYaw, pitchDeg = knobs.orbitPitch;
@@ -1524,14 +1531,6 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       crossingRef.current.style.opacity = String(crossing);
       crossingRef.current.style.backdropFilter = `blur(${(crossing * 14).toFixed(1)}px)`;
       crossingRef.current.style.setProperty("-webkit-backdrop-filter", `blur(${(crossing * 14).toFixed(1)}px)`);
-    }
-    if (whiteoutRef.current) {
-      // the light comes first — frame and glass brighten and lose their edges — and the white follows it
-      const glow = smoothProgress(whiteout, 0, 0.6);
-      const filter = `blur(${(glow * 22).toFixed(1)}px) brightness(${(1 + glow * 0.45).toFixed(3)})`;
-      whiteoutRef.current.style.opacity = String(whiteout * whiteout);
-      whiteoutRef.current.style.backdropFilter = filter;
-      whiteoutRef.current.style.setProperty("-webkit-backdrop-filter", filter);
     }
 
     /* The strip, before it is let go: it gathers itself out of nothing in
@@ -1733,6 +1732,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         body.rotation.y = ease(body.rotation.y, home, 2.2);
       } else body.rotation.y += dt * 0.08;
       body.updateMatrixWorld();
+      illumination.uMemoryPosition.value.copy(body.position);
     }
 
     /* The wrap: the film lets go of its image from the top down and the print
@@ -1909,18 +1909,9 @@ function map01(value: number, min: number, max: number): number {
 
 const loader = new THREE.TextureLoader();
 
-/** Object URLs belong to the old document and cannot restore an uploaded photo
- * after refresh. Keep its bytes in the existing history draft instead. */
-function readPhoto(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => typeof reader.result === "string"
-      ? resolve(reader.result) : reject(new Error("Could not read photo"));
-    reader.onerror = () => reject(reader.error);
-    reader.onabort = () => reject(new Error("Photo reading cancelled"));
-    reader.readAsDataURL(file);
-  });
-}
+/* Object URLs belong to the old document and cannot restore an uploaded photo
+ * after refresh, so its bytes are kept in the history draft (`readPhoto`,
+ * photoSize.ts: a data URL, scaled down from a camera's full size). */
 
 /* The print develops into the strip inside the glass rather than fading in
    flat: the sheet's `uDevelop` runs 0…1.45 and `stripFace` brings the image
@@ -2262,7 +2253,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   m2Ref.current = m2;
   const stage = useRef<StageState>({
     photoReady: !prelude,
-    view: null,
+    view: routeStep ? "underwater" : null,
     surfaceLight: 0,
     voicePulses: [],
     foregroundBounds: null,
@@ -2274,7 +2265,6 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const hostRef = useRef<HTMLDivElement>(null);
   const crossingRef = useRef<HTMLDivElement>(null);
   const glowRef = useRef<HTMLDivElement>(null);
-  const whiteoutRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const pickRef = useRef<HTMLButtonElement>(null);
@@ -2289,7 +2279,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const [frost, setFrost] = useState(stage.current.frost);
   const photoLoad = useRef(0);
   const loadedPhotoUrl = useRef<string | null>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (lab) return;
     const generation = ++photoLoad.current;
     stage.current.request = null;
@@ -2681,6 +2671,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     stage.current.holding = holding;
   };
   const choosing = phase === "choose" && !lifted && !loading;
+  // Opacity alone is insufficient: the photo entrance keyframes can override
+  // it on a history return. Keep all surface controls out of layout underwater.
+  const surfaceControlsVisible = !prelude && !routeStep &&
+    (phase === "choose" || phase === "falling" || phase === "floating");
 
   /* While the camera sees no hand, the pointer is the hand in the water. */
   const pointerAsHand = (e: ReactPointerEvent) => {
@@ -2704,9 +2698,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         reducedMotion={reducedMotion} covered={!invitation}
         renderScene={pond => ready ? (<Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
         onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
-        dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
+        dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
         <PortraitFit />
-        <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} whiteoutRef={whiteoutRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef}
+        <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef}
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
           onDescend={() => setPhase("descending")}
@@ -2721,8 +2715,6 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       <div ref={crossingRef} aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", opacity: 0,
         background: "rgba(232, 238, 236, 0.35)" }} />
       {/* The light that takes the frame as the eye nears the surface: frame and glass whiten and blur. */}
-      <div ref={whiteoutRef} aria-hidden style={{ position: "absolute", inset: 0, zIndex: 13, pointerEvents: "none", opacity: 0,
-        background: WHITEOUT }} />
 
       {!invitation && <PageHeader layout="absolute" carousel={lab ? false : undefined} />}
       <HandTrackingDialog open={cameraDialogOpen} busy={cameraChoice === "starting"}
@@ -2755,9 +2747,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           },
         })} />
       )}
-      {(phase === "choose" || phase === "floating") && (lab || assessmentPending || assessmentError) && <div style={{ ...META, position: "absolute", top: lab ? 52 : 72, left: 28, zIndex: 20, maxWidth: 260 }}>
+      {(phase === "choose" || phase === "floating") && (lab || (assessmentPending && phase !== "choose") || assessmentError) && <div style={{ ...META, position: "absolute", top: lab ? 52 : 72, left: 28, zIndex: 20, maxWidth: 260 }}>
         {lab && <Link to="/lab/meaning" state={{ transcript }} style={{ color: "inherit" }}>{transcript ? "read this memory again" : "begin with a recorded memory"}</Link>}
-        {assessmentPending && <p role="status">finding the form of this memory… you can descend when it is ready.</p>}
+        {assessmentPending && phase !== "choose" && <p role="status">finding the form of this memory… you can descend when it is ready.</p>}
         {assessmentError && <p>{assessmentError}</p>}
       </div>}
 
@@ -2771,12 +2763,14 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           borderRadius: 10, transform: "scaleX(-1)", zIndex: 20, pointerEvents: "none",
           opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease" }} />
 
+      <div data-descent-photo-controls hidden={!surfaceControlsVisible}
+        style={{ display: surfaceControlsVisible ? "contents" : "none" }}>
       <FlowPageGrid heading={
         <p style={{ margin: 0, fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
           click the film frame to upload a photo for this memory
         </p>
       } headingStyle={{ opacity: choosing ? 1 : 0, transition: "opacity 700ms ease",
-        animation: from ? "none" : "descentFadeIn 1400ms ease 900ms backwards" }} />
+        animation: choosing && !from ? "descentFadeIn 1400ms ease 900ms backwards" : "none" }} />
 
       {/* The strip itself is the picker: an unseen button kept over it by the stage. */}
       <button ref={pickRef} type="button" aria-label="choose a photo for the film"
@@ -2793,7 +2787,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {/* The bundled stills, small and to one side, so the lab can run without a photo of one's own. */}
       <div role="listbox" aria-label="photo library" style={{ position: "absolute", left: 0, right: 0, bottom: 34,
         display: "flex", justifyContent: "center", alignItems: "center", gap: 14,
-        opacity: choosing ? 1 : 0, transition: "opacity 500ms ease 150ms", animation: FROM ? "none" : "descentFadeIn 1400ms ease 1500ms backwards",
+        opacity: choosing ? 1 : 0, transition: "opacity 500ms ease 150ms", animation: choosing && !from ? "descentFadeIn 1400ms ease 1500ms backwards" : "none",
         pointerEvents: choosing ? "auto" : "none", zIndex: 10 }}>
         <span style={{ fontFamily: SANS, fontSize: NOTE_SIZE, color: CHROME_GRAY, opacity: 0.6, marginRight: 6 }}>or one of these</span>
         {PHOTOS.map((url) => (
@@ -2831,6 +2825,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         transition: "opacity 720ms ease, filter 720ms ease" }}>
         {assessmentPending ? "finding your memory’s form…" : "press to pass through"}
       </p>
+      </div>
 
       {/* ── the four steps, under the water ── */}
       {step && step !== "color" && (
@@ -2880,6 +2875,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       )}
       {step && <>
         <FlowPageGrid headingRef={handlingHeadingRef} style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
+          headingStyle={{ marginTop: -28 }}
           heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>

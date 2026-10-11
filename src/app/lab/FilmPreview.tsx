@@ -18,7 +18,7 @@ import {
   stockFromHex, stockHex, type StockPalette,
 } from "./filmStrip";
 import photoA from "../../assets/memory-photo.jpg";
-import photoB from "../../assets/memory-photo-02.png";
+import photoB from "../../assets/memory-photo-02.jpg";
 
 /*
  * Lab: the film look, flat. One strip facing the viewer, nothing moving,

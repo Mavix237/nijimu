@@ -1,3 +1,4 @@
+import { MAX_DPR } from "../deviceTier";
 // 2D ripple texture — "rings of light" homescreen variant (Z key).
 //
 // Same height + dye ping-pong sim as the puddle variant, but rendered as
@@ -626,7 +627,7 @@ export function createRipple2dSimulation(
 
     resize() {
       if (disposed) return;
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
       const w = Math.max(Math.round(canvas.clientWidth * dpr), 1);
       const h = Math.max(Math.round(canvas.clientHeight * dpr), 1);
       if (canvas.width !== w || canvas.height !== h) {

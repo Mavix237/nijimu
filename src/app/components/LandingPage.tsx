@@ -1,19 +1,16 @@
 import { FLOW_PAGE } from "../lib/theme";
 import { resumeColorState } from "../lib/namingDraft";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { BlobScene } from "./BlobScene";
-import { MemoryCarouselPage } from "./MemoryCarouselPage";
-import { DescentFlow } from "../lab/DescentPrototype";
-import { MemoryPondPage } from "./MemoryPondPage";
+// the 3D scenes are their own chunks: the landing paints without three.js
+import { DescentFlow, LiveVesselGallery, MemoryCarouselPage, MemoryPondPage, preloadLandingScenes, preloadLandingScenesWhenIdle } from "./landingScenes";
 import { PageHeader } from "./PageHeader";
 import { BackButton } from "./BackButton";
-import { LabDock } from "./LabDock";
 import { useLandingReturn } from "../lib/landingReturn";
 import { INK_ENTRY, pickLandingGalleryIndex, type InkArrival } from "../lib/landingTransition";
 import { buildArchive } from "../lib/archive";
 import { useGalleryPush } from "../lib/labPush";
-import { LiveVesselGallery } from "../lab/VesselGalleryPreview";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, DESCENT_STEP_PATHS, isDescentPath, TRANSCRIPT_PATH } from "../lib/routes";
 import { POND_ENTRY, pondTransition, pondSurfaceMask } from "../lib/pondTransition";
 import type { NameFlowState, NamingSession } from "./NamingRim";
@@ -183,7 +180,10 @@ export function LandingPage() {
     window.addEventListener("keydown", cancel);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("keydown", cancel); };
   }, [pondClock, pondLeaving, reducedMotion, navigate, pondReturnId, pondReplace]);
+  // fetched while the landing is idle, so Enter rarely has to wait for them
+  useEffect(() => preloadLandingScenesWhenIdle(), []);
   const enter = () => {
+    preloadLandingScenes();
     if (startedAt !== null) return;
     const archive = buildArchive();
     const slot = pickLandingGalleryIndex(archive.length);
@@ -199,6 +199,7 @@ export function LandingPage() {
       {showGallery && (
         <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>
+          <Suspense fallback={null}>
           <LiveVesselGallery active={inGallery && pondElapsed === null} panels={publishedGallery?.panels} pushedAt={publishedGallery?.at ?? 0} onFocus={setVesselFocus}>
             <MemoryCarouselPage
               inkArrival={arrival ?? undefined}
@@ -209,6 +210,7 @@ export function LandingPage() {
               hideHeader={pondElapsed !== null || inPond}
             />
           </LiveVesselGallery>
+          </Suspense>
         </div>
       )}
       {pondOnStage && (
@@ -219,8 +221,10 @@ export function LandingPage() {
             maskImage: reducedMotion ? undefined : pondSurfaceMask(pondArrival),
             WebkitMaskImage: reducedMotion ? undefined : pondSurfaceMask(pondArrival),
             opacity: pondArrival }}>
+          <Suspense fallback={null}>
           {inNaming ? <MemoryPondPage active={inPond && !pondLeaving} arrival={pondArrival} reducedMotion={reducedMotion} naming={naming} onReady={markPondReady} onLeave={closePond} onNamingSaved={namingSaved} namingBackRef={namingBackRef} />
             : <DescentFlow active={inPond && !pondLeaving} arrival={pondArrival} onReady={markPondReady} onLeave={closePond} />}
+          </Suspense>
         </div>
       )}
       {pondOnStage && !inCreate && (
@@ -238,7 +242,6 @@ export function LandingPage() {
           }} />
         </div>
       )}
-      {!inGallery && !inNaming && !inPond && !arrival && phase === "idle" && <LabDock />}
       {!inGallery && !inNaming && !inPond && (
         <div style={{ position: "absolute", inset: 0, zIndex: 40 }}>
           <BlobScene classicChrome ctaLabel="Enter" showPlus={false}

@@ -459,10 +459,13 @@ export interface ArtifactMesh {
  * column is shared when the cross-section closes; an open one (torn) gets its
  * own seam column so the tear stays a tear.
  */
-export function buildArtifactMesh(form: ArtifactForm, latitudeSegments?: 128): ArtifactMesh {
+export function buildArtifactMesh(form: ArtifactForm, latitudeSegments?: 128, detail = 1): ArtifactMesh {
   const { top, side } = form;
-  const lon = segmentsFor(top, 48, 12, 128, 224);
-  const lat = latitudeSegments ?? segmentsFor(side, 32, 8, 64, 128);
+  // `detail` < 1 thins the grid for small, smooth-shaded uses (a phone's
+  // gallery seat); an explicit latitude count is kept as given
+  const thin = (n: number, floor: number) => detail >= 1 ? n : Math.max(floor, Math.round((n * detail) / 8) * 8);
+  const lon = thin(segmentsFor(top, 48, 12, 128, 224), 64);
+  const lat = latitudeSegments ?? thin(segmentsFor(side, 32, 8, 64, 128), 32);
   const closed = closesAround(top);
   const columns = closed ? lon : lon + 1;
   const rings = lat - 1;
@@ -644,15 +647,15 @@ export function computeMeshNormals(
 const MESH_CACHE_LIMIT = 32;
 const meshCache = new Map<string, ArtifactMesh>();
 
-export function getArtifactMesh(form: ArtifactForm, latitudeSegments?: 128): ArtifactMesh {
-  const key = formKey(form) + (latitudeSegments ? `|lat:${latitudeSegments}` : "");
+export function getArtifactMesh(form: ArtifactForm, latitudeSegments?: 128, detail = 1): ArtifactMesh {
+  const key = formKey(form) + (latitudeSegments ? `|lat:${latitudeSegments}` : "") + (detail < 1 ? `|detail:${detail}` : "");
   const hit = meshCache.get(key);
   if (hit) {
     meshCache.delete(key);
     meshCache.set(key, hit);
     return hit;
   }
-  const built = buildArtifactMesh(form, latitudeSegments);
+  const built = buildArtifactMesh(form, latitudeSegments, detail);
   meshCache.set(key, built);
   if (meshCache.size > MESH_CACHE_LIMIT) {
     const oldest = meshCache.keys().next().value;

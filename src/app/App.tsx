@@ -1,7 +1,6 @@
 import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useNavigate } from "react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { CHROME_GRAY } from "./lib/colors";
-import { HomePage } from "./components/HomePage";
 import { LandingPage } from "./components/LandingPage";
 import {
   CAROUSEL_PATH,
@@ -20,21 +19,8 @@ import {
   useLandingReturn,
   type LandingReturnPhase,
 } from "./lib/landingReturn";
-import { MemorySavedPage } from "./components/MemorySavedPage";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
 import { ProfilePanel } from "./components/ProfilePanel";
-import { MemoryScrollPage } from "./components/MemoryScrollPage";
-import { RevisitMemoryPage } from "./components/RevisitMemoryPage";
-import { EditWeightPage } from "./components/EditWeightPage";
-import { EditColorPage } from "./components/EditColorPage";
-import { EditTexturePage } from "./components/EditTexturePage";
-import { StyleGuidePage } from "./components/StyleGuidePage";
-import { MemoryMeaningLab } from "./lab/MemoryMeaningLab";
-import { DescentPrototype } from "./lab/DescentPrototype";
-import { FilmPreview } from "./lab/FilmPreview";
-import { VesselPreview } from "./lab/VesselPreview";
-import { VesselGalleryPreview } from "./lab/VesselGalleryPreview";
-import { ShapeLibraryLab } from "./lab/ShapeLibraryLab";
 
 const SOUNDTRACK_URL =
   "https://cdn.jsdelivr.net/gh/Noyok1vas/figbuildAssets/prodarmaan%20-%20somber%20springtime.mp3";
@@ -114,12 +100,14 @@ function ArchivedShapeRedirect() {
 }
 
 const router = createBrowserRouter([
-  { path: "/style", Component: StyleGuidePage },
-  { path: "/lab/descent", Component: DescentPrototype },
-  { path: "/lab/film", Component: FilmPreview },
-  { path: "/lab/vessel", Component: VesselPreview },
+  { path: "/style", HydrateFallback: () => null, lazy: () => import("./components/StyleGuidePage").then((m) => ({ Component: m.StyleGuidePage })) },
+  { path: "/lab/descent", HydrateFallback: () => null, lazy: () => import("./lab/DescentPrototype").then((m) => ({ Component: m.DescentPrototype })) },
+  { path: "/lab/film", HydrateFallback: () => null, lazy: () => import("./lab/FilmPreview").then((m) => ({ Component: m.FilmPreview })) },
+  { path: "/lab/vessel", HydrateFallback: () => null, lazy: () => import("./lab/VesselPreview").then((m) => ({ Component: m.VesselPreview })) },
   {
     Component: RootLayout,
+    // a direct visit to a lazily loaded page shows the paper while its code arrives
+    HydrateFallback: () => null,
     children: [
       {
         /* Landing, gallery, pond, recording, transcript, descent and
@@ -139,17 +127,20 @@ const router = createBrowserRouter([
           { path: NAMING_PATH, element: null },
         ],
       },
-      { path: MEMORY_FIELD_PATH, Component: HomePage },
-      { path: "/lab/gallery", Component: VesselGalleryPreview },
-      { path: "/lab/meaning", Component: MemoryMeaningLab },
-      { path: "/lab/shapes", Component: ShapeLibraryLab },
+      /* Everything off the landing layout loads on its own: the landing must
+         not wait for three.js, the labs or the revisit editors. A navigation
+         keeps the current page until the next one's code has arrived. */
+      { path: MEMORY_FIELD_PATH, lazy: () => import("./components/HomePage").then((m) => ({ Component: m.HomePage })) },
+      { path: "/lab/gallery", lazy: () => import("./lab/VesselGalleryPreview").then((m) => ({ Component: m.VesselGalleryPreview })) },
+      { path: "/lab/meaning", lazy: () => import("./lab/MemoryMeaningLab").then((m) => ({ Component: m.MemoryMeaningLab })) },
+      { path: "/lab/shapes", lazy: () => import("./lab/ShapeLibraryLab").then((m) => ({ Component: m.ShapeLibraryLab })) },
       { path: "/record/shape/:step", Component: ArchivedShapeRedirect },
-      { path: "/record/saved", Component: MemorySavedPage },
-      { path: "/memory/scroll", Component: MemoryScrollPage },
-      { path: "/memory/revisit", Component: RevisitMemoryPage },
-      { path: "/memory/edit/weight", Component: EditWeightPage },
-      { path: "/memory/edit/color", Component: EditColorPage },
-      { path: "/memory/edit/texture", Component: EditTexturePage },
+      { path: "/record/saved", lazy: () => import("./components/MemorySavedPage").then((m) => ({ Component: m.MemorySavedPage })) },
+      { path: "/memory/scroll", lazy: () => import("./components/MemoryScrollPage").then((m) => ({ Component: m.MemoryScrollPage })) },
+      { path: "/memory/revisit", lazy: () => import("./components/RevisitMemoryPage").then((m) => ({ Component: m.RevisitMemoryPage })) },
+      { path: "/memory/edit/weight", lazy: () => import("./components/EditWeightPage").then((m) => ({ Component: m.EditWeightPage })) },
+      { path: "/memory/edit/color", lazy: () => import("./components/EditColorPage").then((m) => ({ Component: m.EditColorPage })) },
+      { path: "/memory/edit/texture", lazy: () => import("./components/EditTexturePage").then((m) => ({ Component: m.EditTexturePage })) },
     ],
   },
 ], { basename: routerBasename });

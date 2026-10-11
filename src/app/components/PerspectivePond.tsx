@@ -1,3 +1,4 @@
+import { POND_SUN_GLSL } from "../lib/pondLight";
 import { Component, useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
@@ -204,6 +205,7 @@ export const POND_WAVES_GLSL = /* glsl */ `
 /** One surface texture for the pond and its underside: the same waves, wind,
  * fine grain, reflected ribbons and sunlight, evaluated from either eye. */
 export const POND_SURFACE_GLSL = /* glsl */ `
+  ${POND_SUN_GLSL}
   vec3 pondSurfaceNormal(vec2 p, out vec2 flow) {
     vec3 ripple = rippleField(p);
     flow = flowAt(ripple, p);
@@ -238,7 +240,7 @@ export const POND_SURFACE_GLSL = /* glsl */ `
     // and moves and breaks only as a ripple reshapes the surface beneath it.
     // The path is brightest at its centre, where the sun itself sits, and the
     // glow around it is the same reflection seen through the haze.
-    vec3 sunDir = normalize(vec3(0.0, .24, -1.0));
+    vec3 sunDir = pondSunDirection();
     float toSun = max(0.0, dot(reflection, sunDir));
     float light = pow(toSun, 220.0);
     float glow = pow(toSun, 12.0);
@@ -300,7 +302,7 @@ const fragmentShader = /* glsl */ `
 `;
 
 const RING_RADIUS = .6055;
-const HALO_REACH = .3;
+const HALO_REACH = .38;
 const onPond = (p: THREE.Vector3) => p.z > -100 && p.z < 18;
 const RING_FADE_IN = .72;
 const RING_FADE_FULL = .94;
@@ -365,14 +367,14 @@ const ringFragment = /* glsl */ `
     // A white luminous core with two soft falloffs, all on the same floating
     // surface. The generous geometry leaves room for the light to dissipate.
     float core = exp(-pow(d / (.012 + aa), 2.0));
-    float glow = exp(-pow(d / .068, 2.0));
-    float aura = exp(-pow(d / .16, 2.0));
-    float edge = 1.0 - smoothstep(.23, ${HALO_REACH}, d);
+    float glow = exp(-pow(d / .09, 2.0));
+    float aura = exp(-pow(d / .2, 2.0));
+    float edge = 1.0 - smoothstep(.28, ${HALO_REACH}, d);
     float sweep = mod(1.57079632679 - atan(vLocal.y, vLocal.x), 6.28318530718) / 6.28318530718;
     float holding = step(.001, uProgress);
     float arc = mix(1.0, mix(.28, 1.0, step(sweep, uProgress)), holding);
     float breath = .94 + .06 * sin(uTime * 1.4);
-    float alpha = (core * .86 + glow * .42 + aura * .18) * edge * arc * breath;
+    float alpha = (core * .92 + glow * .88 + aura * .42) * edge * arc * breath;
     gl_FragColor = vec4(vec3(1.0), min(alpha, .98) * uOpacity);
   }
 `;

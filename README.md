@@ -28,6 +28,18 @@ Run `npm run dev` to start the development server.
 - `/memory/edit/weight`: re-sculpt an existing memory's weight
 - `/memory/edit/color`: re-tint an existing memory
 - `/memory/edit/texture`: re-texture an existing memory
+
+## Editors
+
+These labs open on their own. They are not linked from the homepage.
+
+- `/lab/meaning` — sorting algo: how a memory becomes a form
+- `/lab/descent` — descent: the shot, with its knobs
+- `/lab/film` — film: the photo's look
+- `/lab/vessel` — vessel: the glass, with its sliders
+- `/lab/gallery` — gallery: the memories as vessels
+- `/lab/shapes` — shapes: choose the gallery's sixteen
+
 ---
 
 `/style` — design system of buttons and labels (unlinked from the rest of the app)
@@ -80,10 +92,20 @@ Stacks live in `src/app/lib/theme.ts`. Faces are loaded in `src/styles/fonts.css
 | Font | How it's loaded | Used as |
 |---|---|---|
 | **Rowan** | Self-hosted woff2 (Light–Bold, roman + italic) | Latin serif — English titles, body (`SERIF`) |
-| **GenRyuMin2 TW** | Self-hosted woff2 subset (Regular; SIL OFL) | East Asian serif — the 滲む wordmark (`SERIF_CJK`); CJK fallback on `SERIF` |
+| **GenRyuMin2 TW** | Self-hosted woff2: an ~8 KB UI subset, the full font on demand (Regular; SIL OFL) | East Asian serif — the 滲む wordmark (`SERIF_CJK`); CJK fallback on `SERIF` |
 | **Exposure Trial** | Self-hosted `ExposureTrial-20.otf` (optical grade −20) | Recording / profile display (`SERIF_EXPOSURE`) |
 | **Exposure Trial Plus** | Self-hosted `ExposureTrial+10.otf` (optical grade +10) | Transcript / polish display (`SERIF_DISPLAY`) |
 | **Switzer** | Self-hosted woff2 (Thin–Black, roman + italic) | UI sans — labels, light / outline buttons, editor chrome (`SANS`) |
+
+GenRyuMin2 TW has two faces: `GenRyuMin2TW-Regular-ui.woff2` (~8 KB, only the
+CJK characters the source uses, plus common punctuation) and the full 2.2 MB
+font, which the browser downloads only if other CJK text is shown. After adding
+CJK characters to the source, rebuild the subset with fontTools and update the
+`-ui` face's `unicode-range` in `fonts.css` to match:
+
+```bash
+pyftsubset src/assets/fonts/GenRyuMin2TW-Regular.woff2 --text="滲む形律间染…" --unicodes="U+3000-3002,U+300C-300F,U+30FB-30FC,U+FF01,U+FF08-FF09,U+FF0B-FF0C,U+FF1A-FF1B,U+FF1F" --flavor=woff2 --layout-features='*' --output-file=src/assets/fonts/GenRyuMin2TW-Regular-ui.woff2
+```
 
 Named but not loaded: **SF Pro** (`SANS_UI` — Apple system font on dark buttons, then `system-ui`).
 

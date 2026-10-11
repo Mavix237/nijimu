@@ -137,7 +137,8 @@ export function GlassPane({
             opacity: 0.3,
             backgroundImage: GRAIN_URL,
             backgroundRepeat: "repeat",
-            backgroundSize: "512px 512px",
+            // half the tile, half the grain: the noise is vector, so it stays crisp
+            backgroundSize: "256px 256px",
             mixBlendMode: "soft-light",
           }}
         />

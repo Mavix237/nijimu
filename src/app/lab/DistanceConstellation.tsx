@@ -6,8 +6,9 @@ import { galleryStateFor } from "./VesselGalleryPreview";
 import { FIELD_FOCAL, distancePreviewSeat, memoryFieldPlace, type FieldTextBounds } from "./vesselField";
 import { loadSeatPhoto } from "./VesselArtifact";
 import { viewHalfTan } from "../lib/portraitView";
+import { useVesselParts, type VesselParts } from "./vesselBuilds";
 import {
-  BLANK_PHOTO, FRONT_LAYER, buildGlass, buildDrapedSheet, buildSheet,
+  BLANK_PHOTO, FRONT_LAYER,
   createGlassUniformSet, createSheetUniformSet, glassVertex, glassRefractFragment,
   sheetVertex, sheetFragment, keyFrom, seedDirections, writeGlassUniforms, writeSheetUniforms,
   type VesselState,
@@ -32,18 +33,24 @@ export function DistanceConstellation(props: Context) {
   return <>{memories.map(memory => <Neighbor key={memory.id} {...props} {...memory} />)}</>;
 }
 
-function Neighbor({ index, state, place, stage, anchor, depth: chosenDepth, shift, sceneTexture, edgePrint }: Context & {
-  index: number; state: VesselState; place: ReturnType<typeof memoryFieldPlace>;
-}) {
+type NeighborProps = Context & { index: number; state: VesselState; place: ReturnType<typeof memoryFieldPlace> };
+
+/** Its glass and cloth come from the shared build queue (vesselBuilds.ts) —
+ * usually already built by the gallery — and it joins the shot once they are there. */
+function Neighbor(props: NeighborProps) {
+  const { state } = props;
+  // after every gallery seat: the constellation is only seen at the distance step
+  const parts = useVesselParts({
+    form: state.form, morph: state.tune.morph, tune: state.tune, sheetMode: state.sheetMode, seed: state.seed, sheetSize: state.tune.sheetSize,
+  }, 20 + props.index);
+  return parts ? <NeighborBody {...props} parts={parts} /> : null;
+}
+
+function NeighborBody({ index, state, place, stage, anchor, depth: chosenDepth, shift, sceneTexture, edgePrint, parts }: NeighborProps & { parts: VesselParts }) {
   const root = useRef<THREE.Group>(null);
   const { camera, size, gl } = useThree();
   const built = useMemo(() => {
-    const { tune: t, form, seed } = state;
-    const glass = buildGlass(form, t.morph);
-    const sheet = state.sheetMode === "draped" ? buildDrapedSheet(glass, t.inset, {
-      sheetSize: t.sheetSize, anchorAngle: t.anchorAngle, anchorHeight: t.anchorHeight, tilt: t.tilt,
-      contact: t.contact, sag: t.sag, peel: t.peel, curl: t.curl, twist: t.twist, gap: t.gap, soft: t.soft,
-    }) : buildSheet(glass, t.inset, t.arc, t.band, t.lift, t.foldScale, seed);
+    const { glass, sheet } = parts;
     glass.geometry.computeBoundingBox();
     const box = glass.geometry.boundingBox!;
     const center = box.getCenter(new THREE.Vector3());
@@ -55,8 +62,7 @@ function Neighbor({ index, state, place, stage, anchor, depth: chosenDepth, shif
     const reach = Math.max(.5, (box.max.y - box.min.y) / 2, radius * 1.45);
     glass.geometry.computeBoundingSphere();
     return { glass, sheet, center, height: 2 * reach * 1.12, radius: glass.geometry.boundingSphere!.radius };
-  }, [state]);
-  useEffect(() => () => { built.glass.geometry.dispose(); built.sheet.geometry.dispose(); }, [built]);
+  }, [parts]);
   const uniforms = useMemo(() => {
     const g = createGlassUniformSet(sceneTexture), s = createSheetUniformSet(edgePrint);
     const key = keyFrom(state.tune.keyAzimuth, state.tune.keyElevation);

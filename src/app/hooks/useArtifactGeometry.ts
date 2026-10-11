@@ -18,8 +18,8 @@ export interface ArtifactGeometry {
  * form and cached; each viewer then animates its own positions and normals,
  * so they are copied, while the index is only ever read and is shared.
  */
-export function createArtifactGeometry(form: ArtifactForm, latitudeSegments?: 128): ArtifactGeometry {
-  const rest = getArtifactMesh(form, latitudeSegments);
+export function createArtifactGeometry(form: ArtifactForm, latitudeSegments?: 128, detail = 1): ArtifactGeometry {
+  const rest = getArtifactMesh(form, latitudeSegments, detail);
   const geometry = new THREE.BufferGeometry();
   geometry.setIndex(new THREE.BufferAttribute(rest.index, 1));
   geometry.setAttribute("position", new THREE.BufferAttribute(rest.positions.slice(), 3));

@@ -1,9 +1,8 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import svgPaths from "../../imports/svg-t19vgojqiy";
 import NewMomoryIdle from "../../imports/NewMomoryIdle";
 import { LIFE_EVENTS, COLORS as MEMORY_COLORS, MemoryEvent } from "../data/memoryData";
 import { loadMemories, toMemoryEvent, SavedMemory } from "../lib/memoryStore";
-import { SceneViewer } from "./SceneViewer";
 import { curatedShape } from "../lib/galleryLibrary";
 import { ArtifactForm, formForMemory } from "../lib/superformula";
 import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
@@ -14,8 +13,16 @@ import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival }
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
 import { carouselSeat, carouselContainsOffset, inkUnfoldSeat } from "../lib/carouselLayout";
 
+/* Only the field's own gallery mode draws a 3D form; the landing never does,
+   so three.js is not loaded with it. */
+const SceneViewer = lazy(() => import("./SceneViewer").then((m) => ({ default: m.SceneViewer })));
+
 /** Caption + annotation dot — shared so the marks match the words. */
 const BLOB_CAPTION_COLOR = "#D6DADB";
+/** Event-label ink. */
+const BLOB_LABEL_OPACITY = 0.9;
+/** Filled dots invert harder than the antialiased label, so they use less ink. */
+const BLOB_DOT_OPACITY = 0.55;
 /** Landing description. */
 const HEADER_DESC_SIZE = 12;
 /** Blob year + title — restored clamp, a step above the header description. */
@@ -588,17 +595,14 @@ export function BlobScene({
     const ctx = c.getContext("2d");
     if (!ctx) return;
     let painted = false;
-    const paint = () => {
-      // Slightly larger grains, still sized relative to the display rather
-      // than stretching a fixed texture across different viewport sizes.
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const grainSize = 1.5;
-      const width = classicChrome ? Math.max(1, Math.round(c.clientWidth * dpr / grainSize)) : 512;
-      const height = classicChrome ? Math.max(1, Math.round(c.clientHeight * dpr / grainSize)) : 512;
-      if (painted && c.width === width && c.height === height) return;
-      c.width = width;
-      c.height = height;
-      const img = ctx.createImageData(width, height);
+    // One tile of noise, repeated: white noise shows no seam, and the screen
+    // is filled without a random value per pixel (2.7 million on a phone).
+    const TILE = 512;
+    const tile = document.createElement("canvas");
+    tile.width = tile.height = TILE;
+    const tileCtx = tile.getContext("2d");
+    if (tileCtx) {
+      const img = tileCtx.createImageData(TILE, TILE);
       for (let i = 0; i < img.data.length; i += 4) {
         const v = Math.random() * 255;
         img.data[i] = v;
@@ -606,7 +610,22 @@ export function BlobScene({
         img.data[i + 2] = v;
         img.data[i + 3] = 42;
       }
-      ctx.putImageData(img, 0, 0);
+      tileCtx.putImageData(img, 0, 0);
+    }
+    const paint = () => {
+      // A grain per device pixel (to 3×): fine paper, never stretched, so it
+      // stays as fine on a phone's dense screen as on a laptop's.
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      const width = classicChrome ? Math.max(1, Math.round(c.clientWidth * dpr)) : TILE;
+      const height = classicChrome ? Math.max(1, Math.round(c.clientHeight * dpr)) : TILE;
+      if (painted && c.width === width && c.height === height) return;
+      c.width = width;
+      c.height = height;
+      const pattern = ctx.createPattern(tile, "repeat");
+      if (!pattern) return;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, width, height);
       painted = true;
     };
     paint();
@@ -1249,7 +1268,7 @@ export function BlobScene({
             backgroundColor: dotColor,
             transform: "translate(-50%, -50%)",
             zIndex: 22 + stack,
-            opacity: dimmed ? 0.25 : 1,
+            opacity: classicChrome ? visible * BLOB_DOT_OPACITY : (dimmed ? 0.25 : 1),
             filter: softenFilter,
           }}
         />
@@ -1267,7 +1286,7 @@ export function BlobScene({
               boxSizing: "content-box",
               transform: "translate(-50%, -50%)",
               zIndex: 21 + stack,
-              opacity: dimmed ? 0.15 : 1,
+              opacity: (dimmed ? 0.15 : 1) * (classicChrome ? BLOB_DOT_OPACITY : 1),
               filter: softenFilter,
               animation: "ringPulse 2.5s ease-in-out infinite",
               ["--ring-from" as string]: `${BLOB_DOT}px`,
@@ -1311,7 +1330,7 @@ export function BlobScene({
                 fontStyle: "italic",
                 fontSize: BLOB_CAPTION_SIZE,
                 color: "inherit",
-                opacity: 0.9,
+                opacity: BLOB_LABEL_OPACITY,
                 lineHeight: blob.event.includes("\n") ? 1.5 : "normal",
                 whiteSpace: blob.event.includes("\n") ? "pre-line" : "nowrap",
                 letterSpacing: SERIF_ITALIC_TRACKING,
@@ -1547,6 +1566,7 @@ export function BlobScene({
               pointerEvents: "auto",
             }}
           >
+            <Suspense fallback={null}>
             <SceneViewer
               form={blobs[activeIdx].shape.form}
               fluidity={blobs[activeIdx].shape.fluidity}
@@ -1565,6 +1585,7 @@ export function BlobScene({
                 height: "100%",
               }}
             />
+            </Suspense>
           </div>
         )}
       </div>

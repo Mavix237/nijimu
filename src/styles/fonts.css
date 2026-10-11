@@ -1,13 +1,32 @@
 /* GenRyuMin2 TW (源流明體月) — East Asian serif, SIL OFL 1.1.
-   Self-hosted Regular subset (TW common ideographs + kana + punct) for the
-   滲む wordmark and CJK fallback on the serif stacks. Full family:
-   https://github.com/ButTaiwan/genryu-font */
+   Self-hosted Regular (TW common ideographs + kana + punct) for the 滲む
+   wordmark and CJK fallback on the serif stacks. Full family:
+   https://github.com/ButTaiwan/genryu-font
+
+   Two faces of the same family. The browser checks the last-declared face
+   first for a character, and only downloads a face when a character in its
+   unicode-range is shown. So the app's own glyphs (the wordmark, 形律间染,
+   the gallery's titles, punctuation) come from the ~8 KB "-ui" subset, and
+   the 2.2 MB full font loads only if other CJK text appears — a transcript
+   spoken in Chinese or Japanese. After adding CJK characters to the source,
+   rebuild the subset (README, "Fonts"). */
 @font-face {
   font-family: "GenRyuMin2 TW";
   src: url("../assets/fonts/GenRyuMin2TW-Regular.woff2") format("woff2");
   font-weight: 400;
   font-style: normal;
   font-display: swap;
+  unicode-range: U+3000-FF60;
+}
+@font-face {
+  font-family: "GenRyuMin2 TW";
+  src: url("../assets/fonts/GenRyuMin2TW-Regular-ui.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+3000-3002, U+300C-300F, U+3080, U+30FB-30FC, U+5854, U+5F62, U+5F8B, U+660E, U+6708,
+    U+67D3, U+6D41, U+6E90, U+6EF2, U+7897, U+82B1, U+8D1D, U+95F4, U+9AD4, U+FF01, U+FF08-FF09,
+    U+FF0B-FF0C, U+FF1A-FF1B, U+FF1F;
 }
 
 /* Switzer — static cuts (all weights + italics). Single family for SANS

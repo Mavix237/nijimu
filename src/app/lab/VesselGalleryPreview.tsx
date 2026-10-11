@@ -23,7 +23,7 @@ import {
   type FieldCamera,
 } from "./vesselField";
 import photoA from "../../assets/memory-photo.jpg";
-import photoB from "../../assets/memory-photo-02.png";
+import photoB from "../../assets/memory-photo-02.jpg";
 
 /*
  * Lab: the dive gallery with the vessel on every seat. The gallery itself —
@@ -60,8 +60,11 @@ export const PHOTOS = Object.entries(
   import.meta.glob("../../assets/vessel-gallery/*.{jpg,jpeg,png,webp}", { eager: true, import: "default" }) as Record<string, string>,
 ).sort(([a], [b]) => a.localeCompare(b)).map(([, url]) => url);
 const FALLBACK = [photoA, photoB];
-// fetched and decoded as the module loads, so the seats open with their pictures already in the stock
-preloadSeatPhotos(PHOTOS.length ? PHOTOS : FALLBACK);
+// fetched and decoded once the page is idle — after the landing's first paint, not competing with
+// its fonts and script — so the seats still open with their pictures already in the stock
+const preloadWhenIdle = () => preloadSeatPhotos(PHOTOS.length ? PHOTOS : FALLBACK);
+if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(preloadWhenIdle, { timeout: 2500 });
+else setTimeout(preloadWhenIdle, 1200);
 
 /** Which of the curated memories the lab seats; these are the ones with a photo. */
 const SEATS: { event: number }[] = [
@@ -581,6 +584,7 @@ export function VesselGalleryProvider({
     return (
       <SeatVessel
         cacheKey={keyRef.current(item)}
+        priority={Math.round(Math.abs(seat.offset ?? 1))}
         form={s.form}
         morph={s.tune.morph}
         photoUrl={s.url || undefined}

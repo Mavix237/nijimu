@@ -6,6 +6,16 @@
 
 ## Water surface continuity (2026-10-11)
 
+The colour → naming ascent uses the pond's sun (`lib/pondLight.ts`), refracted
+through the surface onto the vessel. `lib/ascentLight.ts` sequences incident
+light, artifact radiance, bloom and final exposure; there is no separate ray,
+cone or projected shaft. The glass and photo emit HDR light from their actual
+lit faces. `lib/ascentBloom.ts` extracts those highlights and diffuses them in
+quarter-resolution passes during ascent only, so the glow follows the rendered
+artifact rather than a painted oval. The final exposure matches the naming
+arrival's `#f4f6f5`; all light resets on rewind. Check timing with
+`node scripts/check-ascent-light.mjs`.
+
 `PerspectivePond.tsx` exports `POND_SURFACE_GLSL` alongside `POND_WAVES_GLSL`.
 The pond, descent's top surface, and the overhead surface during the colour →
 naming rise share `pondSurfaceNormal` and `pondSurfaceColor`: ripple/swell/grain
@@ -13,10 +23,8 @@ normals, wind-driven ribbons, clouds and the low sun. The overhead view mirrors
 the eye across the water and reuses the same world coordinates and clock.
 Its former independent `ceilingHeight` and extra surface caustic pattern are
 removed. `underwaterBodyColor` supplies the same near-surface colour gradient
-to the surface plane and full-frame volume. The overhead texture feathers out
-over grazing rays, and light shafts ease out over an angular range instead of
-the former hard `dir.y < .2` cutoff, preventing a separate coloured band beneath
-the surface during the naming ascent.
+to the surface plane and full-frame volume. The overhead texture feathers into the same background over grazing views,
+preventing a separate coloured band beneath the surface during the naming ascent.
 
 ## Gallery shape library (2026-10-11)
 
@@ -40,6 +48,28 @@ Y-06, Y-07, Y-08, E-14, Y-16, E-02, Y-12, Y-13).
 states; a gallery panel pushed after the library was saved still wins whole,
 an older one keeps only its look. Thumbnails are 2D; only the focused shape
 is a live canvas.
+
+## Phone loading and performance (2026-10-11)
+
+- Code splitting: every route except the landing layout is a router `lazy`
+  route; the landing's 3D scenes (gallery, pond, descent) load through
+  `components/landingScenes.ts` (preloaded when the landing is idle and on
+  Enter); `BlobScene` lazy-loads `SceneViewer`; MediaPipe is imported only when
+  a camera starts. Main chunk 2.0 MB → 0.4 MB (606 → 134 KB gzip).
+- GenRyuMin2 TW: `-ui` subset (~8 KB, the source's own CJK glyphs) is checked
+  first; the 2.2 MB full font downloads only for other CJK text. Rebuild the
+  subset when adding CJK characters (README, Fonts).
+- Vessel builds: `lab/vesselBuilds.ts` caches glass + settled cloth by content
+  and queues builds one per task, nearest seat first (`priority`, the gallery
+  passes `ArtifactSeat.offset`). The canvas mounts only when its build is
+  ready. Shared geometries are never disposed by callers.
+- `lib/deviceTier.ts` (`?tier=light|full`, `?detail=`): phones get DPR ≤ 1.5,
+  2× MSAA render targets and vessel glass at 0.6 of the superformula grid
+  (gallery glass 449k → 168k triangles); the puddle sim stays at 2× for its
+  grain. Photos: uploads are scaled to 1600 px (`lib/photoSize.ts`), seat
+  textures to 1024 px, the gallery stills preload when idle.
+- Grain: the landing's is one grain per device pixel from a 512 px tile; the
+  glass pane's tile is 256 px.
 
 ## Phone layout (2026-10-10)
 

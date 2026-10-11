@@ -1,3 +1,4 @@
+import { MAX_DPR } from "./deviceTier";
 /**
  * Quiet water on the color-step wash: a finger or cursor stirs a flowing
  * refraction; a pinch (or click) sheds a slight ripple. Lives only on the
@@ -235,7 +236,7 @@ export function createPaletteWater(
   let raf = 0;
 
   const fitCanvas = () => {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
     const w = Math.max(Math.round(canvas.clientWidth * dpr), 1);
     const h = Math.max(Math.round(canvas.clientHeight * dpr), 1);
     if (canvas.width !== w || canvas.height !== h) {

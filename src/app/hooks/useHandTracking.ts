@@ -1,5 +1,5 @@
 import { RefObject, useEffect, useRef, useState } from "react";
-import { FilesetResolver, HandLandmarker } from "@mediapipe/tasks-vision";
+import type { HandLandmarker } from "@mediapipe/tasks-vision";
 
 const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.32/wasm";
 const MODEL_URL =
@@ -81,6 +81,9 @@ export function useHandTracking({
         video.srcObject = stream;
         await video.play().catch(() => {});
 
+        // the library itself only loads once a camera is in use, not with the page
+        const { FilesetResolver, HandLandmarker } = await import("@mediapipe/tasks-vision");
+        if (cancelled) return;
         const vision = await FilesetResolver.forVisionTasks(WASM_URL);
         if (cancelled) return;
 

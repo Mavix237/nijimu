@@ -27,13 +27,13 @@ import {
  */
 
 /** Air left between the year and the scene content. */
-const FIELD_GAP = 48;
+const FIELD_GAP = 28;
 /** The name, year and transcript rise further than the vessel. */
 const TEXT_LIFT = "6vh";
 /** The vessel sits this far above the seat the words leave it. */
 const ARTIFACT_LIFT = "3vh";
 /** A little larger than the gallery seat, on this page only. */
-const ARTIFACT_SCALE = 1.1;
+const ARTIFACT_SCALE = 1.25;
 /** Going back down: the words leave first, then the eye sinks. */
 const CHROME_OUT_MS = 420;
 /** How far below its seat the memory sinks when going back, as a share of the viewport height. */

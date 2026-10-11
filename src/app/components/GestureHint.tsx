@@ -4,6 +4,8 @@ import shapePrayerUrl from "../../assets/gesture-shape-prayer.png";
 import feelingHandUrl from "../../assets/gesture-feeling-horizontal.png";
 import distanceOpenUrl from "../../assets/gesture-distance-open.png";
 import colorPinchUrl from "../../assets/gesture-color-pinch.png";
+import rhythmPinchUrl from "../../assets/gesture-rhythm-pinch.gif";
+import rhythmStillUrl from "../../assets/gesture-rhythm-pinch-still.png";
 
 export type GestureHintKind = "shape" | "rhythm" | "feeling" | "distance" | "color";
 
@@ -47,12 +49,10 @@ export function GestureHint({
             <img className="nijimu-gesture-shape-right" src={shapePalmUrl} alt="" />
           </>
         ) : kind === "rhythm" ? (
-          <svg className="nijimu-gesture-rhythm" viewBox="0 0 96 88" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M30 77 C23 68 24 56 30 51 M69 48 C76 57 77 67 68 77" />
-            <path className="nijimu-rhythm-thumb" d="M31 62 C22 50 24 40 35 31 Q40 27 43 31 Q46 35 41 40 L35 47" />
-            <path className="nijimu-rhythm-index" d="M58 61 L58 36 Q57 26 51 26 Q45 26 45 32 L46 49" />
-            <path d="M58 53 Q65 46 69 51 M58 60 Q67 55 72 60" />
-          </svg>
+          <picture>
+            <source media="(prefers-reduced-motion: reduce)" srcSet={rhythmStillUrl} />
+            <img className="nijimu-gesture-rhythm" src={rhythmPinchUrl} alt="" width={320} height={384} />
+          </picture>
         ) : kind === "feeling" ? (
           <img className="nijimu-gesture-feeling" src={feelingHandUrl} alt="" />
         ) : kind === "color" ? (
@@ -68,15 +68,7 @@ export function GestureHint({
           width: 100%;
           height: 100%;
         }
-        .nijimu-gesture-rhythm { position: absolute; inset: 0; margin: auto; width: 86px; height: 80px; color: #7e7e86; }
-        .nijimu-rhythm-thumb { transform-origin: 32px 62px; animation: nijimuRhythmThumb 3s ease-in-out infinite; }
-        .nijimu-rhythm-index { transform-origin: 58px 61px; animation: nijimuRhythmIndex 3s ease-in-out infinite; }
-        @keyframes nijimuRhythmThumb { 0%, 18%, 100% { transform: rotate(0); } 45%, 65% { transform: rotate(-24deg); } }
-        @keyframes nijimuRhythmIndex { 0%, 18%, 100% { transform: rotate(0); } 45%, 65% { transform: rotate(24deg); } }
-        @media (prefers-reduced-motion: reduce) {
-          .nijimu-rhythm-thumb { animation: none; transform: rotate(-24deg); }
-          .nijimu-rhythm-index { animation: none; transform: rotate(24deg); }
-        }
+        .nijimu-gesture-rhythm { width: 70px; height: 84px; }
         .nijimu-gesture-hint img {
           position: absolute;
           left: 0;

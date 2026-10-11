@@ -1,6 +1,6 @@
 import { PANE_CONTENT_GAP } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
-import { CameraIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
+import { CameraIcon, ClockIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
 
 export function HandTrackingDialog({ open, busy, error, onAllow, onManual }: {
   open: boolean;
@@ -25,7 +25,7 @@ export function HandTrackingDialog({ open, busy, error, onAllow, onManual }: {
     <PaneOptions>
       <PaneOption primary mark={<CameraIcon />} disabled={busy} onClick={onAllow}
         label={busy ? "Starting hand tracking…" : error ? "Try camera again" : "Allow camera & Begin"} />
-      <PaneOption label="Maybe later" disabled={busy} onClick={onManual} />
+      <PaneOption mark={<ClockIcon />} ring label="Maybe later" disabled={busy} onClick={onManual} />
     </PaneOptions>
   </GlassPane>;
 }

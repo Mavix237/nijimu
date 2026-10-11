@@ -2,8 +2,7 @@ import { PANE_CONTENT_GAP } from "../lib/theme";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GlassPane } from "./GlassPane";
-import { PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
-import { DEFAULT_OKLCH, oklchCss } from "../lib/oklch";
+import { ArrowIcon, DownloadIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
 import type { NamingSession } from "./NamingRim";
 import { draftArtifactOf } from "../lib/namingDraft";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
@@ -20,7 +19,6 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
   const attempt = useRef(0);
   const captured = useRef(false);
   const vessel = useMemo(() => galleryStateFor(draftArtifactOf(session)), [session]);
-  const dotColor = oklchCss(session.state.look?.oklch ?? DEFAULT_OKLCH);
   useEffect(() => () => { attempt.current++; }, []);
   useEffect(() => {
     // Escape belongs to this dialog, not the pond's underlying Back shortcut.
@@ -81,9 +79,9 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
         {(error || storageError) && <p role="alert" style={PANE_BODY}>{error || storageError}</p>}
       </div>
       <PaneOptions>
-        <PaneOption primary dotColor={dotColor} label={busy ? "Preparing your memory…" : "Keep this memory"} disabled={busy}
+        <PaneOption primary mark={<DownloadIcon />} label={busy ? "Preparing your memory…" : "Download as image"} disabled={busy}
           onClick={() => { if (busy) return; attempt.current++; captured.current = false; setError(null); setBusy(true); }} />
-        <PaneOption label="Let it go" disabled={busy} onClick={onContinue} />
+        <PaneOption mark={<ArrowIcon />} label="Continue without download" disabled={busy} onClick={onContinue} />
       </PaneOptions>
     </GlassPane>
     {busy && <div aria-hidden style={{ position: "fixed", left: -20000, top: 0, width: 960, height: 960, pointerEvents: "none" }}>

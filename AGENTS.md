@@ -234,11 +234,19 @@ and memory reading. Full-width rows have 1px top/bottom rules in
 `GALLERY_TRANSCRIPT.color` (trail ink); adjacent rows share one rule, with zero
 group gap and zero button margins. The last button has no bottom rule.
 The trail rules use 25% opacity. The primary option's ink (`PANE_INK.primary`)
-is the body copy's `CHROME_GRAY`; it is set apart by weight 500 only. `PANE_ACTION.paddingY` supplies 14px vertical
+is the body copy's `CHROME_GRAY`, and the secondary options share that ink
+and opacity; only weight sets them apart (primary 500, secondary 400).
+A way out may wear an icon with `ring` (camera dialog's “Maybe later”: Phosphor's
+clock, `ClockIcon`); on hover the icon fades and the grey ring opens from the
+clock face's size. `PANE_ACTION.paddingY` supplies 14px vertical
 button padding and reduces the pane's bottom inset by the same 14px. Reading's
 bottom anchoring belongs to the options wrapper (`atFoot`), never an inline
 margin on the button. Instruction-dialog titles and body copy are left-aligned;
 `PANE_CONTENT_GAP` sets title-to-copy spacing to 14px; copy-to-actions uses 1.5× (21px).
+`PANE_BODY` is a pixel under `BODY_SIZE` (13–14px). On phones an open
+`GlassPane` also blurs the whole screen behind it (`SCREEN_BLUR_PX`, a sibling
+layer so the pane's own frost still reaches the page). "Keep a copy" offers
+"Download as image" (download icon) and "Continue without download" (arrow).
 
 ## Phone layout (2026-10-10)
 

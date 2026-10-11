@@ -1,12 +1,13 @@
 /**
  * The choices at the foot of a floating pane: a Switzer label with a trailing mark.
- * The option the pane hopes for is set in the body's ink; the way out in the
- * lighter. A dot mark opens from its centre on hover — filled with the given
- * colour for the hoped-for option, a bare ring for the way out.
+ * Every option is set in the body's ink; the one the pane hopes for in
+ * Medium, the way out in Regular. A dot mark opens from its centre on hover — filled with the given
+ * colour for the hoped-for option, a bare ring for the way out. A way out may
+ * wear an icon instead (`ring`): on hover it gives way to the same bare ring.
  */
 
 import type { CSSProperties, ReactNode } from "react";
-import { BODY_SIZE, BUTTON_SIZE_SM, GALLERY_TRANSCRIPT, PANE_ACTION, SANS, SERIF, TITLE } from "../lib/theme";
+import { BUTTON_SIZE_SM, GALLERY_TRANSCRIPT, PANE_ACTION, SANS, SERIF, TITLE } from "../lib/theme";
 import { PANE_INK } from "../lib/colors";
 
 export const PANE_TITLE: CSSProperties = {
@@ -21,11 +22,15 @@ export const PANE_TITLE: CSSProperties = {
   textWrap: "balance",
 };
 
+/** A pixel under `BODY_SIZE`. */
+const PANE_BODY_SIZE = "clamp(13px, 3vw, 14px)";
+
 /** Each sentence a line of its own where the pane breaks them; `pretty`
  * keeps a last word from standing alone. */
 export const PANE_BODY: CSSProperties = {
   fontFamily: SERIF,
-  fontSize: BODY_SIZE,
+  // a step under the page's body copy: the pane's words are an aside
+  fontSize: PANE_BODY_SIZE,
   fontWeight: 400,
   lineHeight: 1.45,
   color: PANE_INK.body,
@@ -38,6 +43,9 @@ export const PANE_BODY: CSSProperties = {
 const DOT_PX = 16;
 const DOT_REST = 5 / DOT_PX;
 const MARK_PX = 18;
+/** The ring's rest under an icon: the clock's face (r 9 of 24, through the
+ * stroke's middle) against the ring's own 1.25 px border. */
+const CLOCK_FACE = (MARK_PX * 18 / 24) / (DOT_PX - 1.25);
 
 export function PaneOptions({ children, atFoot = false }: { children: ReactNode; atFoot?: boolean }) {
   return (
@@ -55,6 +63,7 @@ export function PaneOption({
   disabled = false,
   mark = "dot",
   dotColor,
+  ring = false,
   ariaLabel,
 }: {
   label: string;
@@ -65,15 +74,18 @@ export function PaneOption({
   mark?: "dot" | ReactNode;
   /** The hoped-for option's dot. The way out always opens into a grey ring. */
   dotColor?: string;
+  /** An icon mark on a way out that opens into the grey ring on hover. */
+  ring?: boolean;
   ariaLabel?: string;
 }) {
-  const color = primary ? PANE_INK.primary : PANE_INK.secondary;
+  const color = PANE_INK.primary;
+  const iconRing = ring && !primary && mark !== "dot";
   return (
     <button
       type="button"
       className="nijimuPaneOption"
       data-primary={primary}
-      data-mark={mark === "dot" ? "dot" : "icon"}
+      data-mark={mark === "dot" ? "dot" : iconRing ? "icon-ring" : "icon"}
       onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
@@ -87,7 +99,10 @@ export function PaneOption({
             {!primary && <span className="nijimuPaneRing" />}
           </>
         ) : (
-          <span className="nijimuPaneIcon">{mark}</span>
+          <>
+            <span className="nijimuPaneIcon">{mark}</span>
+            {iconRing && <span className="nijimuPaneRing" />}
+          </>
         )}
       </span>
     </button>
@@ -118,6 +133,26 @@ export function CameraIcon() {
     <Icon>
       <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
       <circle cx="12" cy="13" r="3" />
+    </Icon>
+  );
+}
+
+/** Phosphor's clock, drawn in this set's stroke. */
+export function ClockIcon() {
+  return (
+    <Icon>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 6.75V12h5.25" />
+    </Icon>
+  );
+}
+
+export function DownloadIcon() {
+  return (
+    <Icon>
+      <path d="M12 15V3" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
     </Icon>
   );
 }
@@ -212,19 +247,21 @@ const PANE_OPTION_CSS = `
 }
 .nijimuPaneIcon, .nijimuPaneArrow {
   display: block;
-  transition: transform 420ms ${OPEN};
+  transition: transform 420ms ${OPEN}, opacity 280ms ease;
 }
+.nijimuPaneOption[data-mark="icon-ring"] .nijimuPaneRing { transform: scale(${CLOCK_FACE}); }
 .nijimuPaneLabel { transition: transform 420ms ${OPEN}; }
 
 @media (hover: hover) {
   .nijimuPaneOption:not(:disabled):hover .nijimuPaneDot { transform: scale(1); }
-  .nijimuPaneOption[data-primary="false"]:not(:disabled):hover { color: ${PANE_INK.secondaryHover} !important; }
   .nijimuPaneOption[data-primary="false"]:not(:disabled):hover .nijimuPaneDot { transform: scale(${DOT_REST * 0.6}); opacity: 0; }
   .nijimuPaneOption[data-primary="false"]:not(:disabled):hover .nijimuPaneRing { transform: scale(1); opacity: 1; }
   .nijimuPaneOption:not(:disabled):hover .nijimuPaneIcon { transform: scale(1.08); }
   .nijimuPaneOption:not(:disabled):hover .nijimuPaneArrow { transform: translateX(3px); }
   .nijimuPaneOption[data-mark="icon"]:not(:disabled):hover .nijimuPaneLabel { transform: translateX(1px); }
+  .nijimuPaneOption[data-mark="icon-ring"]:not(:disabled):hover .nijimuPaneIcon { transform: scale(0.9); opacity: 0; }
 }
+.nijimuPaneOption[data-mark="icon-ring"]:focus-visible .nijimuPaneIcon { transform: scale(0.9); opacity: 0; }
 .nijimuPaneOption:focus-visible .nijimuPaneDot { transform: scale(1); }
 .nijimuPaneOption[data-primary="false"]:focus-visible .nijimuPaneDot { transform: scale(${DOT_REST * 0.6}); opacity: 0; }
 .nijimuPaneOption[data-primary="false"]:focus-visible .nijimuPaneRing { transform: scale(1); opacity: 1; }
@@ -237,6 +274,7 @@ const PANE_OPTION_CSS = `
 .nijimuPaneOption[data-primary="false"]:not(:disabled):active .nijimuPaneDot { opacity: 0; }
 .nijimuPaneOption[data-primary="false"]:not(:disabled):active .nijimuPaneRing { opacity: 1; }
 .nijimuPaneOption:not(:disabled):active .nijimuPaneIcon { transform: scale(0.92); transition-duration: 140ms; }
+.nijimuPaneOption[data-mark="icon-ring"]:not(:disabled):active .nijimuPaneIcon { opacity: 0; }
 .nijimuPaneOption:not(:disabled):active { opacity: 0.72; transition-duration: 100ms; }
 
 @media (prefers-reduced-motion: reduce) {

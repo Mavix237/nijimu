@@ -14,6 +14,8 @@ const PANEL_WIDTH = 480;
 const PANEL_MAX_HEIGHT = "min(82dvh, 620px)";
 /** A pane for reading: most of a phone's height, still short of its edges. */
 const PANEL_MAX_HEIGHT_TALL = "min(86dvh, 760px)";
+/** Phones: how far the whole screen behind an open pane softens. */
+const SCREEN_BLUR_PX = 10;
 
 export function GlassPane({
   open,
@@ -129,6 +131,22 @@ export function GlassPane({
         backgroundColor: "rgba(108, 108, 122, 0.1)",
       }}
     >
+      {/* On a phone the whole screen softens behind the pane. A sibling layer,
+          not the scrim's own filter, so the pane still frosts the page. */}
+      {compact && (
+        <div
+          aria-hidden
+          className="nijimuProfileVeil"
+          data-leaving={leaving}
+          style={{
+            position: "absolute",
+            inset: 0,
+            pointerEvents: "none",
+            backdropFilter: `blur(${SCREEN_BLUR_PX}px)`,
+            WebkitBackdropFilter: `blur(${SCREEN_BLUR_PX}px)`,
+          }}
+        />
+      )}
       <div style={{ position: "relative", width: `min(${PANEL_WIDTH}px, 100%)` }}>
         {/* A sibling, not a parent filter: a filtered ancestor would cut the
             pane's backdrop blur off from the page behind it. */}
@@ -239,6 +257,12 @@ export function GlassPane({
         }
         .nijimuProfileScrim[data-leaving="true"] {
           animation: nijimuProfileDimOut ${LEAVE_MS}ms ease both;
+        }
+        .nijimuProfileVeil {
+          animation: nijimuProfileFadeIn 280ms ease both;
+        }
+        .nijimuProfileVeil[data-leaving="true"] {
+          animation: nijimuProfileFadeOut ${LEAVE_MS}ms ease both;
         }
         .nijimuProfileCard {
           animation: nijimuProfileCardIn 320ms cubic-bezier(0.22, 0.8, 0.28, 1) both;

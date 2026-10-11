@@ -47,7 +47,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
   touchRef.current = touch;
   const hold = useHoldToCreate(() => {
     const at = touchRef.current;
-    navigate(RECORD_START_PATH, { state: { focus: [at?.x ?? .5, at?.y ?? .65] } });
+    navigate(RECORD_START_PATH, { state: { ...location.state, focus: [at?.x ?? .5, at?.y ?? .65] } });
   }, enabled);
   holdProgress.current = hold.progress;
   const back = useCallback(() => (onLeave ?? (() => navigate(CAROUSEL_PATH)))(), [navigate, onLeave]);

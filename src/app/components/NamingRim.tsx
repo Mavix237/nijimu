@@ -24,6 +24,7 @@ import {
 } from "../lib/superformula";
 import { SERIF } from "../lib/theme";
 import { TextButton } from "./TextButton";
+import { SaveMemoryDialog } from "./SaveMemoryDialog";
 import {
   CAPTION_TITLE_GAP,
   CAPTION_TITLE_STYLE,
@@ -260,6 +261,7 @@ export function useNamingRim(
   const [focusedField, setFocusedField] = useState<"name" | "year" | null>(null);
   const [fieldsVisible, setFieldsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveDialog, setSaveDialog] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const yearInputRef = useRef<HTMLInputElement>(null);
   const [archive] = useState(() => (session ? buildArchive() : []));
@@ -355,6 +357,7 @@ export function useNamingRim(
 
   const persistAndOpenGallery = () => {
     if (!canContinue) return;
+    setSaveDialog(false);
     setSaving(true);
 
     const commit = () => {
@@ -415,9 +418,9 @@ export function useNamingRim(
      shared gap below it, then the year — so when the fields become words
      nothing shifts. */
   const actions = fieldsVisible && memoryName.trim() !== "" && yearSettled && (
-        <TextButton
+        <><TextButton
           label="save memory"
-          onClick={persistAndOpenGallery}
+          onClick={() => setSaveDialog(true)}
           disabled={saving}
           style={{
             /* out of flow, so its coming and going never moves the words */
@@ -429,6 +432,8 @@ export function useNamingRim(
               : `opacity ${SAVE_FADE_MS}ms ease, filter ${SAVE_FADE_MS}ms ease`,
           }}
         />
+        {saveDialog && <SaveMemoryDialog session={session} title={memoryName.trim()} year={year}
+          onClose={() => setSaveDialog(false)} onContinue={persistAndOpenGallery} />}</>
       );
 
   const caption = (

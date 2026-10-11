@@ -23,8 +23,13 @@ import {
  * memory was made and stands at the pond again, in the same place it stood to
  * speak; the memory has risen with it and hangs in the air over the water,
  * centred, turning, in the gallery's own glass. The name and the year are
- * typed above it, in the shared content-heading row below navigation.
+ * typed above it. They keep the shared heading row for layout, then drop
+ * part of the way toward the glass, so a taller window does not leave them
+ * stranded under the wordmark.
  */
+
+/** Air left between the year and the top of the vessel's frame. */
+const FIELD_GAP = 48;
 
 /** The eye comes up through the water, then the step arrives. */
 const RISE_MS = POND_SINK.durationMs * 1.2;
@@ -87,6 +92,7 @@ export function PondNamingOverlay({
   const viewport = useViewport();
   const frame = carouselFrame(viewport.w, viewport.h);
   const artifactTop = `max(24px, calc(50% - ${frame.size / 2}px - ${FLOW_PAGE.namingArtifactRaise}))`;
+  const [fieldDrop, setFieldDrop] = useState(0);
   const { state } = session;
 
   const washRef = useRef<HTMLDivElement>(null);
@@ -127,6 +133,23 @@ export function PondNamingOverlay({
     if (artifactRef.current) artifactRef.current.style.transform = `translateY(${lift * LIFT_VH}vh)`;
     glow.apply(artifactRef.current, light.fill, light.white);
   };
+
+  // The heading row stays put, so the vessel does not move. The fields
+  // themselves travel down, stopping short of the glass.
+  useLayoutEffect(() => {
+    const place = () => {
+      const heading = chromeRef.current;
+      const artifact = artifactRef.current;
+      const scene = artifact?.offsetParent as HTMLElement | null;
+      if (!heading || !artifact || !scene) return;
+      const artifactEdge = scene.offsetTop + artifact.offsetTop;
+      const headingBottom = heading.offsetTop + heading.offsetHeight;
+      setFieldDrop(Math.max(0, artifactEdge - FIELD_GAP - headingBottom));
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [frame.size, viewport.w, viewport.h]);
 
   // Before the first frame: the camera starts where the shape scene left it,
   // just under the surface, behind the same wash. The memory comes up after
@@ -283,6 +306,7 @@ export function PondNamingOverlay({
         </>}
         actions={rim.actions}
         headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
+          transform: `translateY(${fieldDrop}px)`,
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />
 

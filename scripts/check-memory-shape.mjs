@@ -94,7 +94,8 @@ for (let frame = 1; frame <= 150; frame++) {
   const next = pinch.update(pinchHand(open + .1), 1, now, currentM);
   if (next !== null) {
     assert.ok(next >= currentM && next <= 16);
-    assert.ok(now - previousEditAt >= 100, 'mesh updates stay under 10 Hz');
+    assert.ok(next - currentM <= rhythm.RHYTHM_PINCH.maxStep, 'confirmed readings cannot jump across the full m range');
+    assert.ok(now - previousEditAt >= 200, 'rhythm mesh updates stay at or below 5 Hz');
     assert.equal(next * 4, Math.round(next * 4));
     currentM = next; previousEditAt = now;
   }
@@ -104,7 +105,7 @@ assert.equal(pinch.update([], 1, now + 16, currentM), null, 'tracking loss holds
 assert.equal(pinch.update(pinchHand(0), 1, now += 32, currentM), null, 'reacquisition starts from the held value');
 for (let frame = 1; frame <= 150; frame++) {
   const next = pinch.update(pinchHand(0), 1, now += 16, currentM);
-  if (next !== null) { assert.ok(next <= currentM); currentM = next; }
+  if (next !== null) { assert.ok(next <= currentM && currentM - next <= rhythm.RHYTHM_PINCH.maxStep); currentM = next; }
 }
 assert.equal(currentM, 0, 'closed aperture reaches minimum');
 pinch.reset(); currentM = 8;
@@ -112,6 +113,58 @@ for (let frame = 0; frame < 120; frame++) {
   const gap = middleGap + Math.sin(frame) * .005;
   assert.equal(pinch.update(pinchHand(gap), 1, now += 16, currentM), null, 'small landmark jitter does not rebuild the mesh');
 }
+const handAtRhythm = value => pinchHand(closed + value / 16 * (open - closed));
+pinch.reset(); currentM = 8; now = 0;
+pinch.update(handAtRhythm(8), 1, now, currentM);
+for (let frame = 1; frame <= 120; frame++) {
+  assert.equal(pinch.update(handAtRhythm(frame % 2 ? 0 : 8), 1, now += 16, currentM), null,
+    'alternating collapsed fingertip detections cannot flash the form to minimum');
+}
+// A single detection spike must not produce an edit, even as its filtered
+// tail decays after the real fingers have returned to their original pose.
+pinch.reset(); currentM = 8; now = 0;
+assert.equal(pinch.update(handAtRhythm(8), 1, now, currentM), null);
+for (let frame = 1; frame <= 80; frame++) {
+  assert.equal(pinch.update(handAtRhythm(frame <= 5 ? 16 : 8), 1, now += 16, currentM), null,
+    'an 80ms detection spike and its smoothed tail cannot change the form');
+}
+// Larger tremor across adjacent quarter-step boundaries used to swap meshes.
+pinch.reset(); now = 0;
+for (let frame = 0; frame < 180; frame++) {
+  const target = Math.floor(frame / 6) % 2 ? 8.75 : 7.25;
+  assert.equal(pinch.update(handAtRhythm(target), 1, now += 16, currentM), null,
+    'alternating detections must settle before changing the mesh');
+}
+// Deliberate continuous motion still updates before the fingers stop moving.
+pinch.reset(); now = 0; previousEditAt = -Infinity;
+let sweepEdits = 0;
+for (let frame = 0; frame <= 200; frame++) {
+  const next = pinch.update(handAtRhythm(8 + frame / 50), 1, now += 16, currentM);
+  if (next !== null) {
+    assert.ok(next > currentM, 'an opening gesture does not flash back to its previous value');
+    assert.ok(now >= 200 && now - previousEditAt >= 200, 'confirmation delay and rate limit apply');
+    currentM = next; previousEditAt = now; sweepEdits++;
+  }
+}
+assert.ok(sweepEdits >= 3 && currentM >= 11, 'a continuous sweep remains responsive');
+const reverseStarted = now;
+let reversed = false;
+for (let frame = 1; frame <= 80; frame++) {
+  const next = pinch.update(handAtRhythm(4), 1, now += 16, currentM);
+  if (next !== null) {
+    assert.ok(now - reverseStarted >= 300, 'a reversal needs a longer confirmation');
+    assert.ok(next < currentM, 'a deliberate closing gesture moves only toward fewer folds');
+    currentM = next; reversed = true;
+  }
+}
+assert.ok(reversed, 'the reversal delay still permits deliberate changes');
+pinch.reset(); currentM = 8;
+pinch.update(handAtRhythm(16), 1, 0, currentM);
+pinch.update(handAtRhythm(16), 1, 100, currentM);
+pinch.reset();
+assert.equal(pinch.update(handAtRhythm(16), 1, 116, currentM), null);
+assert.equal(pinch.update(handAtRhythm(16), 1, 216, currentM), null);
+assert.equal(pinch.update(handAtRhythm(16), 1, 316, currentM), null, 'tracking reset discards pending confirmation');
 for (const category of geometry.ARTIFACT_CATEGORIES) {
   const base = geometry.baseForm(category);
   for (const m2 of [0, .25, 4, 9.25, 16]) {

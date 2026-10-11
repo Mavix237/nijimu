@@ -30,6 +30,8 @@ const noteStyle = {
 } as const;
 
 interface RecordingArrival {
+  transcript?: string;
+  transcriptionId?: string;
   focus?: [number, number];
   shape?: { form?: ArtifactForm };
 }
@@ -172,7 +174,9 @@ export function PondRecordingOverlay({
     style={{ opacity: leaving ? 0 : 1, transition: `opacity ${CHROME_OUT_MS}ms ease`, pointerEvents: leaving ? "none" : undefined }}>
     <RecordingInstructionsDialog
     busy={openingMicrophone} error={troubleMessage} onStart={startRecording}
-    onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH)} />
+    onResume={arrival?.transcript || arrival?.transcriptionId
+      ? () => navigate(TRANSCRIPT_PATH + location.search, { state: arrival }) : undefined}
+    onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH, { state: arrival })} />
   </div>;
 
   return (

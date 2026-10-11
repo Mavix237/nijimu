@@ -5,8 +5,9 @@ import { pondCameraPose, POND_CAMERA_HEIGHT, POND_CAMERA_Z, POND_LOOK as SURFACE
 import { DistanceConstellation } from "./DistanceConstellation";
 import { FIELD_FOCAL, memoryDepth } from "./vesselField";
 import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
-import { RHYTHM_MAX, withRhythm, rhythmValue, createRhythmPinch } from "../lib/memoryRhythm";
+import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch } from "../lib/memoryRhythm";
 import { createDistancePush } from "../lib/memoryDistanceGesture";
+import { advanceArtifactPose } from "../lib/artifactPose";
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
@@ -41,7 +42,7 @@ import { CAPTION_TITLE_GAP, CAPTION_TITLE_STYLE, CAPTION_YEAR_STYLE } from "../c
 import { MODEL_SPACE } from "../components/SceneViewer";
 import { buildPhotoUv } from "../components/MemoryPhotoLayer";
 import { createArtifactGeometry } from "../hooks/useArtifactGeometry";
-import { computeMeshNormals, formFromState, type ArtifactForm } from "../lib/superformula";
+import { computeMeshNormals, formFromState, formKey, getArtifactMesh, type ArtifactForm } from "../lib/superformula";
 import { assignMemoryShape, isMemoryAssignment, type MemoryAssignment } from "../lib/memoryShape";
 import { requestMemoryAssessment } from "../lib/assessMemory";
 import { DEFAULT_OKLCH, meshCoreFromOklch, oklchToHex, sampleField, uvFromOklch, type Oklch } from "../lib/oklch";
@@ -726,13 +727,15 @@ const BLANK_PHOTO = (() => {
 /** The photo chosen for the strip hanging in front of the view. */
 interface FallRequest {
   texture: THREE.Texture;
+  /** Restore a history entry without replaying the photo drop. */
+  restore?: boolean;
 }
 
 /** What the page hands the stage, frame by frame, without re-rendering it. */
 interface StageState {
   photoReady: boolean;
   /** Route changes seek the existing scene without resetting its water clock. */
-  view: "surface" | "underwater" | null;
+  view: "choose" | "surface" | "underwater" | null;
   surfaceLight: number;
   captureSurface?: () => void;
   voicePulses: VoiceRippleSpot[];
@@ -844,11 +847,15 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   /* The form: a superformula artifact of its own, grown from its sphere pose.
      Growth is written on the CPU, as BubbleViewer does; the glass is this
      geometry, and the sheet inside follows it (below). */
-  const artifact = useMemo(() => createArtifactGeometry(artifactForm), [artifactForm]);
+  // m2 changes only the target pose. Keep the displayed glass and its settled
+  // photo sheet alive, with identical topology for every value from 0 to 16.
+  const bodyKey = formKey({ ...artifactForm, side: { ...artifactForm.side, m: 0 } });
+  const targetPose = useMemo(() => getArtifactMesh(artifactForm, 128), [artifactForm]);
+  const artifact = useMemo(() => createArtifactGeometry(artifactForm, 128), [bodyKey]);
+  const settledPose = useRef(targetPose);
   const previousM2 = useRef(artifactForm.side.m);
   const normals = useMemo(() => new Float32Array(artifact.rest.normals.length), [artifact]);
-  const vesselMorphed = useRef(false);
-  useEffect(() => { written.current = -1; vesselMorphed.current = false; }, [artifact]);
+  useEffect(() => { written.current = -1; }, [artifact]);
   useEffect(() => () => artifact.geometry.dispose(), [artifact]);
 
   /* The vessel's sheet: the strip draped along the inner wall, settled once
@@ -870,7 +877,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     const base = new Float32Array(rest.length / 3);
     for (let v = 0; v < base.length; v++) base[v] = wall0(rest[v * 3], rest[v * 3 + 1], rest[v * 3 + 2]);
     return { sheet, rest, base, normals: new Float32Array(rest.length), groundY: sphere.lo - 0.02, sphere };
-  }, [artifactForm]);
+  }, [bodyKey]);
   useEffect(() => () => { vessel.sheet.geometry.dispose(); vessel.sphere.geometry.dispose(); }, [vessel]);
   const followWall = () => {
     const wall = buildWallMap({ positions: artifact.geometry.getAttribute("position").array as Float32Array });
@@ -888,20 +895,21 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     (n.array as Float32Array).set(vessel.normals);
     n.needsUpdate = true;
   };
-  const writeMorph = (m: number) => {
+  const writeMorph = (m: number, seconds = 0, snap = true) => {
     const { rest, geometry } = artifact;
     const out = geometry.getAttribute("position") as THREE.BufferAttribute;
     const arr = out.array as Float32Array;
-    const e = easeMorph(m);
-    for (let i = 0; i < arr.length; i++) arr[i] = rest.sphere[i] + (rest.positions[i] - rest.sphere[i]) * e;
+    const settled = advanceArtifactPose(arr, targetPose, m, seconds, snap);
+    if (settled) settledPose.current = targetPose;
     out.needsUpdate = true;
     computeMeshNormals(arr, rest.index, normals);
     const n = geometry.getAttribute("normal") as THREE.BufferAttribute;
     (n.array as Float32Array).set(normals);
     n.needsUpdate = true;
-    written.current = m;
-    // the cloth is already settled for the sphere; it is moved only once the glass has left it (and once more on the way back)
-    if (m > 0.0005 || vesselMorphed.current) { followWall(); vesselMorphed.current = m > 0.0005; }
+    written.current = settled ? m : -1;
+    // The same sheet follows the actual intermediate glass, including when
+    // rhythm changes the base radius while growth is near its minimum.
+    followWall();
   };
 
   const waves = useKept(() => ({
@@ -1193,7 +1201,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
        the photo developed and the strip afloat, the descent long over, the
        form surfaced with its shape and mist, the water washed — and only the lab wrap
        begins a new animation on it. Everything timed from these marks reads as finished. */
-    if (from !== null && !jumped.current && s.request && film.current && form.current) {
+    if (s.request && (s.request.restore || (from !== null && !jumped.current)) && film.current && form.current) {
       jumped.current = true;
       const longAgo = t - 60;
       const request = s.request;
@@ -1225,11 +1233,11 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       smooth.current.frost = s.frost;
       writeMorph(s.morph);
       water.uTintAmount.value = 1;
-      s.wrap = from === "wrap";
+      s.wrap = !request.restore && from === "wrap";
     }
 
     if (s.view !== null) {
-      if (s.view === "surface") {
+      if (s.view !== "underwater") {
         descentAt.current = null;
         reachedBottom.current = false;
         hold.current = 0;
@@ -1238,6 +1246,25 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         filmGone.current = 0;
         filmUniforms.uFade.value = 1;
         filmUniforms.uSink.value = 0;
+        wrapAt.current = null; wrapped.current = false;
+        riseAt.current = null; risen.current = false; broke.current = false;
+        s.wrap = false; s.rise = false;
+        if (s.view === "choose") {
+          // Reopen the empty hanging strip, keeping this canvas and water clock.
+          jumped.current = true;
+          photoAt.current = null;
+          developAt.current = null;
+          fall.current = null;
+          landedAt.current = null;
+          settled.current = false;
+          filmUniforms.uPhoto.value = BLANK_PHOTO;
+          sheetU.uPhoto.value = BLANK_PHOTO;
+          filmUniforms.uDevelop.value = 0;
+          filmUniforms.uFloat.value = 0;
+          filmUniforms.uCurl.value = 1;
+          smooth.current.wash = 0;
+          smooth.current.dye = 0;
+        }
       } else {
         // A history return skips the arrival, retaining the handled artifact.
         descentAt.current ??= t - 60;
@@ -1549,7 +1576,9 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       water.uShapeRay.value.copy(formAt).sub(camera.position).normalize();
       sm.frost = ease(sm.frost, s.frost, 7);
       const visibleHaze = Math.max(sm.frost, arrivalHaze);
-      if (Math.abs(sm.morph - written.current) > 0.0015) writeMorph(sm.morph);
+      if (settledPose.current !== targetPose || Math.abs(sm.morph - written.current) > 0.0015) {
+        writeMorph(sm.morph, delta, false);
+      }
       const air = 1 - smoothProgress(-formAt.y, -0.2, 0.3);
       const { roomAbove, roomBelow } = scratch;
       roomAbove.copy(ROOM_WATER_ABOVE).lerp(ROOM_PAPER_ABOVE, sm.wash).lerp(ROOM_SKY, air);
@@ -1758,6 +1787,19 @@ function map01(value: number, min: number, max: number): number {
 }
 
 const loader = new THREE.TextureLoader();
+
+/** Object URLs belong to the old document and cannot restore an uploaded photo
+ * after refresh. Keep its bytes in the existing history draft instead. */
+function readPhoto(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string"
+      ? resolve(reader.result) : reject(new Error("Could not read photo"));
+    reader.onerror = () => reject(reader.error);
+    reader.onabort = () => reject(new Error("Photo reading cancelled"));
+    reader.readAsDataURL(file);
+  });
+}
 
 /* The print develops into the strip inside the glass rather than fading in
    flat: the sheet's `uDevelop` runs 0…1.45 and `stripFace` brings the image
@@ -2119,19 +2161,46 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const [shotPhase, setPhase] = useState<Phase>(resume ? "color" : FROM === "wrap" ? "wrapping" : "choose");
   const phase: Phase = routeStep ?? shotPhase;
   const [loading, setLoading] = useState<string | null>(null);
-  const [lifted, setLifted] = useState<string | null>(null);
+  const [lifted, setLifted] = useState<string | null>(resume?.look?.photoUrl ?? null);
   const [morph, setMorph] = useState(stage.current.morph);
   const [frost, setFrost] = useState(stage.current.frost);
+  const photoLoad = useRef(0);
+  const loadedPhotoUrl = useRef<string | null>(null);
   useEffect(() => {
     if (lab) return;
-    stage.current.view = routeStep ? "underwater" : "surface";
-    if (!routeStep) setPhase(lifted ? "floating" : "choose");
+    const generation = ++photoLoad.current;
+    stage.current.request = null;
+    setLoading(null);
+    if (!routeStep) {
+      stage.current.view = "choose";
+      loadedPhotoUrl.current = null;
+      setLifted(null);
+      setPhase("choose");
+      assignmentLocked.current = false;
+      if (inputRef.current) inputRef.current.value = "";
+    } else {
+      stage.current.view = "underwater";
+      const url = location.state?.look?.photoUrl;
+      // Forward from the empty photo step restores the underwater entry's photo.
+      if (url !== loadedPhotoUrl.current || !url) {
+        setLifted(url ?? null);
+        if (!url) stage.current.request = { texture: BLANK_PHOTO, restore: true };
+        else void loader.loadAsync(url).then(texture => {
+          if (photoLoad.current !== generation) { texture.dispose(); return; }
+          loadedPhotoUrl.current = url;
+          stage.current.request = { texture, restore: true };
+        }).catch(() => {
+          if (photoLoad.current === generation) stage.current.request = { texture: BLANK_PHOTO, restore: true };
+        });
+      }
+    }
+    return () => { photoLoad.current++; };
     // Only a path change seeks the scene; edits and draft snapshots do not.
   }, [lab, location.pathname]);
   // opening on the wrap, the still is on the film before the stage mounts
-  const [ready, setReady] = useState(from === null);
+  const [ready, setReady] = useState(!lab || from === null);
   useEffect(() => {
-    if (from === null) return;
+    if (!lab || from === null) return;
     let live = true;
     const url = resume ? resume.look?.photoUrl : PREVIEW_PHOTO;
     if (!url) {
@@ -2162,6 +2231,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   stage.current.step = step;
   const stepRef = useRef(step);
   stepRef.current = step;
+
+  useEffect(() => {
+    if (step !== "rhythm") return;
+    // The first step can be skipped with growth still at zero. Ease out of
+    // that sphere through the existing pose animation so m2 has visible folds.
+    const next = rhythmMorph(stage.current.morph);
+    stage.current.morph = next;
+    setMorph(next);
+  }, [step]);
 
   useEffect(() => {
     if (phase === "naming") nameRef.current?.focus();
@@ -2287,6 +2365,24 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     look: { ...(lifted ? { photoUrl: lifted } : {}), oklch: stage.current.oklch, vividness: 1 - stage.current.frost },
     shape: { form, fluidity: 0, evolve: stage.current.morph, bumpAmount: 0 },
   });
+  const refreshDraft = useRef({ routeStep, draftState });
+  refreshDraft.current = { routeStep, draftState };
+  useEffect(() => {
+    const keepDraft = () => {
+      if (!refreshDraft.current.routeStep) return;
+      // Preserve the router's entry key/index. No route update or canvas remount
+      // is needed; a reload reads this entry's latest photo and handling edits.
+      window.history.replaceState({
+        ...window.history.state, usr: refreshDraft.current.draftState(),
+      }, "");
+    };
+    window.addEventListener("beforeunload", keepDraft);
+    window.addEventListener("pagehide", keepDraft);
+    return () => {
+      window.removeEventListener("beforeunload", keepDraft);
+      window.removeEventListener("pagehide", keepDraft);
+    };
+  }, []);
   const rememberDraft = async () => {
     const state = draftState();
     // Update this entry before pushing the next one, so returning from naming
@@ -2394,15 +2490,20 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     setPhase("saved");
   };
 
-  const pick = async (url: string) => {
+  const pick = async (photo: string | File) => {
     if (phase !== "choose" || loading) return;
-    setLoading(url);
+    const generation = ++photoLoad.current;
+    setLoading(typeof photo === "string" ? photo : photo.name);
     try {
+      const url = typeof photo === "string" ? photo : await readPhoto(photo);
+      if (photoLoad.current !== generation) return;
       const texture = await loader.loadAsync(url);
+      if (photoLoad.current !== generation) { texture.dispose(); return; }
+      loadedPhotoUrl.current = url;
       stage.current.request = { texture };
       setLifted(url);
     } catch {
-      setLoading(null);
+      if (photoLoad.current === generation) setLoading(null);
     }
   };
 
@@ -2454,7 +2555,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
 
       {!invitation && <PageHeader layout="absolute" carousel={lab ? false : undefined} />}
       {recording && <>
-        <BackButton onClick={() => navigate(MEMORY_POND_PATH)} />
+        <BackButton onClick={() => navigate(MEMORY_POND_PATH, { state: location.state })} />
         <PondRecordingOverlay reducedMotion={reducedMotion}
           onVoicePulse={pulse => { stage.current.voicePulses.push(pulse); }} />
       </>}
@@ -2468,6 +2569,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {!lab && (phase === "choose" || phase === "floating") && (
         <BackButton onClick={() => navigate(TRANSCRIPT_PATH, {
           state: {
+            ...draftState(),
             transcript,
             memoryId,
             ...(!assessmentPending ? { memoryAssignment: assignment } : {}),
@@ -2507,7 +2609,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       <input ref={inputRef} type="file" accept="image/*" aria-label="choose a photo" style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file) void pick(URL.createObjectURL(file));
+          e.target.value = "";
+          if (file) void pick(file);
         }} />
 
       {/* The bundled stills, small and to one side, so the lab can run without a photo of one's own. */}
@@ -2582,9 +2685,6 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           onChange={e => setEditedM2(rhythmValue(Number(e.target.value)))}
           style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
         <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>fewer folds</span><span>more folds</span></div>
-        {morph < .05 && <div style={{ textAlign: "center", marginTop: 8 }}>
-          <button type="button" onClick={() => { void goStep("shape"); }} style={{ border: 0, background: "none", color: "inherit", font: "inherit", textDecoration: "underline", cursor: "pointer" }}>add some shape to reveal its folds</button>
-        </div>}
       </div>}
       {step === "distance" && <div style={{ position: "absolute", bottom: 105, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
         <input type="range" min={0} max={1} step={0.01} value={frost} aria-label="memory distance"

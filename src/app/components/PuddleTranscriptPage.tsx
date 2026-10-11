@@ -29,6 +29,8 @@ interface PuddleTranscriptState {
   shape?: { form?: ArtifactForm };
   highlightedWords?: string[];
   highlightedWordIndices?: number[];
+  transcriptReady?: boolean;
+  highlightMode?: boolean;
   /** Stable for this visit once the descent has been opened, so backing out
       and continuing again keeps the same memory. */
   memoryId?: string;
@@ -87,7 +89,7 @@ export function PuddleTranscriptPage() {
   );
 
   const words = transcript.split(/\s+/);
-  const restored = (state?.highlightedWordIndices?.length ?? 0) > 0;
+  const restored = state?.transcriptReady || (state?.highlightedWordIndices?.length ?? 0) > 0;
   /** The stand-in memory, not a recording still being heard. */
   const isSample = !transcriptionId && transcript === SAMPLE_TRANSCRIPT;
 
@@ -95,7 +97,7 @@ export function PuddleTranscriptPage() {
   const [isTyping, setIsTyping] = useState(!restored);
   const [showContinue, setShowContinue] = useState(restored);
   const [highlightMode, setHighlightMode] = useState(
-    () => (state?.highlightedWordIndices?.length ?? 0) > 0,
+    () => state?.highlightMode || (state?.highlightedWordIndices?.length ?? 0) > 0,
   );
   const [highlightedWords, setHighlightedWords] = useState<Set<number>>(
     () => new Set(state?.highlightedWordIndices ?? []),
@@ -104,33 +106,42 @@ export function PuddleTranscriptPage() {
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [currentSelection, setCurrentSelection] = useState<Set<number>>(new Set());
   const [fadeOutContent, setFadeOutContent] = useState(false);
+  const continueTimer = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (continueTimer.current !== null) window.clearTimeout(continueTimer.current);
+  }, []);
   const typingIntervalRef = useRef<number | null>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [showBottomFade, setShowBottomFade] = useState(false);
 
   const typingDoneRef = useRef(restored);
 
-  /** Keep settled words in location.state so a remount doesn't lose them. */
-  const rememberTranscript = (text: string) => {
-    if (!transcriptionId || state?.transcript === text) return;
-    // This is chrome within the shared scene layout. Preserve completed words
-    // on the explicit transcript URL rather than navigating relative to its parent.
-    navigate(TRANSCRIPT_PATH, {
+  const [memoryId] = useState(() => state?.memoryId ?? crypto.randomUUID());
+
+  // Save words as soon as they arrive, and each completed highlight immediately.
+  // The header's Back uses location.state too, so it receives this same draft.
+  // Never replace a pending real recording with an empty or sample transcript.
+  useEffect(() => {
+    if (awaitingTranscript || transcribeError || !transcript.trim()) return;
+    const indices = Array.from(highlightedWords).sort((a, b) => a - b);
+    if (state?.transcript === transcript && state?.memoryId === memoryId
+      && state?.transcriptReady === !isTyping && state?.highlightMode === highlightMode
+      && JSON.stringify(state?.highlightedWordIndices ?? []) === JSON.stringify(indices)) return;
+    void navigate(TRANSCRIPT_PATH + location.search, {
       replace: true,
-      state: { ...state, transcriptionId, transcript: text },
+      state: { ...state, memoryId, transcript, transcriptReady: !isTyping, highlightMode,
+        highlightedWords: highlightedPhrases(words, highlightedWords), highlightedWordIndices: indices },
     });
-  };
+  }, [transcript, awaitingTranscript, transcribeError, highlightedWords, isTyping, highlightMode, memoryId, state, location.search, navigate]);
 
   // The words arriving from the transcription service
   useEffect(() => {
-    if (pending?.result?.transcript) rememberTranscript(pending.result.transcript);
     if (!pending || !awaitingTranscript) return;
     let alive = true;
     pending.promise.then((result) => {
       if (!alive) return;
       if (result.transcript) {
         setTranscript(result.transcript);
-        rememberTranscript(result.transcript);
       } else {
         setTranscribeError(result.error);
       }
@@ -194,6 +205,7 @@ export function PuddleTranscriptPage() {
   const goToRecord = () => {
     navigate(RECORD_START_PATH, {
       state: {
+        ...state,
         ...(focus ? { focus } : {}),
         ...(state?.shape ? { shape: state.shape } : {}),
       },
@@ -201,17 +213,18 @@ export function PuddleTranscriptPage() {
   };
 
   const handleContinue = () => {
+    if (fadeOutContent) return;
     if (!highlightMode) {
       setHighlightMode(true);
       setShowContinue(false);
     } else {
       setFadeOutContent(true);
-      setTimeout(() => {
+      continueTimer.current = window.setTimeout(() => {
         navigate(DESCENT_PATH, {
           state: {
             ...state,
             transcript,
-            memoryId: typeof state?.memoryId === "string" ? state.memoryId : crypto.randomUUID(),
+            memoryId,
             highlightedWords: highlightedPhrases(words, highlightedWords),
             highlightedWordIndices: Array.from(highlightedWords),
             focus,

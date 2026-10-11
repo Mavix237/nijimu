@@ -4,6 +4,18 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Rhythm continuity (2026-10-10)
+
+`DescentPrototype` retains its glass geometry and settled photo sheet while m2
+changes. `getArtifactMesh(form, 128)` gives every rhythm target the same latitude
+topology; its cache is separate from adaptive meshes. `artifactPose.ts` eases
+displayed vertices toward the new posed form from their current positions,
+including mid-transition retargeting. Normals and the photo sheet follow the
+intermediate geometry each frame. Accepted pinch edits are capped at two m
+units as well as the existing confirmation/deadband gates. Run
+`node scripts/check-rhythm-transition.mjs` and the memory-shape checks for
+topology, continuous retargeting, endpoint glitches and final-pose convergence.
+
 ## Pond → recording dialog continuity (2026-10-10)
 
 `LandingPage` now hosts `/memory/pond`, `/record/start`, `/record/transcript`,
@@ -49,10 +61,18 @@ and full-screen drag are alternatives to a one-hand thumb–index aperture gestu
 `memoryRhythm.ts` maps the fingertip gap relative to wrist-to-middle-knuckle
 length, with camera-aspect correction: closed is m2=0, a wide gap is m2=16.
 Acquisition eases from the current value; losing tracking holds the value.
-A 120ms smoothing filter, quarter steps, a small deadband, and a 10Hz edit limit
-keep landmark tremor from rebuilding the mesh. `RHYTHM_PINCH` holds calibration. The edited form travels through naming/save as the artifact's
-form; the original assessment is retained. A spherical morph hides its folds;
-the UI then offers a return to shape. The neighbour preview uses the gallery's
+A 160ms smoothing filter, quarter steps, a small deadband, and a 5Hz edit limit
+keep landmark tremor from rebuilding the mesh. Movement must agree for 200ms
+before an edit (300ms to reverse); live and filtered readings must agree, so
+brief spikes cannot trigger delayed changes. Confirmation follows direction,
+allowing continuous finger motion to update without waiting for a fixed pose.
+Tracking loss clears pending confirmation. `RHYTHM_PINCH` holds calibration.
+The edited form travels through naming/save as the artifact's
+form; the original assessment is retained. Entering Rhythm lifts growth to at
+least .6 through the existing pose easing (`rhythmMorph`), so skipping Shape or
+restoring an old zero-growth draft cannot hide every m2 edit behind a sphere.
+Higher growth is retained; the revealed growth is carried into later steps and
+saved. The neighbour preview uses the gallery's
 existing irregular positions, with depth `2.4 + galleryDepth * 2.8` and added
 haze reduced to 38% (saved haze remains intact). It does not generate rings or
 reshuffle by angle. Only neighbours inside the central artifact's clearance
@@ -809,6 +829,21 @@ rhythm → shape → photo/hold-to-descend. It snapshots the current draft throu
 the same navigation as Continue, retaining edits and the mounted water scene,
 including on direct step entry. Back during the color-to-naming glow cancels
 the pending handoff. The lab follows the same sequence in local phase state.
+
+Uploaded descent photos use FileReader data URLs rather than document-scoped
+blob URLs, so the photo in the current router history draft survives refresh.
+Before unload/pagehide, live underwater steps replace that entry's draft with
+the current form, rhythm, distance, tint and photo (preserving router key/index).
+This restores the active creation flow; it does not change gallery persistence.
+
+The transcript screen replaces its history draft as soon as completed words
+arrive and whenever highlights or reading progress change. Header Back carries
+that draft through recording/the pond; the recording dialog offers “return to
+your transcript” when a draft exists. Photo Back carries the whole draft back
+to highlighting. A pending Continue fade is cancelled when the transcript
+unmounts, so Back cannot be followed by a delayed jump to Photo. In-flight
+transcription is still a network request; only completed words can be restored
+after a refresh interrupts that request.
 
 Done inside the lab since the first cut:
 

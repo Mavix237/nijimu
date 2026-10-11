@@ -46,7 +46,7 @@ export interface VesselArtifactProps {
   /** A press and release without a drag at the apex — the seat is being asked for. */
   onPick?: () => void;
   /** Called after the first complete frame, so arrivals wait for the actual vessel. */
-  onReady?: () => void;
+  onReady?: (canvas: HTMLCanvasElement) => void;
 }
 
 interface Built { glass: Glass; sheet: Sheet; distance: number }
@@ -280,7 +280,7 @@ function VesselObject({
   const didRender = useRef(false);
   const readyRef = useRef(onReady);
   readyRef.current = onReady;
-  const reportReady = () => { if (!didRender.current && photoReady.current) { didRender.current = true; readyRef.current?.(); } };
+  const reportReady = () => { if (!didRender.current && photoReady.current) { didRender.current = true; readyRef.current?.(gl.domElement); } };
   const refract = glassMode === "refract";
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
     if (compiledFor.current !== glassMode) return;

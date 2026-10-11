@@ -37,8 +37,10 @@ whatever page you are on.
 
 The create flow gives each underwater step its own browser-history entry.
 Back from distance returns to rhythm, then shape, then the photo/film step;
-Forward retraces those entries. These routes keep the same canvas, water clock,
-photo and current edits mounted. Returning from naming restores the handled
+Forward retraces those entries. Revisiting the photo/film step reopens the empty
+template so a photo can be chosen again, including after returning to the transcript.
+Forward into an existing underwater entry restores that entry's photo. These
+routes keep the same canvas, water clock and current edits mounted. Returning from naming restores the handled
 memory at colour. Direct underwater URLs open that step using a carried draft,
 or the sample form when no draft is available. `/lab/descent` keeps its separate
 animation controls; `/record/shape/:step` remains an older-bookmark redirect.

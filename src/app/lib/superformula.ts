@@ -459,10 +459,10 @@ export interface ArtifactMesh {
  * column is shared when the cross-section closes; an open one (torn) gets its
  * own seam column so the tear stays a tear.
  */
-export function buildArtifactMesh(form: ArtifactForm): ArtifactMesh {
+export function buildArtifactMesh(form: ArtifactForm, latitudeSegments?: 128): ArtifactMesh {
   const { top, side } = form;
   const lon = segmentsFor(top, 48, 12, 128, 224);
-  const lat = segmentsFor(side, 32, 8, 64, 128);
+  const lat = latitudeSegments ?? segmentsFor(side, 32, 8, 64, 128);
   const closed = closesAround(top);
   const columns = closed ? lon : lon + 1;
   const rings = lat - 1;
@@ -644,15 +644,15 @@ export function computeMeshNormals(
 const MESH_CACHE_LIMIT = 32;
 const meshCache = new Map<string, ArtifactMesh>();
 
-export function getArtifactMesh(form: ArtifactForm): ArtifactMesh {
-  const key = formKey(form);
+export function getArtifactMesh(form: ArtifactForm, latitudeSegments?: 128): ArtifactMesh {
+  const key = formKey(form) + (latitudeSegments ? `|lat:${latitudeSegments}` : "");
   const hit = meshCache.get(key);
   if (hit) {
     meshCache.delete(key);
     meshCache.set(key, hit);
     return hit;
   }
-  const built = buildArtifactMesh(form);
+  const built = buildArtifactMesh(form, latitudeSegments);
   meshCache.set(key, built);
   if (meshCache.size > MESH_CACHE_LIMIT) {
     const oldest = meshCache.keys().next().value;

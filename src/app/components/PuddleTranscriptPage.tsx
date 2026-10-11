@@ -1,4 +1,3 @@
-import { FlowPageGrid } from "./FlowPageGrid";
 import { FLOW_PAGE } from "../lib/theme";
 import { SAMPLE_TRANSCRIPT } from "../data/sampleMemory";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -8,7 +7,6 @@ import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes"
 import { NOTE_SIZE, SERIF, TRANSCRIPT } from "../lib/theme";
 import { getTranscription } from "../lib/transcribe";
 import type { ArtifactForm } from "../lib/superformula";
-import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
 import { transcriptCharacters, transcriptTypingDelay } from "../lib/transcriptTyping";
 import type { VoiceRippleSpot } from "../lib/voicePeaks";
@@ -248,45 +246,6 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
           transform: "translate(-50%, -100%)", margin: `-${TRANSCRIBING_LABEL_GAP}px 0 0`, fontFamily: SERIF,
           fontSize: NOTE_SIZE, lineHeight: 1.45, color: CHROME_GRAY, textAlign: "center",
         }}>transcribing</p>}
-        <FlowPageGrid actions={(pairReady || transcribeError) && (
-              <div
-                style={{
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 22,
-                  visibility: transcribeError || showContinue ? "visible" : "hidden",
-                }}
-              >
-                {transcribeError ? (
-                  <PillButton label="record again" onClick={goToRecord} />
-                ) : (
-                  <>
-                    <TextButton
-                      label="record again"
-                      onClick={goToRecord}
-                      style={{ width: "9em", justifyContent: "center" }}
-                    />
-                    <span
-                      aria-hidden
-                      style={{
-                        width: 1,
-                        height: "1em",
-                        background: "rgba(123, 123, 135, 0.45)",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <TextButton
-                      label="continue"
-                      onClick={handleContinue}
-                      disabled={fadeOutContent}
-                      style={{ width: "9em", justifyContent: "center" }}
-                    />
-                  </>
-                )}
-              </div>
-            )} />
         <div
           className="overflow-hidden"
           style={{
@@ -294,7 +253,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             left: "50%",
             transform: "translateX(-50%)",
             top: `calc(${FLOW_PAGE.headingTop} + 96px)`,
-            bottom: transcribing ? `calc(${(1 - TRANSCRIBING_SPOT.y) * 100}vh + ${TRANSCRIBING_LABEL_GAP + 68}px)` : "clamp(120px, 18vh, 160px)",
+            bottom: transcribing ? `calc(${(1 - TRANSCRIBING_SPOT.y) * 100}vh + ${TRANSCRIBING_LABEL_GAP + 68}px)` : "max(48px, env(safe-area-inset-bottom))",
             width: "100%",
             display: "flex",
             flexDirection: "column",
@@ -329,13 +288,14 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
           <div
             style={{
               width: "min(80ch, 100%)",
-              flex: "1 1 auto",
+              flex: "0 1 auto",
               minHeight: 0,
+              maxHeight: "100%",
               display: "flex",
               flexDirection: "column",
               justifyContent: "flex-start",
               alignItems: "center",
-              gap: 0,
+              gap: 48,
               cursor: isSample && isTyping ? "pointer" : undefined,
             }}
           >
@@ -346,10 +306,9 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                 ...TRANSCRIPT,
                 width: "100%",
                 maxWidth: "80ch",
-                /* Actions live in the shared bottom row; only the passage scrolls. */
-                maxHeight: "100%",
+                /* Long passages scroll; the actions sit just under the last line. */
                 minHeight: 0,
-                flex: "0 1 auto",
+                flex: "1 1 auto",
                 color: CHROME_GRAY,
                 textAlign: "center",
                 position: "relative",
@@ -403,8 +362,46 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                 </div>
               )}
             </div>
-
-
+            {(pairReady || transcribeError) && (
+              <div
+                style={{
+                  flexShrink: 0,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 22,
+                  pointerEvents: "auto",
+                  visibility: transcribeError || showContinue ? "visible" : "hidden",
+                }}
+              >
+                {transcribeError ? (
+                  <TextButton label="record again" onClick={goToRecord} style={{ width: "9em", justifyContent: "center" }} />
+                ) : (
+                  <>
+                    <TextButton
+                      label="record again"
+                      onClick={goToRecord}
+                      style={{ width: "9em", justifyContent: "center" }}
+                    />
+                    <span
+                      aria-hidden
+                      style={{
+                        width: 1,
+                        height: "1em",
+                        background: "rgba(123, 123, 135, 0.45)",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <TextButton
+                      label="continue"
+                      onClick={handleContinue}
+                      disabled={fadeOutContent}
+                      style={{ width: "9em", justifyContent: "center" }}
+                    />
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
     </div>

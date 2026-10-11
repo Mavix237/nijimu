@@ -1,6 +1,5 @@
 import { GlassPane } from "./GlassPane";
-import { CameraIcon, HandIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
-import { PANE_INK } from "../lib/colors";
+import { CameraIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
 
 export function HandTrackingDialog({ open, busy, error, onAllow, onManual }: {
   open: boolean;
@@ -12,13 +11,7 @@ export function HandTrackingDialog({ open, busy, error, onAllow, onManual }: {
   return <GlassPane open={open} onClose={onManual} closeDisabled={busy} labelledBy="hand-tracking-title" align="start">
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <h2 id="hand-tracking-title" style={PANE_TITLE}>
-        Sculpt this memory by{" "}
-        <span style={{ whiteSpace: "nowrap" }}>
-          hand
-          <span aria-hidden style={{ display: "inline-block", verticalAlign: "-0.14em", marginLeft: "0.42em", color: PANE_INK.title, opacity: 0.7 }}>
-            <HandIcon size="1.05em" />
-          </span>
-        </span>
+        Sculpt this memory by hand
       </h2>
       <p style={PANE_BODY}>
         <span style={{ display: "block" }}>Hand-tracking is essential to shaping your memory.</span>

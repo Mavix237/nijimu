@@ -1,0 +1,9 @@
+/* Copy arrives the same way everywhere: it focuses in. It does not rise. */
+@keyframes nijimuTextIn {
+  from { opacity: 0; filter: blur(4px); }
+  to { opacity: 1; filter: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nijimu-text-in { animation: none !important; }
+}

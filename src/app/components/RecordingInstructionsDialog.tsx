@@ -23,18 +23,18 @@ export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onCl
       align="start"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <h2 id="recording-instructions-title" style={PANE_TITLE}>Before you begin</h2>
+        <h2 id="recording-instructions-title" style={PANE_TITLE}>To hear your voice</h2>
         <p id="recording-instructions-body" style={PANE_BODY}>
-          <span style={{ display: "block" }}>If you’d like to share a personal memory, please allow microphone access in your browser.</span>
-          <span style={{ display: "block" }}>Or, skip to a sample transcript to experience the full flow without recording yourself.</span>
+          <span style={{ display: "block" }}>If you’d like to speak a memory, please allow microphone access in your browser.</span>
+          <span style={{ display: "block" }}>Or, skip to a sample story to experience the full flow without recording yourself.</span>
         </p>
         {error && <p role="alert" style={PANE_BODY}>{error}</p>}
       </div>
 
       <PaneOptions>
-        <PaneOption primary mark={<MicIcon />} label={busy ? "Opening microphone…" : "Allow microphone & Record"}
+        <PaneOption primary mark={<MicIcon />} label={busy ? "Opening microphone…" : "Allow microphone & record my story"}
           onClick={onStart} disabled={busy} />
-        <PaneOption mark={<ArrowIcon />} label="Skip to sample transcript" onClick={onSkip} disabled={busy} />
+        <PaneOption mark={<ArrowIcon />} label="Skip to a sample story" onClick={onSkip} disabled={busy} />
       </PaneOptions>
     </GlassPane>
   );

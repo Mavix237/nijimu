@@ -412,8 +412,8 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
     >
       <style>{`
         @keyframes trailIn {
-          from { opacity: 0; filter: blur(2px); }
-          to { opacity: 1; filter: blur(0); }
+          from { opacity: 0; filter: blur(4px); }
+          to { opacity: 1; filter: none; }
         }
         @keyframes trailSlideOut {
           from { transform: translateY(0); }

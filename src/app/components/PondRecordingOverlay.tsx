@@ -5,9 +5,7 @@ import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { CHROME_GRAY } from "../lib/colors";
 import { SERIF, TITLE, NOTE_SIZE, INSTRUCTION_SIZE } from "../lib/theme";
 import { beginTranscription } from "../lib/transcribe";
-import svgPathsStop from "../../imports/svg-hpzn3032f5";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
-import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
 import { RecordingInstructionsDialog } from "./RecordingInstructionsDialog";
 import { TRANSCRIPT_PATH, MEMORY_POND_PATH } from "../lib/routes";
@@ -182,8 +180,8 @@ export function PondRecordingOverlay({
       <style>{`
         ${PARTICLE_TEXT_KEYFRAMES}
         @keyframes puddleRecIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
+          from { opacity: 0; filter: blur(4px); }
+          to { opacity: 1; filter: none; }
         }
       `}</style>
 
@@ -197,6 +195,7 @@ export function PondRecordingOverlay({
               delay={QUESTION_DELAY_S}
               sweep={QUESTION_SWEEP_S}
               wrap
+              soft
             />
           </div>
           <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6,
@@ -208,6 +207,7 @@ export function PondRecordingOverlay({
               delay={NOTE_1_DELAY_S}
               sweep={NOTE_SWEEP_S}
               wrap
+              soft
             />
             <ParticleText
               text="Don’t worry about finding the perfect words, just speak naturally until you feel you’ve finished telling your story."
@@ -216,6 +216,7 @@ export function PondRecordingOverlay({
               delay={NOTE_1_DELAY_S + NOTE_SWEEP_S}
               sweep={NOTE_SWEEP_S}
               wrap
+              soft
             />
           </div>
         </div>
@@ -227,37 +228,29 @@ export function PondRecordingOverlay({
             style={{ ...noteStyle, maxWidth: "28em", textAlign: "center", fontVariantNumeric: "tabular-nums",
               opacity: troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
               transition: "opacity 0.4s ease",
-              animation: reducedMotion ? "none" : "puddleRecIn 0.8s ease backwards" }}>
+              animation: reducedMotion ? "none" : "puddleRecIn 700ms ease backwards" }}>
             {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`}
           </p>
         )}
         {!recorder.isRecording ? (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 16,
-            }}
-          >
-            <PillButton
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 22 }}>
+            <TextButton
               label={captureFailed ? "record again" : "record"}
               onClick={startRecording}
+              style={{ width: "9em", justifyContent: "center" }}
             />
+            <span aria-hidden style={{ width: 1, height: "1em", background: "rgba(123, 123, 135, 0.45)", flexShrink: 0 }} />
             <TextButton
-              label="show sample transcript"
+              label="sample story"
               onClick={goToSampleTranscript}
+              style={{ width: "9em", justifyContent: "center" }}
             />
           </div>
         ) : (
-          <PillButton
+          <TextButton
             label="stop"
             onClick={() => { cancelRipples(); recorder.stop(); }}
-            icon={
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                <path d={svgPathsStop.p220b0800} fill={CHROME_GRAY} />
-              </svg>
-            }
+            style={{ width: "9em", justifyContent: "center" }}
           />
         )}
         </div>

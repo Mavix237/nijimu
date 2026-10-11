@@ -10,9 +10,10 @@ import { GALLERY_TRANSCRIPT, GALLERY_TRANSCRIPT_SIZE, SERIF } from "../lib/theme
  * the last one — by a gap that varies from word to word and closes up when the
  * pointer is slow — and shows a beat after the pointer has passed — a staggered
  * line of what was said, following the hand. Only the last few stay; the
- * oldest, when a new one comes, comes apart into grains that drift away from
- * the line and go out. The words are set as the full transcript under the
- * year is (GALLERY_TRANSCRIPT), at its full strength.
+ * oldest, when a new one comes, lingers a moment where it is, then goes out
+ * like ink in wet paper: its edges loosen and run, the pigment blooms a little
+ * past the letters, and it pales away. The words are set as the full
+ * transcript under the year is (GALLERY_TRANSCRIPT), at its full strength.
  *
  * The memory's name and year, and the timeline, are blocks the words keep out
  * of: no word is set down on one, or within AVOID_PAD of it.
@@ -61,12 +62,16 @@ const INK = GALLERY_TRANSCRIPT.color;
 /** Air kept around what the words avoid, px. */
 const AVOID_PAD = { x: 24, y: 14 };
 
-/** The grains a word comes apart into: the sweep across it (s), how fast
-    they leave (px/s), how long each lasts once loose (s). */
-const SWEEP_S = 0.55;
-const GRAIN_SPEED = [14, 46] as const;
-const GRAIN_LIFE = [0.7, 1.6] as const;
-const GRAIN_LIFT = 1.6;
+/** A word let go from the trail stays as it is for LINGER_MS, then washes out
+    over WASH_MS: its edges run (WASH_RUN px of displacement through a soft
+    noise), the ink spreads (WASH_SPREAD px) and softens (WASH_BLUR px), and it
+    blooms a little past its letters as it pales. */
+const LINGER_MS = 900;
+const WASH_MS = 1700;
+const WASH_RUN = 3.5;
+const WASH_SPREAD = 0.5;
+const WASH_BLUR = 1.5;
+const INK_RGB = [1, 3, 5].map((i) => parseInt(INK.slice(i, i + 2), 16)).join(", ");
 
 type Rect = { left: number; top: number; right: number; bottom: number };
 const overlaps = (a: Rect, b: Rect) =>
@@ -116,80 +121,7 @@ interface Fallen {
   width: number;
 }
 
-/** One grain of a word coming apart: where it is, how it goes, when it lets go. */
-interface Grain {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  /** Seconds (performance clock) it lets go; until then it holds its place in the word. */
-  at: number;
-  life: number;
-  alpha: number;
-  size: number;
-  seed: number;
-}
-
 const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-const between = ([a, b]: readonly [number, number]) => a + Math.random() * (b - a);
-
-/** The word drawn into a canvas the way its span sets it, read back as
-    grains: one for every pixel step it covers. `away` is where they go. */
-function grainsOf(el: HTMLElement, box: DOMRect, text: string, alpha: number, away: { x: number; y: number }): Grain[] {
-  const rect = el.getBoundingClientRect();
-  if (!rect.width || !rect.height || alpha <= 0.01) return [];
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const px = fontPx();
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.ceil(rect.width * dpr) + 2;
-  canvas.height = Math.ceil(rect.height * dpr) + 2;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return [];
-  ctx.scale(dpr, dpr);
-  ctx.font = fontOf(px);
-  if ("letterSpacing" in ctx) (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${LETTER_SPACING * px}px`;
-  // the span's line box is one em; its baseline sits where CSS puts it, the content area centred on that box
-  const m = ctx.measureText(text);
-  const ascent = m.fontBoundingBoxAscent ?? px * 0.8;
-  const descent = m.fontBoundingBoxDescent ?? px * 0.2;
-  ctx.textBaseline = "alphabetic";
-  ctx.fillText(text, 0, (rect.height - (ascent + descent)) / 2 + ascent);
-  const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-
-  const still = reducedMotion();
-  const now = performance.now() / 1000;
-  const step = Math.max(1, Math.round(dpr));
-  const left = rect.left - box.left;
-  const top = rect.top - box.top;
-  const cx = rect.width / 2;
-  const cy = rect.height / 2;
-  const reach = Math.abs(away.x) * cx + Math.abs(away.y) * cy || 1;
-  const grains: Grain[] = [];
-  for (let y = 0; y < height; y += step) {
-    for (let x = 0; x < width; x += step) {
-      const a = data[(y * width + x) * 4 + 3];
-      if (a < 40) continue;
-      const gx = x / dpr;
-      const gy = y / dpr;
-      // the end of the word that faces away from the line goes first
-      const along = ((gx - cx) * away.x + (gy - cy) * away.y) / reach;
-      const speed = between(GRAIN_SPEED);
-      grains.push({
-        x: left + gx,
-        y: top + gy,
-        vx: still ? 0 : away.x * speed + (Math.random() - 0.5) * 18,
-        vy: still ? 0 : away.y * speed - 8 - Math.random() * 16,
-        at: still ? now : now + (1 - (along + 1) / 2) * SWEEP_S + Math.random() * 0.22,
-        life: still ? 0.5 : between(GRAIN_LIFE),
-        // a touch stronger than the faded word, so its coming apart reads
-        alpha: Math.min(1, (a / 255) * alpha * GRAIN_LIFT),
-        size: step / dpr,
-        seed: Math.random() * Math.PI * 2,
-      });
-    }
-  }
-  return grains;
-}
 
 const placeStyle = (x: number, y: number): CSSProperties => ({
   position: "absolute",
@@ -201,6 +133,46 @@ const placeStyle = (x: number, y: number): CSSProperties => ({
   lineHeight: 1,
   whiteSpace: "nowrap",
 });
+
+/** A word washing out: its own filter, whose clock starts when it is drawn, so
+    the run and the bleed begin as the linger ends. */
+function WashingWord({ word, onGone }: { word: Fallen; onGone: () => void }) {
+  const id = `trail-wash-${word.key}`;
+  const still = reducedMotion();
+  const total = (LINGER_MS + WASH_MS) / 1000;
+  const held = LINGER_MS / 1000 / total;
+  const ramp = (to: number) => ({ values: `0;0;${to}`, keyTimes: `0;${held.toFixed(3)};1`, dur: `${total}s`, fill: "freeze" as const });
+  return (
+    <span style={{ ...placeStyle(word.x, word.y), padding: "0.2em 0" }}>
+      {!still && (
+        <svg width="0" height="0" style={{ position: "absolute" }} aria-hidden>
+          <filter id={id} x="-25%" y="-80%" width="150%" height="260%">
+            <feMorphology in="SourceGraphic" operator="dilate" radius="0" result="spread">
+              <animate attributeName="radius" {...ramp(WASH_SPREAD)} />
+            </feMorphology>
+            <feTurbulence type="fractalNoise" baseFrequency="0.05 0.09" numOctaves="2" seed={word.key % 97} result="paper" />
+            <feDisplacementMap in="spread" in2="paper" scale="0" xChannelSelector="R" yChannelSelector="G" result="run">
+              <animate attributeName="scale" {...ramp(WASH_RUN)} />
+            </feDisplacementMap>
+            <feGaussianBlur in="run" stdDeviation="0">
+              <animate attributeName="stdDeviation" {...ramp(WASH_BLUR)} />
+            </feGaussianBlur>
+          </filter>
+        </svg>
+      )}
+      <span
+        style={{
+          display: "block",
+          filter: still ? undefined : `url(#${id})`,
+          animation: `${still ? "trailFadeOut" : "trailWash"} ${WASH_MS}ms cubic-bezier(.35, 0, .65, 1) ${LINGER_MS}ms forwards`,
+        }}
+        onAnimationEnd={onGone}
+      >
+        {word.text}
+      </span>
+    </span>
+  );
+}
 
 export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed, onReveal }: {
   memoryId: string;
@@ -214,10 +186,10 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
   avoid?: RefObject<Element | null>[];
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const sky = useRef<HTMLCanvasElement>(null);
   const [trail, setTrail] = useState<Fallen[]>([]);
   const trailNow = useRef<Fallen[]>([]);
-  const spans = useRef(new Map<number, HTMLSpanElement>());
+  /** Words let go from the trail, lingering and then washing out. */
+  const [washing, setWashing] = useState<Fallen[]>([]);
   /** The last word set down, and the share of the gap the next one waits for. */
   const last = useRef<{ x: number; y: number; width: number; jitter: number } | null>(null);
   /** The pointer's eased speed (px/s) and the time of its last move. */
@@ -225,8 +197,6 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
   /** The next word of the transcript to set down. */
   const next = useRef(0);
   const count = useRef(0);
-  const grains = useRef<Grain[]>([]);
-  const frame = useRef(0);
   /** How far the pointer has travelled with this memory selected, px, and where it was. */
   const travel = useRef(0);
   const lastPointer = useRef<{ x: number; y: number } | null>(null);
@@ -239,63 +209,15 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
 
   const words = useMemo(() => transcript.split(/[\s.,!?]+/).filter(Boolean), [transcript]);
 
-  /** Draw the loose grains until the last has gone out. */
-  const drift = () => {
-    cancelAnimationFrame(frame.current);
-    let prev = performance.now() / 1000;
-    const tick = () => {
-      const canvas = sky.current;
-      const ctx = canvas?.getContext("2d");
-      if (!canvas || !ctx) return;
-      const dpr = Math.min(2, window.devicePixelRatio || 1);
-      const w = canvas.clientWidth;
-      const h = canvas.clientHeight;
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-        canvas.width = Math.round(w * dpr);
-        canvas.height = Math.round(h * dpr);
-      }
-      const now = performance.now() / 1000;
-      const dt = Math.min(0.05, now - prev);
-      prev = now;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = INK;
-      const alive: Grain[] = [];
-      for (const g of grains.current) {
-        const age = now - g.at;
-        if (age > g.life) continue;
-        alive.push(g);
-        let fade = 1;
-        if (age > 0) {
-          // loose: it slows as it goes, drifts up a little, and wavers
-          const drag = Math.exp(-1.6 * dt);
-          g.vx = g.vx * drag + Math.sin(g.seed + age * 5) * 22 * dt;
-          g.vy = g.vy * drag - 10 * dt;
-          g.x += g.vx * dt;
-          g.y += g.vy * dt;
-          fade = Math.pow(1 - age / g.life, 1.6);
-        }
-        ctx.globalAlpha = g.alpha * fade;
-        const s = g.size * (age > 0 ? 0.6 + 0.4 * fade : 1);
-        ctx.fillRect(g.x, g.y, s, s);
-      }
-      ctx.globalAlpha = 1;
-      grains.current = alive;
-      frame.current = alive.length ? requestAnimationFrame(tick) : 0;
-    };
-    frame.current = requestAnimationFrame(tick);
-  };
-
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   // another memory, another set of words: the trail and the count start over
   useEffect(() => {
     trailNow.current = [];
     setTrail([]);
     setLeaving(false);
+    setWashing([]);
     last.current = null;
     next.current = 0;
-    grains.current = [];
     travel.current = 0;
     lastPointer.current = null;
     speed.current = { v: 0, t: 0 };
@@ -377,20 +299,8 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
       const all = [...trailNow.current, word];
       const gone = all.slice(0, Math.max(0, all.length - TRAIL));
       trailNow.current = all.slice(-TRAIL);
-      // the oldest comes apart before its span goes, read from where it is drawn
-      gone.forEach((old, i) => {
-        const el = spans.current.get(old.key);
-        if (!el) return;
-        const toward = all[i + 1] ?? word;
-        // away from the line, and a little up
-        const dx = old.x - toward.x;
-        const dy = old.y - toward.y - 0.5 * Math.hypot(old.x - toward.x, old.y - toward.y);
-        const n = Math.hypot(dx, dy) || 1;
-        const face = el.querySelector<HTMLElement>("[data-face]") ?? el;
-        const alpha = parseFloat(getComputedStyle(el).opacity) * parseFloat(getComputedStyle(face).opacity);
-        grains.current.push(...grainsOf(face, r, old.text, alpha, { x: dx / n, y: dy / n }));
-      });
-      if (gone.length) drift();
+      // the oldest is let go where it is: it lingers, then washes out
+      if (gone.length) setWashing((w) => [...w, ...gone]);
       setTrail(trailNow.current);
     };
     window.addEventListener("pointermove", onMove);
@@ -420,17 +330,17 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
           to { transform: translateY(115%); }
         }
         @keyframes trailFadeOut { to { opacity: 0; } }
+        @keyframes trailWash {
+          0% { opacity: 1; text-shadow: 0 0 0 rgba(${INK_RGB}, 0); }
+          35% { opacity: .8; text-shadow: 0 0 .35em rgba(${INK_RGB}, .5); }
+          100% { opacity: 0; letter-spacing: .05em; text-shadow: 0 0 1em rgba(${INK_RGB}, 0); }
+        }
       `}</style>
-      <canvas ref={sky} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+      {washing.map((word) => (
+        <WashingWord key={word.key} word={word} onGone={() => setWashing((w) => w.filter((v) => v.key !== word.key))} />
+      ))}
       {trail.map(({ key, text, x, y }, i) => (
-        <span
-          key={key}
-          ref={(el) => {
-            if (el) spans.current.set(key, el);
-            else spans.current.delete(key);
-          }}
-          style={placeStyle(x, y)}
-        >
+        <span key={key} style={placeStyle(x, y)}>
           {/* the mask: a word leaves by sliding down out of it */}
           <span style={{ display: "block", overflow: "hidden", padding: "0.2em 0" }}>
             <span data-face style={{

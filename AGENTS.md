@@ -14,7 +14,13 @@ There is no select/drag-to-highlight step. The live screen is
 in `archive/highlight-transcript/`. The transcript entry saves the words and
 completion state so photo Back and reload restore the finished text. Failed or
 lost real transcriptions offer “record again” and never substitute the sample.
-The descent retains its transcription guard for older carried drafts. The
+The descent retains its transcription guard for older carried drafts.
+Above the water the actions sit higher: `FLOW_PAGE.surfaceActionBottom`
+(120px) for recording's stop/record, the transcript's "record again |
+continue" (a fixed row, no longer under the last line) and naming's save
+(shifted by `surfaceActionLift` so the naming vessel's rows are unchanged).
+While recording, "recording · m:ss" is centred on the screen; the
+instructions are one paragraph at the transcript's width (`TRANSCRIPT_WIDTH`). The
 gallery trail still lets words fall behind the pointer without highlighted ink.
 
 ## Water surface continuity (2026-10-11)
@@ -296,7 +302,13 @@ topology, continuous retargeting, endpoint glitches and final-pose convergence.
 
 ## Pond → recording dialog continuity (2026-10-10)
 
-The transcription pulse sits at screen y=.81, with its floating label 52px
+Pond heading (2026-10-11): `PondHeading` (exported from `MemoryPondPage.tsx`)
+fades in at its resting place (20vh above centre), never travelling, 300ms
+after the camera has settled (`enabled`). The descent's floating phase — the
+photo landed on the water — wears the same heading, "Begin building a vessel
+for your memory."
+
+The transcription pulse sits at screen y=.81, with its floating label 96px
 above the origin. `VoiceRippleSpot.soft` selects a gentle water-wave envelope
 (encoded as negative strength in `uDrops`, with absolute strength for amplitude):
 650ms entrance, eased initial expansion, and a smooth release before expiry.

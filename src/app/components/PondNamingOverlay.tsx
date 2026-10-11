@@ -358,6 +358,8 @@ export function PondNamingOverlay({
         </div>
         </div>}
         actions={rim.actions}
+        // raised to the surface's action row; the scene keeps its rows, so the vessel stays put
+        actionsStyle={{ transform: `translateY(-${FLOW_PAGE.surfaceActionLift})` }}
         headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
           transform: `translateY(calc(${fieldDrop}px - ${TEXT_LIFT}))`,
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}

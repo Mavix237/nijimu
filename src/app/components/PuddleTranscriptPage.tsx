@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { CHROME_GRAY } from "../lib/colors";
 import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
-import { NOTE_SIZE, SERIF, TRANSCRIPT } from "../lib/theme";
+import { NOTE_SIZE, SERIF, TRANSCRIPT, TRANSCRIPT_WIDTH } from "../lib/theme";
 import { getTranscription } from "../lib/transcribe";
 import type { ArtifactForm } from "../lib/superformula";
 import { TextButton } from "./TextButton";
@@ -14,7 +14,7 @@ import type { VoiceRippleSpot } from "../lib/voicePeaks";
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
 const POND_FADE = "rgba(226, 230, 226, 0.88)";
 const TRANSCRIBING_SPOT = { x: .5, y: .81, strength: .7, soft: true };
-const TRANSCRIBING_LABEL_GAP = 52;
+const TRANSCRIBING_LABEL_GAP = 96;
 
 interface PuddleTranscriptState {
   transcript?: string;
@@ -253,7 +253,8 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             left: "50%",
             transform: "translateX(-50%)",
             top: `calc(${FLOW_PAGE.headingTop} + 96px)`,
-            bottom: transcribing ? `calc(${(1 - TRANSCRIBING_SPOT.y) * 100}vh + ${TRANSCRIBING_LABEL_GAP + 68}px)` : "max(48px, env(safe-area-inset-bottom))",
+            bottom: transcribing ? `calc(${(1 - TRANSCRIBING_SPOT.y) * 100}vh + ${TRANSCRIBING_LABEL_GAP + 68}px)`
+              : `calc(${FLOW_PAGE.surfaceActionBottom} + ${FLOW_PAGE.actionHeight + 24}px)`,
             width: "100%",
             display: "flex",
             flexDirection: "column",
@@ -287,7 +288,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
           </p>
           <div
             style={{
-              width: "min(80ch, 100%)",
+              width: TRANSCRIPT_WIDTH,
               flex: "0 1 auto",
               minHeight: 0,
               maxHeight: "100%",
@@ -362,48 +363,53 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                 </div>
               )}
             </div>
-            {(pairReady || transcribeError) && (
-              <div
-                style={{
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 22,
-                  pointerEvents: "auto",
-                  visibility: transcribeError || showContinue ? "visible" : "hidden",
-                }}
-              >
-                {transcribeError ? (
-                  <TextButton label="record again" onClick={goToRecord} style={{ width: "9em", justifyContent: "center" }} />
-                ) : (
-                  <>
-                    <TextButton
-                      label="record again"
-                      onClick={goToRecord}
-                      style={{ width: "9em", justifyContent: "center" }}
-                    />
-                    <span
-                      aria-hidden
-                      style={{
-                        width: 1,
-                        height: "1em",
-                        background: "rgba(123, 123, 135, 0.45)",
-                        flexShrink: 0,
-                      }}
-                    />
-                    <TextButton
-                      label="continue"
-                      onClick={handleContinue}
-                      disabled={fadeOutContent}
-                      style={{ width: "9em", justifyContent: "center" }}
-                    />
-                  </>
-                )}
-              </div>
-            )}
           </div>
         </div>
+        {(pairReady || transcribeError) && (
+          <div
+            style={{
+              /* the actions' row, as on the recording screen */
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              bottom: FLOW_PAGE.surfaceActionBottom,
+              minHeight: FLOW_PAGE.actionHeight,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 22,
+              pointerEvents: "auto",
+              visibility: transcribeError || showContinue ? "visible" : "hidden",
+            }}
+          >
+            {transcribeError ? (
+              <TextButton label="record again" onClick={goToRecord} style={{ width: "9em", justifyContent: "center" }} />
+            ) : (
+              <>
+                <TextButton
+                  label="record again"
+                  onClick={goToRecord}
+                  style={{ width: "9em", justifyContent: "center" }}
+                />
+                <span
+                  aria-hidden
+                  style={{
+                    width: 1,
+                    height: "1em",
+                    background: "rgba(123, 123, 135, 0.45)",
+                    flexShrink: 0,
+                  }}
+                />
+                <TextButton
+                  label="continue"
+                  onClick={handleContinue}
+                  disabled={fadeOutContent}
+                  style={{ width: "9em", justifyContent: "center" }}
+                />
+              </>
+            )}
+          </div>
+        )}
     </div>
   );
 }

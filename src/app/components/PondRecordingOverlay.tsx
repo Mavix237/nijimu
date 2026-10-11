@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { CHROME_GRAY } from "../lib/colors";
-import { SERIF, TITLE, NOTE_SIZE, INSTRUCTION_SIZE } from "../lib/theme";
+import { FLOW_PAGE, SERIF, TITLE, NOTE_SIZE, INSTRUCTION_SIZE, TRANSCRIPT, TRANSCRIPT_WIDTH } from "../lib/theme";
 import { beginTranscription } from "../lib/transcribe";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { TextButton } from "./TextButton";
@@ -185,7 +185,7 @@ export function PondRecordingOverlay({
         }
       `}</style>
 
-      <FlowPageGrid heading={
+      <FlowPageGrid headingStyle={{ maxWidth: "none" }} heading={
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28, ...leaveStyle }}>
           <div style={{ ...TITLE, margin: 0, color: CHROME_GRAY, width: "100%", textAlign: "center" }}>
             <ParticleText
@@ -198,41 +198,25 @@ export function PondRecordingOverlay({
               soft
             />
           </div>
-          <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6,
-            width: "min(28em, 100%)", display: "flex", flexDirection: "column", gap: 14, textAlign: "center" }}>
-            <ParticleText
-              text="Find a memory in your mind, and choose wherever you want to begin."
-              seed={53}
-              animate={!reducedMotion}
-              delay={NOTE_1_DELAY_S}
-              sweep={NOTE_SWEEP_S}
-              wrap
-              soft
-            />
-            <ParticleText
-              text="Don’t worry about making it perfect, just speak naturally and stop when the story feels complete."
-              seed={59}
-              animate={!reducedMotion}
-              delay={NOTE_1_DELAY_S + NOTE_SWEEP_S}
-              sweep={NOTE_SWEEP_S}
-              wrap
-              soft
-            />
+          {/* as wide as the transcript that follows: measured in its font */}
+          <div style={{ fontFamily: TRANSCRIPT.fontFamily, fontSize: TRANSCRIPT.fontSize, width: TRANSCRIPT_WIDTH }}>
+            <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6, textAlign: "center" }}>
+              <ParticleText
+                text="Find a memory in your mind, and choose wherever you want to begin. Don’t worry about making it perfect, just speak naturally and stop when the story feels complete."
+                seed={53}
+                animate={!reducedMotion}
+                delay={NOTE_1_DELAY_S}
+                sweep={NOTE_SWEEP_S * 2}
+                wrap
+                soft
+              />
+            </div>
           </div>
         </div>
       }
+      actionBottom={FLOW_PAGE.surfaceActionBottom}
       actionsStyle={{ pointerEvents: buttonIn && !leaving ? "auto" : "none", ...fadeStyle(buttonIn) }} actions={
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
-        {(recorder.isRecording || troubleMessage) && (
-          <p role={troubleMessage ? "alert" : "timer"} aria-label={troubleMessage ? undefined : "recording duration"}
-            style={{ ...noteStyle, maxWidth: "28em", textAlign: "center", fontVariantNumeric: "tabular-nums",
-              opacity: troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
-              transition: "opacity 0.4s ease",
-              animation: reducedMotion ? "none" : "puddleRecIn 700ms ease backwards" }}>
-            {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`}
-          </p>
-        )}
-        {!recorder.isRecording ? (
+        !recorder.isRecording ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 22 }}>
             <TextButton
               label={captureFailed ? "record again" : "record"}
@@ -252,9 +236,19 @@ export function PondRecordingOverlay({
             onClick={() => { cancelRipples(); recorder.stop(); }}
             style={{ width: "9em", justifyContent: "center" }}
           />
-        )}
-        </div>
+        )
       } />
+      {/* the timer, or what went wrong, in the middle of the water */}
+      {(recorder.isRecording || troubleMessage) && (
+        <p role={troubleMessage ? "alert" : "timer"} aria-label={troubleMessage ? undefined : "recording duration"}
+          style={{ ...noteStyle, position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+            width: "min(28em, calc(100% - 40px))", textAlign: "center", fontVariantNumeric: "tabular-nums",
+            opacity: !buttonIn || leaving ? 0 : troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
+            transition: "opacity 0.4s ease", pointerEvents: "none",
+            animation: reducedMotion ? "none" : "puddleRecIn 700ms ease backwards" }}>
+          {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`}
+        </p>
+      )}
     </div>
   );
 }

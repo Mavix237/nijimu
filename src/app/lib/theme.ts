@@ -43,6 +43,9 @@ export const TRANSCRIPT = {
   fontFeatureSettings: '"kern" 1',
   fontKerning: "normal",
 } as const;
+/** The transcript's measure, in its own font's `ch`; other copy that should
+ * share it sets this width on a box in `TRANSCRIPT`'s family and size. */
+export const TRANSCRIPT_WIDTH = "min(80ch, 100%)";
 /** A memory's words in the gallery — the cursor's trail and the full transcript
     under the year set alike. The size is 0.9vw between 12 and 14px; the trail
     measures its words with these numbers. */
@@ -88,6 +91,10 @@ export const FLOW_PAGE = {
   namingArtifactRaise: "14vh",
   actionHeight: 45,
   actionBottom: "max(72px, env(safe-area-inset-bottom))",
+  /** Above the water (recording, transcript, naming) the actions sit higher. */
+  surfaceActionBottom: "max(120px, env(safe-area-inset-bottom))",
+  /** How much higher that is than `actionBottom`, where a screen keeps its rows. */
+  surfaceActionLift: "48px",
 } as const;
 
 /** Phone-only handling layout: shape, rhythm, distance and colour. */

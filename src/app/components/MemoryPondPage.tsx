@@ -35,10 +35,8 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
   const origin = useRef<{ x: number; y: number } | null>(null);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const hintRef = useRef<HTMLDivElement>(null);
-  const lineRef = useRef<HTMLParagraphElement>(null);
   const hintReveal = useRef(0);
   const holdProgress = useRef(0);
-  const seen = useRef(hasSeenPondInstruction());
   const [lifeReady, setLifeReady] = useState(() => overlaid || hasSeenPondInstruction());
   const enabled = active && arrival === 1 && !overlaid;
   const ready = useCallback(() => onReady?.(), [onReady]);
@@ -54,35 +52,14 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     const r = e.currentTarget.getBoundingClientRect();
     cursorRef.current = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
+  // The first visit's prompts and hint wait for the heading to have appeared.
   useEffect(() => {
     if (!enabled || lifeReady) return;
-    const line = lineRef.current;
-    if (!line) return;
-    let raf = 0, elapsed = 0, last = performance.now();
-    const appearMs = reducedMotion ? 1 : TEXT_ENTER_MS;
-    const riseMs = reducedMotion ? 1 : 1100;
-    const ease = (t: number) => t * t * (3 - 2 * t);
-    line.style.opacity = "0";
-    line.style.filter = "blur(4px)";
-    line.style.transform = "translate(-50%, -50%)";
-    const tick = (now: number) => {
-      if (!document.hidden) elapsed += Math.min(50, now - last);
-      last = now;
-      const appear = ease(Math.min(1, elapsed / appearMs));
-      const rise = ease(Math.min(1, Math.max(0, (elapsed - appearMs) / riseMs)));
-      line.style.opacity = String(appear);
-      line.style.filter = `blur(${(1 - appear) * 4}px)`;
-      line.style.transform = `translate(-50%, -50%) translateY(-${rise * 20}vh)`;
-      if (appear >= 1 && rise >= 1) {
-        markPondInstructionSeen();
-        seen.current = true;
-        setLifeReady(true);
-        return;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const timer = window.setTimeout(() => {
+      markPondInstructionSeen();
+      setLifeReady(true);
+    }, reducedMotion ? 0 : POND_HEADING_DELAY_MS + TEXT_ENTER_MS);
+    return () => window.clearTimeout(timer);
   }, [enabled, lifeReady, reducedMotion]);
   useEffect(() => {
     let raf = 0, elapsed = 0, last = performance.now();
@@ -195,33 +172,9 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SANS, fontWeight: 400, fontSynthesis: "none", fontSize: POND_PROMPT_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
       {thought.text}
     </div>)}
-    <p
-      ref={lineRef}
-      aria-hidden
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: "50%",
-        transform: seen.current
-          ? "translate(-50%, -50%) translateY(-20vh)"
-          : "translate(-50%, -50%)",
-        filter: seen.current ? "none" : "blur(4px)",
-        margin: 0,
-        width: "min(28em, 86vw)",
-        textAlign: "center",
-        pointerEvents: "none",
-        zIndex: 8,
-        color: CHROME_GRAY,
-        fontFamily: SERIF,
-        fontWeight: 400,
-        fontSynthesis: "none",
-        fontSize: INSTRUCTION_SIZE,
-        lineHeight: 1.45,
-        opacity: overlaid ? 0 : seen.current ? arrival : 0,
-        transition: overlaid ? "opacity 400ms ease" : undefined,
-      }}
-    >To create a new memory artifact, record yourself talking about a particular memory.
-    </p>
+    <PondHeading visible={enabled} reducedMotion={reducedMotion}>
+      To create a new memory artifact, record yourself talking about a particular memory.
+    </PondHeading>
     {!overlaid && <button ref={buttonRef} aria-label="Hold to begin" aria-describedby="pond-hold-help" disabled={!enabled}
       onPointerDown={e => {
         if (e.button !== 0) return;
@@ -262,4 +215,34 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     {naming && onNamingSaved && <PondNamingOverlay key={naming.draftId} session={naming} reducedMotion={reducedMotion} sinkRef={sinkRef} onSaved={onNamingSaved} backRef={namingBackRef} />}
     <span className="sr-only" role="status">{recording ? "ready to record" : ""}</span>
   </section>;
+}
+
+/** After the camera settles, a beat before the heading appears. */
+const POND_HEADING_DELAY_MS = 300;
+
+/** The pond's heading: it fades in where it rests, never travelling, a beat
+ * after the camera has settled. The descent's floating photo wears the same. */
+export function PondHeading({ visible, reducedMotion = false, children }: {
+  visible: boolean; reducedMotion?: boolean; children: ReactNode;
+}) {
+  return <p aria-hidden style={{
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%) translateY(-20vh)",
+    margin: 0,
+    width: "min(28em, 86vw)",
+    textAlign: "center",
+    pointerEvents: "none",
+    zIndex: 8,
+    color: CHROME_GRAY,
+    fontFamily: SERIF,
+    fontWeight: 400,
+    fontSynthesis: "none",
+    fontSize: INSTRUCTION_SIZE,
+    lineHeight: 1.45,
+    opacity: visible ? 1 : 0,
+    transition: reducedMotion ? "opacity 200ms ease"
+      : visible ? `opacity ${TEXT_ENTER_MS}ms ease ${POND_HEADING_DELAY_MS}ms` : "opacity 400ms ease",
+  }}>{children}</p>;
 }

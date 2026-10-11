@@ -20,7 +20,7 @@ import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
 import { CAROUSEL_PATH, DESCENT_PATH as DESCENT_ROUTE, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
 import { PuddleTranscriptPage } from "../components/PuddleTranscriptPage";
-import { MemoryPondPage } from "../components/MemoryPondPage";
+import { MemoryPondPage, PondHeading } from "../components/MemoryPondPage";
 import { PondRecordingOverlay } from "../components/PondRecordingOverlay";
 import { BackButton } from "../components/BackButton";
 import { saveMemory } from "../lib/memoryStore";
@@ -3034,6 +3034,11 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           width: DESKTOP_CAMERA.width, height: DESKTOP_CAMERA.height,
           borderRadius: 10, transform: "scaleX(-1)", zIndex: 20, pointerEvents: "none",
           opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease" }} />}
+
+      {/* the photo has landed: the pond's heading, in its place and manner */}
+      <PondHeading visible={!routeStep && phase === "floating"} reducedMotion={reducedMotion}>
+        Begin building a vessel for your memory.
+      </PondHeading>
 
       <div data-descent-photo-controls hidden={!surfaceControlsVisible}
         style={{ display: surfaceControlsVisible ? "contents" : "none" }}>

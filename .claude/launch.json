@@ -32,6 +32,16 @@
         "--strictPort"
       ],
       "port": 5182
+    },
+    {
+      "name": "dev-auto",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "pnpm exec vite --port ${PORT:-5183} --strictPort"
+      ],
+      "port": 5183,
+      "autoPort": true
     }
   ]
 }

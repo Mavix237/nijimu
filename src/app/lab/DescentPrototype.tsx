@@ -27,6 +27,7 @@ import {
   createGestureGate,
   handCenter,
   landmarkDistance,
+  preloadHandTracking,
   useHandTracking,
 } from "../hooks/useHandTracking";
 import { GestureHint } from "../components/GestureHint";
@@ -2568,8 +2569,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
      distance, a fingertip over the field for color (pinch to hold).
      After the form surfaces, the camera starts only through the access dialog;
      dragging stays available when it is refused or no hand is seen. */
+  // The tracker's files download from the hold onward, while the form rises;
+  // the tracker itself is built while the camera dialog is open.
+  const handsSoon = CAMERA_ENABLED && (phase === "descending" || step !== null);
+  useEffect(() => {
+    if (handsSoon) preloadHandTracking();
+  }, [handsSoon]);
   const tracking = useHandTracking({
     enabled: CAMERA_ENABLED && step !== null && (cameraChoice === "starting" || cameraChoice === "enabled"),
+    prepare: CAMERA_ENABLED && step !== null && cameraChoice !== "manual",
     videoRef,
     numHands: step === "shape" ? 2 : 1,
     onLandmarks: (hands) => {

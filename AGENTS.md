@@ -110,7 +110,7 @@ is a live canvas.
   route; the landing's 3D scenes (gallery, pond, descent) load through
   `components/landingScenes.ts` (preloaded when the landing is idle and on
   Enter); `BlobScene` lazy-loads `SceneViewer`; MediaPipe is imported only when
-  a camera starts. Main chunk 2.0 MB → 0.4 MB (606 → 134 KB gzip).
+  hands are near (the descent's hold, or a camera starting). Main chunk 2.0 MB → 0.4 MB (606 → 134 KB gzip).
 - GenRyuMin2 TW: `-ui` subset (~8 KB, the source's own CJK glyphs) is checked
   first; the 2.2 MB full font downloads only for other CJK text. Rebuild the
   subset when adding CJK characters (README, Fonts).
@@ -123,6 +123,18 @@ is a live canvas.
   (raised from 0.6 / 1.5 on request for a little more resolution); the puddle sim stays at 2× for its
   grain. Photos: uploads are scaled to 1600 px (`lib/photoSize.ts`), seat
   textures to 1024 px, the gallery stills preload when idle.
+- Hand tracking (`hooks/useHandTracking.ts`): the MediaPipe engine is the
+  installed package's own (`?url` imports) and the model is
+  `src/assets/mediapipe/hand_landmarker.task.gz` (unpacked with
+  `DecompressionStream`; Google's copy only where that is missing), all
+  served from `/assets/` with immutable caching (`vercel.json`). They download
+  once per visit, together; the descent starts that at the hold
+  (`preloadHandTracking`) and builds the tracker while the camera dialog is
+  open (`prepare`), alongside the camera rather than after it. One tracker
+  serves every handling step: a change of `numHands` is `setOptions`, never
+  a rebuild or a new camera request. Detection runs once per new camera frame.
+  Updating `@mediapipe/tasks-vision` keeps the engine in step; refresh the
+  model file only if Google publishes a new one.
 - Grain: the landing's is one grain per device pixel from a 512 px tile; the
   glass pane's tile is 256 px.
 - Header menu (phones, ≤600px): the corner icons fold into a burger

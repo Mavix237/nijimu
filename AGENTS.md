@@ -18,6 +18,29 @@ over grazing rays, and light shafts ease out over an angular range instead of
 the former hard `dir.y < .2` cutoff, preventing a separate coloured band beneath
 the surface during the naming ascent.
 
+## Gallery shape library (2026-10-11)
+
+The 16 curated memories wear a library of 16 shapes (`lib/galleryLibrary.ts`),
+in memory order. Candidates: E-01…E-16 (the shapes the gallery drew before the
+Y series) and the 18 Y anchors. `/lab/shapes` (`ShapeLibraryLab.tsx`, LabDock
+"shapes") picks 16, orders them, and sets per shape `size` (grows the seat
+canvas, camera unchanged), `photoHeight` (sheet `anchorHeight`), `photoAround`
+(degrees from the usual anchor; the seat still opens on the usual side via
+`VesselState.facing`) and `photoSize` (× `fitSheetSize`). The still is `photo` (its place in the
+sorted vessel-gallery set); with none kept, a memory wears the still it was
+seated with, and one that never had one wears the first still — the same
+picture `/lab/shapes` shows. It can lock the
+camera (`view: {around, pitch}`: "lock this view" takes the preview's dragged
+angle; the seat opens there and a drag no longer turns it — `VesselArtifact`
+`viewPitch`/`viewToken`/`locked`/`onView`). "save to library"
+keeps it in localStorage `nijimu.gallery.library`; nothing kept = `BUILT_IN`
+(the 2026-10-11 settling: Y-01, Y-09, E-08, E-10, Y-03, Y-04, Y-17, Y-20,
+Y-06, Y-07, Y-08, E-14, Y-16, E-02, Y-12, Y-13).
+`libraryVessel`/`curatedStates` in `VesselGalleryPreview.tsx` build the
+states; a gallery panel pushed after the library was saved still wins whole,
+an older one keeps only its look. Thumbnails are 2D; only the focused shape
+is a live canvas.
+
 ## Phone layout (2026-10-10)
 
 Breakpoint: `max-width: 600px` (`src/styles/responsive.css`, `useCompact()` in

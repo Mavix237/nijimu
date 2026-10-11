@@ -2404,6 +2404,13 @@ export interface VesselState {
   url: string;
   seed: number;
   form: ArtifactForm;
+  /** The vessel's size in a gallery seat against the seat's own framing (the gallery library's). */
+  size?: number;
+  /** The wall angle a gallery seat opens on, when the picture is hung away from it (the gallery library's). */
+  facing?: number;
+  /** The eye's height a gallery seat opens at (degrees), and whether that view is locked against turning. */
+  viewPitch?: number;
+  viewLocked?: boolean;
 }
 
 export interface VesselPreviewProps {

@@ -15,6 +15,7 @@ const ENTRIES: { to: string; label: string; hint: string; icon: IconName }[] = [
   { to: "/lab/film", label: "film", hint: "the photo's look", icon: "film" },
   { to: "/lab/vessel", label: "vessel", hint: "the glass, with its sliders", icon: "vessel" },
   { to: "/lab/gallery", label: "gallery", hint: "the memories as vessels", icon: "gallery" },
+  { to: "/lab/shapes", label: "shapes", hint: "choose the gallery's sixteen", icon: "shape" },
 ];
 
 type IconName = "descent" | "film" | "vessel" | "gallery" | "shape" | "color" | "distance";

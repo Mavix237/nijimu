@@ -43,6 +43,16 @@ export interface VesselArtifactProps {
   cacheKey: string;
   /** The strip's size in the glass; fitted to the cavity (`fitSheetSize`) unless given. */
   sheetSize?: number;
+  /** The wall angle (degrees) the eye opens on; the sheet's own `anchorAngle` unless given, so a picture hung off it sits to one side. */
+  facing?: number;
+  /** The eye's height (degrees) it opens at; the tune's `pitch` unless given. */
+  viewPitch?: number;
+  /** When this changes the eye goes back to exactly `facing`/`viewPitch`, dropping any turn of the viewer's own. */
+  viewToken?: string;
+  /** The view is held: a drag no longer turns it (a press and release still picks). */
+  locked?: boolean;
+  /** As a drag turns the eye: the wall angle it now faces and its height, in degrees. */
+  onView?: (facing: number, pitch: number) => void;
   /** A press and release without a drag at the apex — the seat is being asked for. */
   onPick?: () => void;
   /** Called after the first complete frame, so arrivals wait for the actual vessel. */
@@ -157,13 +167,30 @@ function buildVessel(key: string, form: ArtifactForm, morph: number, tune: Vesse
 }
 
 function VesselObject({
-  form, morph, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, cacheKey, sheetSize, onPick, onReady,
+  form, morph, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, cacheKey, sheetSize, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady,
 }: VesselArtifactProps) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
   // the pressed sheet has no one place, so it opens at a turn of its own
-  const yaw = useRef(sheetMode === "draped" ? (-tune.anchorAngle * Math.PI) / 180 : hash2(seed, 3.1) * Math.PI * 2);
-  const pitch = useRef(tune.pitch);
+  const faceAngle = facing ?? tune.anchorAngle;
+  const yaw = useRef(sheetMode === "draped" ? (-faceAngle * Math.PI) / 180 : hash2(seed, 3.1) * Math.PI * 2);
+  const pitch = useRef(viewPitch ?? tune.pitch);
+  const faceSeen = useRef(faceAngle);
+  const tokenSeen = useRef(viewToken);
+  if (tokenSeen.current !== viewToken) {
+    yaw.current = (-faceAngle * Math.PI) / 180;
+    pitch.current = viewPitch ?? tune.pitch;
+    tokenSeen.current = viewToken;
+    faceSeen.current = faceAngle;
+  } else if (faceSeen.current !== faceAngle) {
+    // the eye's side moved: it goes round with it, keeping any turn of the viewer's own
+    if (sheetMode === "draped") yaw.current -= ((faceAngle - faceSeen.current) * Math.PI) / 180;
+    faceSeen.current = faceAngle;
+  }
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
+  const onViewRef = useRef(onView);
+  onViewRef.current = onView;
 
   // at the apex the vessel is in hand: a drag turns the eye round it and up or down, as in the lab
   const onPickRef = useRef(onPick);
@@ -178,23 +205,26 @@ function VesselObject({
       last = { id: e.pointerId, x: e.clientX, y: e.clientY };
       travelled = 0;
       try { el.setPointerCapture(e.pointerId); } catch { /* a pointer the browser no longer holds */ }
-      el.style.cursor = "grabbing";
+      if (!lockedRef.current) el.style.cursor = "grabbing";
     };
     const move = (e: PointerEvent) => {
       if (!last || e.pointerId !== last.id) return;
       travelled += Math.hypot(e.clientX - last.x, e.clientY - last.y);
-      yaw.current += (e.clientX - last.x) * 0.01;
-      pitch.current = Math.min(PITCH_MAX, Math.max(PITCH_MIN, pitch.current - (e.clientY - last.y) * 0.25));
+      if (!lockedRef.current) {
+        yaw.current += (e.clientX - last.x) * 0.01;
+        pitch.current = Math.min(PITCH_MAX, Math.max(PITCH_MIN, pitch.current - (e.clientY - last.y) * 0.25));
+        onViewRef.current?.((-yaw.current * 180) / Math.PI, pitch.current);
+        invalidate();
+      }
       last = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      invalidate();
     };
     const up = (e: PointerEvent) => {
       if (!last || e.pointerId !== last.id) return;
       last = null;
-      el.style.cursor = "grab";
+      el.style.cursor = lockedRef.current ? "" : "grab";
       if (e.type === "pointerup" && travelled < 6) onPickRef.current?.();
     };
-    el.style.cursor = "grab";
+    el.style.cursor = locked ? "" : "grab";
     el.style.touchAction = "none";
     el.addEventListener("pointerdown", down);
     el.addEventListener("pointermove", move);
@@ -208,7 +238,8 @@ function VesselObject({
       el.removeEventListener("pointerup", up);
       el.removeEventListener("pointercancel", up);
     };
-  }, [focused, gl, invalidate]);
+  }, [focused, gl, invalidate, locked]);
+  useEffect(() => { invalidate(); }, [viewToken, invalidate]);
 
   const pass = useMemo(() => {
     const target = new THREE.WebGLRenderTarget(1, 1, { samples: 4, depthBuffer: true, stencilBuffer: false });

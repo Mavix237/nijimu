@@ -9,7 +9,8 @@ import {
   GalleryOverrideContext, type ArtifactSeat, type GalleryOverride, type SeatDepth, type SeatPlace,
 } from "../lib/galleryOverride";
 import { pushGalleryPanel, readGalleryPush, useGalleryPush, type GalleryPanel, type GalleryPanelPush } from "../lib/labPush";
-import { createArtifactForm, formKey, type ArtifactCategory } from "../lib/superformula";
+import { entrySignature, galleryLibrary, librarySavedAt, libraryVersion, useGalleryLibrary, type LibraryEntry } from "../lib/galleryLibrary";
+import { formKey } from "../lib/superformula";
 import {
   VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
   type Room, type VesselState, type VesselTune,
@@ -31,9 +32,11 @@ import photoB from "../../assets/memory-photo-02.png";
  * is handed ten memories and asked to draw each as the glass vessel from
  * /lab/vessel with a photo inside, the draped sheet under the refraction
  * look, sized to its own cavity, the picture on the glass side of the sheet
- * and facing the viewer, who turns the vessel by dragging it. Ten forms, one
- * from each of ten categories; the photos are src/assets/vessel-gallery, in
- * name order (drop ten in; the bundled stills stand in for any missing).
+ * and facing the viewer, who turns the vessel by dragging it. Each curated
+ * memory wears its shape from the gallery library (lib/galleryLibrary, chosen
+ * in /lab/shapes) at the size and with the picture placed as kept there; the
+ * photos are src/assets/vessel-gallery, in name order (drop ten in; the
+ * bundled stills stand in for any missing).
  *
  * Pressing the vessel at the apex opens it in the lab as an editor for that
  * one memory — its form, glass, sheet, dye, light and photo — and "back to
@@ -53,30 +56,25 @@ import photoB from "../../assets/memory-photo-02.png";
  * kept here and handed to the gallery through adjustSeat every frame.
  */
 
-const PHOTOS = Object.entries(
+export const PHOTOS = Object.entries(
   import.meta.glob("../../assets/vessel-gallery/*.{jpg,jpeg,png,webp}", { eager: true, import: "default" }) as Record<string, string>,
 ).sort(([a], [b]) => a.localeCompare(b)).map(([, url]) => url);
 const FALLBACK = [photoA, photoB];
 // fetched and decoded as the module loads, so the seats open with their pictures already in the stock
 preloadSeatPhotos(PHOTOS.length ? PHOTOS : FALLBACK);
 
-/**
- * Which of the curated memories are seated, and the form each takes. `draw`
- * picks another deviation inside the category: the star and the gear mostly
- * come out as flat discs with no side for a picture to hang on, and these two
- * draws have a body (about half as tall as they are wide).
- */
-const SEATS: { event: number; category: ArtifactCategory; draw?: number }[] = [
-  { event: 0, category: "sphere" },
-  { event: 2, category: "roundedBox" },
-  { event: 3, category: "cylinder" },
-  { event: 5, category: "prism" },
-  { event: 7, category: "diamond" },
-  { event: 8, category: "flower" },
-  { event: 9, category: "star", draw: 5 },
-  { event: 11, category: "gear", draw: 2 },
-  { event: 13, category: "hybrid" },
-  { event: 15, category: "torn" },
+/** Which of the curated memories the lab seats; these are the ones with a photo. */
+const SEATS: { event: number }[] = [
+  { event: 0 },
+  { event: 2 },
+  { event: 3 },
+  { event: 5 },
+  { event: 7 },
+  { event: 8 },
+  { event: 9 },
+  { event: 11 },
+  { event: 13 },
+  { event: 15 },
 ];
 
 /**
@@ -106,20 +104,67 @@ function seedOf(id: string): number {
   return 1 + (h % 97) / 10;
 }
 
-/** A memory's vessel as the preview first draws it. */
-function baseState(i: number): VesselState {
-  const { event, category, draw } = SEATS[i];
-  const e = LIFE_EVENTS[event];
-  const seed = draw === undefined ? `vessel|${e.id}` : `vessel|${category}|${draw}`;
-  const form = createArtifactForm({ seed, category });
-  const tune = { ...VESSEL_GALLERY_TUNE, ...vesselTint(e.feeling), sheetSize: fitSheetSize(buildGlass(form, VESSEL_GALLERY_TUNE.morph)) };
+const wrapDegrees = (a: number) => ((((a + 180) % 360) + 360) % 360) - 180;
+
+/** Where this memory's still sits in the gallery set. A memory that was never seated wears the first still, as the shapes lab does. */
+export function slotPhotoIndex(index: number): number {
+  const seat = SEATS.findIndex((s) => s.event === index);
+  return seat < 0 ? 0 : seat;
+}
+
+/** The picture inside a curated memory: a library pick, else the still the shapes lab shows for that place. */
+export function memoryPhoto(index: number, picked?: number): string {
+  const i = picked !== undefined && PHOTOS[picked] ? picked : slotPhotoIndex(index);
+  return PHOTOS[i] ?? FALLBACK[i % FALLBACK.length];
+}
+
+/** The photo a curated memory carries in the gallery, by its place in LIFE_EVENTS. */
+export function curatedPhoto(index: number): string {
+  return memoryPhoto(index);
+}
+
+/** A curated memory's vessel wearing a library shape: its form and growth, its size, and where its picture hangs. */
+export function libraryVessel(index: number, entry: LibraryEntry, url = memoryPhoto(index, entry.photo)): VesselState {
+  const e = LIFE_EVENTS[index];
+  const glass = buildGlass(entry.form, entry.morph);
+  const sheetSize = fitSheetSize(glass) * entry.photoSize;
+  glass.geometry.dispose();
+  const tune = {
+    ...VESSEL_GALLERY_TUNE, ...vesselTint(e.feeling), morph: entry.morph, sheetSize,
+    anchorHeight: entry.photoHeight, anchorAngle: wrapDegrees(VESSEL_GALLERY_TUNE.anchorAngle + entry.photoAround),
+  };
   return {
     tune, mode: "refract", sheetMode: "draped", face: "glass", room: VESSEL_GALLERY_ROOM,
-    url: PHOTOS[i] ?? FALLBACK[i % FALLBACK.length], seed: seedOf(e.id), form,
+    url, seed: seedOf(e.id), form: entry.form, size: entry.size,
+    facing: wrapDegrees(VESSEL_GALLERY_TUNE.anchorAngle + (entry.view?.around ?? 0)),
+    viewPitch: entry.view?.pitch ?? VESSEL_GALLERY_TUNE.pitch,
+    viewLocked: !!entry.view,
   };
 }
 
-const BASE: VesselState[] = SEATS.map((_, i) => baseState(i));
+let curatedMemo: { version: number; states: VesselState[] } | null = null;
+/** Every curated memory's vessel as the library has it, in LIFE_EVENTS order. */
+function curatedStates(): VesselState[] {
+  const version = libraryVersion();
+  if (curatedMemo?.version === version) return curatedMemo.states;
+  const library = galleryLibrary();
+  const states = LIFE_EVENTS.map((_, i) => libraryVessel(i, library[i]));
+  curatedMemo = { version, states };
+  return states;
+}
+/** The lab's seat i as the library has it. */
+const seatBase = (i: number) => curatedStates()[SEATS[i].event];
+const curatedIndex = (id: string) => LIFE_EVENTS.findIndex((e) => e.id === id);
+
+/** A pushed panel over a library vessel. Pushed after the library was kept, the panel is all of it;
+    before, it is the look only, and the shape, size and picture place stay the library's. */
+function overCurated(base: VesselState, panel: GalleryPanel | undefined, pushedAt: number): VesselState {
+  if (!panel) return base;
+  const state = withPanel(base, panel);
+  if (pushedAt > librarySavedAt()) return { ...state, facing: undefined, viewPitch: undefined, viewLocked: undefined };
+  const { morph, sheetSize, anchorHeight, anchorAngle } = base.tune;
+  return { ...state, form: base.form, size: base.size, tune: { ...state.tune, morph, sheetSize, anchorHeight, anchorAngle } };
+}
 
 /**
  * The seats on the near side of the apex, drawn back. The curve's perspective
@@ -134,7 +179,7 @@ const BASE: VesselState[] = SEATS.map((_, i) => baseState(i));
  */
 /** A wider canvas for a form whose points would otherwise leave the seat. The body stays put; the extra is the room the points need. */
 function withCanvasRoom(seat: SeatPlace, room: number): SeatPlace {
-  if (room <= 1.001) return seat;
+  if (Math.abs(room - 1) < 0.001) return seat;
   return { ...seat, scale: seat.scale * room, size: seat.size * room, blurPx: seat.blurPx / room };
 }
 
@@ -336,9 +381,11 @@ function vesselForArchive(item: ArchiveArtifact): VesselState {
 
 /** Same archive vessels for the distance step, including the user's pushed edits. */
 export function galleryStateFor(item: ArchiveArtifact): VesselState {
-  const i = SEATS.findIndex(seat => LIFE_EVENTS[seat.event].id === item.id);
-  const base = i < 0 ? vesselForArchive(item) : BASE[i];
-  const panel = readGalleryPush()?.panels.find(row => row.id === item.id)?.panel;
+  const i = curatedIndex(item.id);
+  const push = readGalleryPush();
+  const panel = push?.panels.find(row => row.id === item.id)?.panel;
+  if (i >= 0) return overCurated(curatedStates()[i], panel, push?.at ?? 0);
+  const base = vesselForArchive(item);
   return panel ? withPanel(base, panel) : base;
 }
 
@@ -388,9 +435,9 @@ function panelEquals(state: VesselState, panel: GalleryPanel): boolean {
 
 function draftsFromStore() {
   const push = readGalleryPush();
-  return BASE.map((state, i) => {
+  return SEATS.map((_, i) => {
     const panel = push?.panels.find((row) => row.id === seatId(i))?.panel;
-    return { state: panel ? withPanel(state, panel) : state, version: 0, echo: 0 };
+    return { state: overCurated(seatBase(i), panel, push?.at ?? 0), version: 0, echo: 0 };
   });
 }
 
@@ -544,6 +591,10 @@ export function VesselGalleryProvider({
         sheetMode={s.sheetMode}
         face={s.face}
         sheetSize={s.tune.sheetSize}
+        facing={s.facing}
+        viewPitch={s.viewPitch}
+        viewToken={s.facing === undefined ? undefined : `${s.facing}|${s.viewPitch}`}
+        locked={s.viewLocked}
         focused={seat.focused}
         still={seat.still}
         frameloop={field.busy ? "always" : seat.frameloop}
@@ -556,7 +607,8 @@ export function VesselGalleryProvider({
     const i = indexOf(item);
     const onCurve = adjustCurveSeat(curve, offset, viewport);
     const state = resolveRef.current(item);
-    const room = vesselCanvasScale(state.form, state.tune.morph);
+    // the library's size grows or shrinks the canvas with the eye where it was, so the vessel scales in its seat
+    const room = vesselCanvasScale(state.form, state.tune.morph) * (state.size ?? 1);
     if (i < 0) return withCanvasRoom(onCurve, room);
     if (Math.abs(offset) < 0.5) field.apex = i;
     const share = field.share[i] ?? 0;
@@ -606,15 +658,15 @@ export function LiveVesselGallery({
   children: ReactNode;
 }) {
   const byId = useMemo(() => new Map((panels ?? []).map((row) => [row.id, row.panel])), [panels]);
+  const library = useGalleryLibrary();
   const seated = useMemo(() => {
     const map = new Map<string, VesselState>();
-    SEATS.forEach((seat, i) => {
-      const id = LIFE_EVENTS[seat.event].id;
-      const panel = byId.get(id);
-      map.set(id, panel ? withPanel(BASE[i], panel) : BASE[i]);
+    curatedStates().forEach((base, i) => {
+      const id = LIFE_EVENTS[i].id;
+      map.set(id, overCurated(base, byId.get(id), pushedAt));
     });
     return map;
-  }, [byId]);
+  }, [byId, pushedAt, library.version]);
   const extras = useRef(new Map<string, { key: string; state: VesselState }>());
   const resolve = useCallback((item: ArchiveArtifact) => {
     const known = seated.get(item.id);
@@ -628,15 +680,17 @@ export function LiveVesselGallery({
     extras.current.set(item.id, { key, state });
     return state;
   }, [seated, byId, pushedAt]);
-  const cacheKeyFor = useCallback((item: ArchiveArtifact) => (
-    byId.has(item.id) ? `${item.id}|${pushedAt}` : seated.has(item.id) ? `${item.id}|base` : `${item.id}|own`
-  ), [byId, pushedAt, seated]);
+  const cacheKeyFor = useCallback((item: ArchiveArtifact) => {
+    const i = curatedIndex(item.id);
+    const shape = i >= 0 ? entrySignature(library.entries[i]) : "own";
+    return byId.has(item.id) ? `${item.id}|${pushedAt}|${shape}` : `${item.id}|${shape}`;
+  }, [byId, pushedAt, library]);
   useEffect(() => {
-    const urls = [...BASE.map((state) => state.url), ...buildArchive().map((item) => item.look?.photoUrl ?? "")].filter(Boolean);
+    const urls = [...curatedStates().map((state) => state.url), ...buildArchive().map((item) => item.look?.photoUrl ?? "")].filter(Boolean);
     preloadSeatPhotos(urls);
   }, []);
   return (
-    <VesselGalleryProvider active={active} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={pushedAt} onFocus={onFocus}>
+    <VesselGalleryProvider active={active} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={`${pushedAt}|${library.version}`} onFocus={onFocus}>
       {children}
     </VesselGalleryProvider>
   );
@@ -704,7 +758,7 @@ export function VesselGalleryPreview() {
     const i = editing;
     const s = vessels[i].state;
     const stored = live?.panels.find((row) => row.id === items[i].id)?.panel;
-    const onThePage = stored ? withPanel(BASE[i], stored) : BASE[i];
+    const onThePage = overCurated(seatBase(i), stored, live?.at ?? 0);
     return (
       <>
         <VesselPreview
@@ -717,7 +771,7 @@ export function VesselGalleryPreview() {
           onChange={(next) => setVessels((all) => {
             const cur = all[i].state;
             const same = (Object.keys(next) as (keyof VesselState)[]).every((k) => cur[k] === next[k]);
-            return same ? all : all.map((v, k) => (k === i ? { ...v, state: next, version: v.version + 1 } : v));
+            return same ? all : all.map((v, k) => (k === i ? { ...v, state: { ...next, size: cur.size }, version: v.version + 1 } : v));
           })}
         />
         <LabPushButton

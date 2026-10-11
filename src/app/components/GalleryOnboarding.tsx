@@ -59,6 +59,16 @@ export function useTouchFirst() {
 
 /** Under the wordmark whenever the rim rests on a memory: how to reach the
     end of the rim, and, at the newest memory, that one more step begins a new one. */
+function PlusMark() {
+  return (
+    <svg width="1em" height="1em" viewBox="0 0 16 16" fill="none" aria-hidden
+      style={{ display: "inline-block", verticalAlign: "-0.15em", margin: "0 0.12em" }}>
+      <rect x="1.5" y="1.5" width="13" height="13" stroke="currentColor" strokeWidth="1.2" />
+      <path d="M8 4.75V11.25M4.75 8H11.25" stroke="currentColor" strokeWidth="1.2" />
+    </svg>
+  );
+}
+
 export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
   /** The gallery's chrome is up (arrival finished, no pond on its way). */
   visible: boolean;
@@ -69,12 +79,16 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
   leaving: boolean;
 }) {
   const touch = useTouchFirst();
-  const text = atNewest
-    ? touch ? "swipe once more to begin yours" : "scroll once more to begin yours"
-    : touch ? "keep swiping to leave a memory of your own" : "keep scrolling to leave a memory of your own";
+  const kind = atNewest
+    ? touch ? "swipe-end" : "scroll-end"
+    : touch ? "swipe-mid" : "scroll-mid";
   const on = visible && settled && !leaving;
-  const [shown, setShown] = useState(text);
-  if (on && text !== shown) setShown(text);
+  const [shown, setShown] = useState(kind);
+  if (on && kind !== shown) setShown(kind);
+  const copy = shown === "swipe-end" ? "swipe once more to begin yours"
+    : shown === "scroll-end" ? "scroll once more to begin yours"
+    : shown === "swipe-mid" ? <>keep swiping or tap <PlusMark /> to leave a memory of your own</>
+    : <>keep scrolling or click <PlusMark /> to leave a memory of your own</>;
 
   return (
     <p aria-live="polite" style={{ ...LINE_STYLE, zIndex: 31, opacity: on ? 1 : 0,
@@ -84,7 +98,7 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
         .gallery-hint-breathe { animation: galleryHintBreathe 3.6s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .gallery-hint-breathe { animation: none; } }
       `}</style>
-      <span className="gallery-hint-breathe">{shown}</span>
+      <span className="gallery-hint-breathe">{copy}</span>
     </p>
   );
 }

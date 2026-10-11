@@ -34,27 +34,38 @@ export function DistanceConstellation(props: Context) {
       id: item.id, index, state: galleryStateFor(item), place: memoryFieldPlace(index, item.look?.vividness),
     }));
     if (!phone) return all;
-    // An upright phone holds fewer: in order, each kept only if it starts clear
-    // of those already kept, up to PHONE_NEIGHBOURS — the field stays legible
-    // round the form instead of crowding a narrow screen.
+    // An upright phone holds fewer, seated with care round the form: three in
+    // the gap between the copy and the form, one each side of it, three
+    // between it and the slider. Each keeps its own depth; only where it
+    // starts on the screen is set (its place's sx/sy are where a seat begins
+    // before the slider moves), so it still travels out of view as the
+    // memory goes farther. The nearer, larger ones take the roomier seats.
     const viewport = { w: size.width, h: size.height };
-    const kept: { x: number; y: number }[] = [];
-    return all.filter((memory) => {
-      if (kept.length >= PHONE_NEIGHBOURS) return false;
-      const seat = distancePreviewSeat(memory.index, memory.place, FIELD_FOCAL, viewport);
-      if (kept.some((k) => Math.hypot(k.x - seat.x, k.y - seat.y) < PHONE_NEIGHBOUR_GAP)) return false;
-      kept.push({ x: seat.x, y: seat.y });
-      return true;
-    });
+    const startSize = (m: (typeof all)[number]) => distancePreviewSeat(m.index, m.place, FIELD_FOCAL, viewport).size;
+    const kept = all.slice(0, PHONE_SLOTS.length).sort((p, q) => startSize(q) - startSize(p));
+    return kept.map((memory, i) => ({ ...memory, place: { ...memory.place, ...PHONE_SLOTS[PHONE_SLOT_ORDER[i]] } }));
     // the viewport is read once a phone is known: turning it keeps the same set
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phone]);
   return <>{memories.map(memory => <Neighbor key={memory.id} {...props} {...memory} />)}</>;
 }
 
-/** How many neighbours an upright phone shows, and the least room between their starting places (px). */
-const PHONE_NEIGHBOURS = 8;
-const PHONE_NEIGHBOUR_GAP = 80;
+/** An upright phone's seats, as where each starts from the screen's centre
+    (fractions of its width and height): above the form under the copy, beside
+    it, and below it clear of the slider. The copy ends near .27 of the height,
+    the form spans about .41–.63 and .27–.73 across, the slider starts near .8. */
+const PHONE_SLOTS = [
+  { sx: -0.30, sy: -0.175 }, // above, left
+  { sx: 0.05, sy: -0.19 }, //   above, middle
+  { sx: 0.33, sy: -0.16 }, //   above, right
+  { sx: -0.40, sy: -0.01 }, //  beside, left
+  { sx: 0.40, sy: 0.04 }, //    beside, right
+  { sx: -0.25, sy: 0.17 }, //   below, left
+  { sx: 0.08, sy: 0.195 }, //   below, middle
+  { sx: 0.32, sy: 0.16 }, //    below, right
+];
+/** Seats from roomiest to narrowest, for neighbours from largest to smallest. */
+const PHONE_SLOT_ORDER = [5, 0, 7, 2, 6, 1, 3, 4];
 /** Over how many px a phone's neighbour fades as it rises past the top of the copy, into the header's ground. */
 const PHONE_TOP_FADE = 48;
 

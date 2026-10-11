@@ -26,7 +26,7 @@ export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onCl
       <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
         <h2 id="recording-instructions-title" style={PANE_TITLE}>To hear your voice</h2>
         <div id="recording-instructions-body" className="nijimuPaneBody" style={PANE_BODY}>
-          <p>If you’d like to speak a memory, please allow microphone access in your browser.</p>
+          <p>If you’d like to speak about a memory, please allow microphone access in your browser.</p>
           <p>Or, skip to a sample story to experience the full flow without recording yourself.</p>
         </div>
         {error && <p role="alert" style={PANE_BODY}>{error}</p>}

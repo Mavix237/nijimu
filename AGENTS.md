@@ -212,9 +212,12 @@ is a live canvas.
   wrapped copy takes the nearest way out — sideways, above or below — that is
   on screen and clear of the form. Desktop placement is unchanged.
   `check-memory-distance.mjs` now asserts the clear space by the short side.
-  An upright phone shows at most 8 neighbours (in order, each kept only if it
-  starts ≥80 px from those kept), never steps one above the copy, and fades
-  any carried up past the copy's top (DistanceConstellation.tsx).
+  An upright phone shows 8 neighbours seated in `PHONE_SLOTS`
+  (DistanceConstellation.tsx): three between the copy and the form, one each
+  side of it, three between it and the slider — larger ones in the roomier
+  seats; each keeps its depth, so it still recedes with the slider. None steps
+  above the copy, and any carried up past the copy's top fades. The distance
+  palm hint drifts (4.6 s, scale .72–1.06) rather than pushing.
 - SpectrumSlider ends are fixed 26 px boxes (`END_BOX`, min-width 0): the haze
   glyph is drawn 47 px wide and had widened its box, pushing the ruler off
   centre on the distance step. Phone copy: label 10 px, instructions 11 px.
@@ -230,7 +233,8 @@ All GlassPane action buttons use `PaneOptions` / `PaneOption`, including profile
 and memory reading. Full-width rows have 1px top/bottom rules in
 `GALLERY_TRANSCRIPT.color` (trail ink); adjacent rows share one rule, with zero
 group gap and zero button margins. The last button has no bottom rule.
-The trail rules use 25% opacity. `PANE_ACTION.paddingY` supplies 14px vertical
+The trail rules use 25% opacity. The primary option's ink (`PANE_INK.primary`)
+is the body copy's `CHROME_GRAY`; it is set apart by weight 500 only. `PANE_ACTION.paddingY` supplies 14px vertical
 button padding and reduces the pane's bottom inset by the same 14px. Reading's
 bottom anchoring belongs to the options wrapper (`atFoot`), never an inline
 margin on the button. Instruction-dialog titles and body copy are left-aligned;

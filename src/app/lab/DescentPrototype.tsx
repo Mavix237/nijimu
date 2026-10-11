@@ -2010,28 +2010,36 @@ const hintRowScale = (kind: "shape" | "rhythm" | "distance" | "color") =>
   Math.min(HINT_ROW_CELL / GESTURE_EXTENT[kind].h, HINT_ROW_CELL / GESTURE_EXTENT[kind].w);
 
 /* The gesture ranges, as ShapeGrowPage reads them. */
+/* On desktop each of the two lines starts on its own line; a phone runs them together as one paragraph. */
 const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string] }> = {
   shape: {
     mark: "形",
     name: "shape",
-    lines: ["each memory already has a shape.", "open your hands, and let these words find theirs."],
+    lines: ["Based on your words, this memory has been given a vessel.", "Bring your hands together, then slowly open them to reveal its shape."],
   },
   rhythm: {
     mark: "律",
     name: "rhythm",
-    lines: ["let its contours find their rhythm.", "spread thumb and index finger for more folds; pinch for fewer."],
+    lines: ["Does this memory stir complex feelings like a jagged ballad, or soothe you like a steady hum?", "Pinch your thumb and index finger to compose its form."],
   },
   distance: {
-    mark: "间",
+    mark: "間",
     name: "distance",
-    lines: ["time blurs the edges, not the feeling.", "push your open palm toward the camera to send it farther into the blur."],
+    lines: ["Is this a vivid memory that you kept close, or buried deep in the galaxy of time?", "Push your open palm towards the camera to locate it."],
   },
   color: {
     mark: "染",
     name: "color",
-    lines: ["remembering dyes what happened.", "how does it feel, returning to it today?"],
+    lines: ["What color does this memory feel like?", "Point at the screen to move through the spectrum."],
   },
 };
+
+/** The shape step's first line when the memory is the built-in sample, not the visitor's own words. */
+const SHAPE_SAMPLE_LINE = "Based on the transcript, this memory has been given a vessel.";
+const stepLines = (step: Step, transcript: string): [string, string] =>
+  step === "shape" && transcript.trim() === SAMPLE_TRANSCRIPT
+    ? [SHAPE_SAMPLE_LINE, STEP_COPY.shape.lines[1]]
+    : STEP_COPY[step].lines;
 
 /** Two palms together → sphere; apart → the settled form. */
 function distanceToMorph(distance: number): number {
@@ -3082,12 +3090,14 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
             </p>
-            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`, ...(compact ? { maxWidth: UNDERWATER_PHONE.instructionWidth } : {}),
-              fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK }}>
-              {/* a phone's narrower measure wraps each sentence; balanced, no word is left alone */}
+            {/* desktop: the two lines reach past the heading's column to the side margins, so each sentence keeps a line of its own */}
+            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`,
+              ...(compact ? { maxWidth: UNDERWATER_PHONE.instructionWidth } : { marginInline: "calc(50% - 50vw + var(--chrome-inset))" }),
+              fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK, textWrap: "balance" }}>
+              {/* a phone runs the two lines together as one paragraph; balanced, no word is left alone */}
               {compact
-                ? STEP_COPY[step].lines.map((line) => <span key={line} style={{ display: "block", textWrap: "balance" }}>{line}</span>)
-                : <>{STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}</>}
+                ? stepLines(step, transcript).join(" ")
+                : <>{stepLines(step, transcript)[0]}<br />{stepLines(step, transcript)[1]}</>}
             </p>
           </div>}
           actions={compact ? undefined : <PillButton label="continue" trailing="›" onClick={continueStep} />}

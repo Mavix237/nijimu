@@ -12,13 +12,13 @@ export type GestureHintKind = "shape" | "rhythm" | "feeling" | "distance" | "col
 /** What each illustration actually covers, in its own px, centred in its stage —
     the drawn image plus the ground its animation travels over (the palms
     parting ±36px, the colour hand sweeping ±18px, the feeling hand lifting
-    ±8px, the open palm pulsing to 1.1×). Keep in step with the sizes and keyframes below. A row that fits
+    ±8px, the open palm drifting to 1.06×). Keep in step with the sizes and keyframes below. A row that fits
     the illustrations to its height reads these. */
 export const GESTURE_EXTENT: Record<GestureHintKind, { w: number; h: number }> = {
   shape: { w: 36 * 2 + 56, h: 80 },
   rhythm: { w: 70, h: 84 },
   feeling: { w: 84, h: 42 + 16 },
-  distance: { w: 74 * 1.1, h: 74 * 1.1 },
+  distance: { w: 74 * 1.06, h: 74 * 1.06 },
   color: { w: 58 + 18 * 2, h: 58 },
 };
 
@@ -125,7 +125,8 @@ export function GestureHint({
         .nijimu-gesture-distance-open {
           width: 74px;
           height: 74px;
-          animation: nijimuGesturePalm 2.4s ease-in-out infinite;
+          /* slow and soft: a hand drifting toward the camera, not shoving */
+          animation: nijimuGesturePalm 4.6s cubic-bezier(.45, 0, .55, 1) infinite;
         }
 
         /* Prayer fades out; two upright palms slide apart in parallel. */
@@ -155,8 +156,8 @@ export function GestureHint({
           100% { transform: translateX(-18px); }
         }
         @keyframes nijimuGesturePalm {
-          0%, 18%, 100% { opacity: .55; transform: scale(.65); }
-          48%, 68% { opacity: 1; transform: scale(1.1); }
+          0%, 14%, 100% { opacity: .6; transform: scale(.72); }
+          52%, 72% { opacity: 1; transform: scale(1.06); }
         }
 
         @media (prefers-reduced-motion: reduce) {

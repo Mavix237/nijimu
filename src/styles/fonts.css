@@ -5,7 +5,7 @@
 
    Two faces of the same family. The browser checks the last-declared face
    first for a character, and only downloads a face when a character in its
-   unicode-range is shown. So the app's own glyphs (the wordmark, 形律间染,
+   unicode-range is shown. So the app's own glyphs (the wordmark, 形律間染,
    the gallery's titles, punctuation) come from the ~8 KB "-ui" subset, and
    the 2.2 MB full font loads only if other CJK text appears — a transcript
    spoken in Chinese or Japanese. After adding CJK characters to the source,
@@ -25,7 +25,7 @@
   font-style: normal;
   font-display: swap;
   unicode-range: U+3000-3002, U+300C-300F, U+3080, U+30FB-30FC, U+5854, U+5F62, U+5F8B, U+660E, U+6708,
-    U+67D3, U+6D41, U+6E90, U+6EF2, U+7897, U+82B1, U+8D1D, U+95F4, U+9AD4, U+FF01, U+FF08-FF09,
+    U+67D3, U+6D41, U+6E90, U+6EF2, U+7897, U+82B1, U+8D1D, U+9593, U+95F4, U+9AD4, U+FF01, U+FF08-FF09,
     U+FF0B-FF0C, U+FF1A-FF1B, U+FF1F;
 }
 

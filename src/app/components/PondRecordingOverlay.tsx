@@ -189,7 +189,7 @@ export function PondRecordingOverlay({
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28, ...leaveStyle }}>
           <div style={{ ...TITLE, margin: 0, color: CHROME_GRAY, width: "100%", textAlign: "center" }}>
             <ParticleText
-              text="What's been lingering on your mind?"
+              text="Speak about a memory."
               seed={41}
               animate={!reducedMotion}
               delay={QUESTION_DELAY_S}
@@ -201,7 +201,7 @@ export function PondRecordingOverlay({
           <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6,
             width: "min(28em, 100%)", display: "flex", flexDirection: "column", gap: 14, textAlign: "center" }}>
             <ParticleText
-              text="Start with a moment, feeling, or detail that stayed with you."
+              text="Find a memory in your mind, and choose wherever you want to begin."
               seed={53}
               animate={!reducedMotion}
               delay={NOTE_1_DELAY_S}
@@ -210,7 +210,7 @@ export function PondRecordingOverlay({
               soft
             />
             <ParticleText
-              text="Don’t worry about finding the perfect words, just speak naturally until you feel you’ve finished telling your story."
+              text="Don’t worry about making it perfect, just speak naturally and stop when the story feels complete."
               seed={59}
               animate={!reducedMotion}
               delay={NOTE_1_DELAY_S + NOTE_SWEEP_S}

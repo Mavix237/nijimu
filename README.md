@@ -104,7 +104,7 @@ CJK characters to the source, rebuild the subset with fontTools and update the
 `-ui` face's `unicode-range` in `fonts.css` to match:
 
 ```bash
-pyftsubset src/assets/fonts/GenRyuMin2TW-Regular.woff2 --text="滲む形律间染…" --unicodes="U+3000-3002,U+300C-300F,U+30FB-30FC,U+FF01,U+FF08-FF09,U+FF0B-FF0C,U+FF1A-FF1B,U+FF1F" --flavor=woff2 --layout-features='*' --output-file=src/assets/fonts/GenRyuMin2TW-Regular-ui.woff2
+pyftsubset src/assets/fonts/GenRyuMin2TW-Regular.woff2 --text="滲む形律間间染…" --unicodes="U+3000-3002,U+300C-300F,U+30FB-30FC,U+FF01,U+FF08-FF09,U+FF0B-FF0C,U+FF1A-FF1B,U+FF1F" --flavor=woff2 --layout-features='*' --output-file=src/assets/fonts/GenRyuMin2TW-Regular-ui.woff2
 ```
 
 Named but not loaded: **SF Pro** (`SANS_UI` — Apple system font on dark buttons, then `system-ui`).

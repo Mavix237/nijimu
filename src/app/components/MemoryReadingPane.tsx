@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { CHROME_GRAY } from "../lib/colors";
-import { BODY_SIZE, NOTE_SIZE, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
+import { BODY_SIZE, NOTE_SIZE, SANS, SERIF, SERIF_CJK } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
 import { PaneOption, PaneOptions } from "./PaneOption";
 
@@ -40,14 +39,13 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
               id="memory-reading-title"
               style={{
                 margin: 0,
-                fontFamily: SERIF,
-                fontStyle: "italic",
-                fontWeight: 400,
-                // the size of the words below it: the name leads by its italic, not its scale
+                fontFamily: SANS,
+                fontWeight: 600,
+                // Keep the reading title at the size of the words below it.
                 fontSize: BODY_SIZE,
-                letterSpacing: SERIF_ITALIC_TRACKING,
+                letterSpacing: "-0.01em",
                 lineHeight: 1.4,
-                color: CHROME_GRAY,
+                color: "#7b7b87",
                 textAlign: "center",
                 textWrap: "balance",
                 overflowWrap: "anywhere",

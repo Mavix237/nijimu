@@ -1,6 +1,6 @@
 /**
- * The choices at the foot of a floating pane: a Switzer label led by a mark.
- * The option the pane hopes for is set in the darker ink; the way out in the
+ * The choices at the foot of a floating pane: a Switzer label with a trailing mark.
+ * The option the pane hopes for is set in the body's ink; the way out in the
  * lighter. A dot mark opens from its centre on hover — filled with the given
  * colour for the hoped-for option, a bare ring for the way out.
  */
@@ -11,8 +11,11 @@ import { PANE_INK } from "../lib/colors";
 
 export const PANE_TITLE: CSSProperties = {
   ...TITLE,
+  fontFamily: SANS,
   fontSize: 20,
-  color: PANE_INK.title,
+  fontWeight: 600,
+  letterSpacing: "-0.01em",
+  color: PANE_INK.body,
   margin: 0,
   textAlign: "left",
   textWrap: "balance",
@@ -76,6 +79,7 @@ export function PaneOption({
       aria-label={ariaLabel}
       style={{ color }}
     >
+      <span className="nijimuPaneLabel">{label}</span>
       <span className="nijimuPaneMark" aria-hidden>
         {mark === "dot" ? (
           <>
@@ -86,7 +90,6 @@ export function PaneOption({
           <span className="nijimuPaneIcon">{mark}</span>
         )}
       </span>
-      <span className="nijimuPaneLabel">{label}</span>
     </button>
   );
 }
@@ -156,6 +159,7 @@ const PANE_OPTION_CSS = `
 .nijimuPaneOption {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   margin: 0;
   padding: ${PANE_ACTION.paddingY}px 0;

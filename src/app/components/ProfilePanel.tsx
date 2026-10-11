@@ -7,7 +7,7 @@
 import { GlassPane } from "./GlassPane";
 import { PaneOption, PaneOptions } from "./PaneOption";
 import { useLandingReturn } from "../lib/landingReturn";
-import { NOTE_SIZE, SERIF, SERIF_EXPOSURE, TITLE, META } from "../lib/theme";
+import { NOTE_SIZE, SANS, SERIF, SERIF_EXPOSURE, TITLE, META } from "../lib/theme";
 
 interface ProfilePanelProps {
   open: boolean;
@@ -78,7 +78,10 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
         <h2
           style={{
             ...TITLE,
-            color: "#7b7b87",
+            fontFamily: SANS,
+            fontWeight: 600,
+            letterSpacing: "-0.01em",
+            color: "rgba(123, 123, 135, 0.7)",
             textTransform: "lowercase",
             margin: 0,
             textAlign: "center",

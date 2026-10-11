@@ -382,7 +382,7 @@ export function StyleGuidePage() {
           }}>
             <p style={{ ...TITLE, fontSize: 16, color: PANE_INK.title, margin: "0 0 12px" }}>To hear your voice</p>
             <p style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.body, lineHeight: 1.55, margin: "0 0 22px" }}>
-              If you’d like to speak a memory, please allow microphone access in your browser.
+              If you’d like to speak about a memory, please allow microphone access in your browser.
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <span style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.primary }}>Allow microphone & record my story</span>

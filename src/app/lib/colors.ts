@@ -5,12 +5,12 @@
 /** Muted chrome gray — homescreen wordmark, top-right icons, hold-to-create hint. */
 export const CHROME_GRAY = "#7e7e86";
 
-/** Floating panes: an Exposure title, Rowan body, and Switzer options — the
- * option the pane hopes for in the darker ink, the way out in the lighter. */
+/** Floating panes: a Switzer title, Rowan body, and Switzer options — the
+ * option the pane hopes for in the body's ink, the way out in the lighter. */
 export const PANE_INK = {
-  title: "#6c6c75",
+  title: CHROME_GRAY,
   body: CHROME_GRAY,
-  primary: "#55555e",
+  primary: CHROME_GRAY,
   secondary: "#9b9ba3",
   secondaryHover: CHROME_GRAY,
   ring: "#aaaaaa",

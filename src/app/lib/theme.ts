@@ -25,6 +25,8 @@ export const META = {
 export const BODY_SIZE = "clamp(14px, 3.2vw, 15px)";
 /** Shared size for instructional copy (pond invitation, thought prompts, hold hint). */
 export const INSTRUCTION_SIZE = "clamp(14px, 3.2vw, 16px)";
+/** Small Switzer prompts floating above the create-memory pond's ripples. */
+export const POND_PROMPT_SIZE = "clamp(12px, 2.8vw, 13px)";
 /** Spoken transcript on the pond. */
 export const PROSE_SIZE = "clamp(13px, 2.4vw, 15px)";
 /** Naming step: the same words above the vessel, at four-fifths the pond size. */

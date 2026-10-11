@@ -1,12 +1,16 @@
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IridescentSheen } from "./IridescentSheen";
 import { LANDING_RETURN } from "../lib/landingReturn";
+import { squirclePath } from "../lib/squircle";
 
 /** Paper grain — same recipe as SceneViewer / the dive gallery veil. */
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const LEAVE_MS = LANDING_RETURN.profileLeaveMs;
-const PANEL_RADIUS = 30;
+const PANEL_RADIUS = 12;
+const PANEL_SMOOTHING = 0.6;
+const PANEL_WIDTH = 480;
+const PANEL_MAX_HEIGHT = "min(82dvh, 620px)";
 
 export function GlassPane({
   open,
@@ -14,18 +18,20 @@ export function GlassPane({
   onExited,
   label,
   labelledBy,
-  closeLabel = "close",
   closeDisabled = false,
+  align = "center",
   children,
 }: {
   open: boolean;
+  /** Escape and a press outside the pane. */
   onClose: () => void;
   /** Fires after the leave animation finishes. */
   onExited?: () => void;
   label?: string;
   labelledBy?: string;
-  closeLabel?: string;
   closeDisabled?: boolean;
+  /** Dialogs read from the left edge; the profile stays centred. */
+  align?: "center" | "start";
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
@@ -81,6 +87,20 @@ export function GlassPane({
     return () => restoreFocusTo.current?.focus?.({ preventScroll: true });
   }, [open, mounted]);
 
+  // The smoothed corner is a clip path; it follows the pane's own size.
+  useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!mounted || !card) return;
+    const fit = () => {
+      const { offsetWidth: w, offsetHeight: h } = card;
+      if (w && h) card.style.clipPath = `path("${squirclePath(w, h, PANEL_RADIUS, PANEL_SMOOTHING)}")`;
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(card);
+    return () => observer.disconnect();
+  }, [mounted]);
+
   if (!mounted) return null;
 
   return (
@@ -96,104 +116,80 @@ export function GlassPane({
         alignItems: "center",
         justifyContent: "center",
         padding: "clamp(16px, 5vw, 40px)",
-        backgroundColor: "rgba(108, 108, 122, 0.2)",
+        backgroundColor: "rgba(108, 108, 122, 0.1)",
       }}
     >
-      <div
-        ref={cardRef}
-        className="nijimuProfileCard"
-        data-leaving={leaving}
-        role="dialog"
-        aria-modal="true"
-        aria-label={labelledBy ? undefined : label}
-        aria-labelledby={labelledBy}
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: "relative",
-          outline: "none",
-          width: "min(424px, 100%)",
-          maxHeight: "min(82dvh, 620px)",
-          borderRadius: PANEL_RADIUS,
-          overflow: "hidden",
-          border: "1px solid rgba(255, 255, 255, 0.5)",
-          background:
-            "linear-gradient(158deg, rgba(243, 243, 246, 0.58), rgba(222, 222, 229, 0.44))",
-          backdropFilter: "blur(26px) saturate(1.45)",
-          WebkitBackdropFilter: "blur(26px) saturate(1.45)",
-          boxShadow:
-            "0 28px 70px rgba(70, 70, 84, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.6)",
-        }}
-      >
-        <IridescentSheen radius={PANEL_RADIUS} />
-
+      <div style={{ position: "relative", width: `min(${PANEL_WIDTH}px, 100%)` }}>
+        {/* A sibling, not a parent filter: a filtered ancestor would cut the
+            pane's backdrop blur off from the page behind it. */}
         <div
           aria-hidden
+          className="nijimuProfileCard"
+          data-leaving={leaving}
           style={{
             position: "absolute",
             inset: 0,
+            borderRadius: PANEL_RADIUS,
+            boxShadow: "0 22px 60px rgba(70, 70, 84, 0.09)",
             pointerEvents: "none",
-            zIndex: 1,
-            opacity: 0.3,
-            backgroundImage: GRAIN_URL,
-            backgroundRepeat: "repeat",
-            // half the tile, half the grain: the noise is vector, so it stays crisp
-            backgroundSize: "256px 256px",
-            mixBlendMode: "soft-light",
           }}
         />
-
-        <button
-          onClick={onClose}
-          title="Close"
-          aria-label={closeLabel}
-          disabled={closeDisabled}
-          style={{
-            position: "absolute",
-            top: 14,
-            right: 14,
-            zIndex: 3,
-            width: 30,
-            height: 30,
-            borderRadius: "50%",
-            border: "none",
-            background: "transparent",
-            cursor: closeDisabled ? "default" : "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 0,
-          }}
-        >
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#8a8a96"
-            strokeWidth="2"
-            strokeLinecap="round"
-          >
-            <line x1="5" y1="5" x2="19" y2="19" />
-            <line x1="19" y1="5" x2="5" y2="19" />
-          </svg>
-        </button>
-
         <div
+          ref={cardRef}
+          className="nijimuProfileCard"
+          data-leaving={leaving}
+          role="dialog"
+          aria-modal="true"
+          aria-label={labelledBy ? undefined : label}
+          aria-labelledby={labelledBy}
+          tabIndex={-1}
+          onClick={(e) => e.stopPropagation()}
           style={{
             position: "relative",
-            zIndex: 2,
-            boxSizing: "border-box",
-            maxHeight: "min(82dvh, 620px)",
-            overflowY: "auto",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: "clamp(20px, 4vh, 30px)",
-            padding: "clamp(38px, 7vw, 46px) clamp(24px, 6vw, 36px) clamp(30px, 5vw, 38px)",
+            outline: "none",
+            width: "100%",
+            maxHeight: PANEL_MAX_HEIGHT,
+            borderRadius: PANEL_RADIUS,
+            overflow: "hidden",
+            background: "linear-gradient(165deg, rgba(240, 240, 238, 0.6), rgba(240, 240, 238, 0.46))",
+            backdropFilter: "blur(16px) saturate(1.15)",
+            WebkitBackdropFilter: "blur(16px) saturate(1.15)",
           }}
         >
-          {children}
+          <IridescentSheen radius={PANEL_RADIUS} band={14} />
+
+          <div
+            aria-hidden
+            style={{
+              position: "absolute",
+              inset: 0,
+              pointerEvents: "none",
+              zIndex: 1,
+              opacity: 0.22,
+              backgroundImage: GRAIN_URL,
+              backgroundRepeat: "repeat",
+              // half the tile, half the grain: the noise is vector, so it stays crisp
+              backgroundSize: "256px 256px",
+              mixBlendMode: "soft-light",
+            }}
+          />
+
+          <div
+            style={{
+              position: "relative",
+              zIndex: 2,
+              boxSizing: "border-box",
+              maxHeight: PANEL_MAX_HEIGHT,
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+              alignItems: align === "start" ? "stretch" : "center",
+              gap: align === "start" ? "clamp(22px, 3.4vh, 28px)" : "clamp(20px, 4vh, 30px)",
+              padding: "clamp(32px, 7vw, 44px) clamp(24px, 6.4vw, 44px) clamp(30px, 6.4vw, 40px)",
+            }}
+          >
+            {children}
+          </div>
         </div>
       </div>
 

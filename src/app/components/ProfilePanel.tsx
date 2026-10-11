@@ -43,7 +43,7 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
   const { beginReturn } = useLandingReturn();
 
   return (
-    <GlassPane open={open} onClose={onClose} label="profile" closeLabel="close profile">
+    <GlassPane open={open} onClose={onClose} label="profile">
       <div
         style={{
           display: "flex",
@@ -97,6 +97,7 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
             lineHeight: 1.6,
             color: "rgba(123, 123, 135, 0.7)",
             textAlign: "center",
+            textWrap: "balance",
             margin: 0,
             maxWidth: "min(300px, 100%)",
           }}

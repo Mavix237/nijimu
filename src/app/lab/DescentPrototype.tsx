@@ -40,6 +40,7 @@ import { PondWater, type PondProps, POND_WAVES_GLSL, POND_SURFACE_GLSL } from ".
 import { PAGE_HEADER_MARK, PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { PillButton } from "../components/PillButton";
+import { SpectrumSlider } from "../components/SpectrumSlider";
 import { OklchColorField } from "../components/OklchColorField";
 import { sampleHomePalette, uvFromHomePalette } from "../lib/homePaletteField";
 import { CAPTION_TITLE_GAP, CAPTION_TITLE_STYLE, CAPTION_YEAR_STYLE } from "../components/PuddleDiveGallery";
@@ -2937,19 +2938,17 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           onPointerCancel={() => { drag.current = null; }}
           style={{ position: "absolute", inset: 0, zIndex: 5, touchAction: "none", cursor: "ew-resize" }} />
       )}
-      {step === "rhythm" && <div style={{ position: "absolute", bottom: 105, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
-        <input type="range" min={0} max={RHYTHM_MAX} step={.25} value={m2} aria-label="shape rhythm"
-          onChange={e => setEditedM2(rhythmValue(Number(e.target.value)))}
-          style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>fewer folds</span><span>more folds</span></div>
-      </div>}
-      {step === "distance" && <div style={{ position: "absolute", bottom: 105, left: "50%", transform: "translateX(-50%)", width: "min(320px, 75vw)", zIndex: 10, color: UNDER_INK, fontFamily: SANS, fontSize: 12 }}>
-        <input type="range" min={0} max={1} step={0.01} value={frost} aria-label="memory distance"
-          aria-valuetext={frost >= .98 ? "beyond the constellation" : `${Math.round(frost * 100)}% distant`}
-          onChange={e => setSignal(Number(e.target.value))}
-          style={{ width: "100%", accentColor: UNDER_INK, cursor: "ew-resize" }} />
-        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 6 }}><span>near & clear</span><span>{frost >= .98 ? "beyond the constellation" : "far & faded"}</span></div>
-      </div>}
+      {step && step !== "color" && (
+        <div style={{ position: "absolute", bottom: 124, left: "50%", transform: "translateX(-50%)", zIndex: 10,
+          opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}>
+          {step === "shape" && <SpectrumSlider value={morph} onChange={setSignal} from="circle" to="flower"
+            label="memory shape" valueText={`${Math.round(morph * 100)}% shaped`} />}
+          {step === "rhythm" && <SpectrumSlider value={m2 / RHYTHM_MAX} onChange={setSignal} from="petals" to="bloom"
+            label="shape rhythm" valueText={`${Math.round(m2 * 4) / 4} folds`} keyStep={1 / RHYTHM_MAX} />}
+          {step === "distance" && <SpectrumSlider value={frost} onChange={setSignal} from="circle" to="haze"
+            label="memory distance" valueText={frost >= .98 ? "beyond the constellation" : `${Math.round(frost * 100)}% distant`} />}
+        </div>
+      )}
       {step === "color" && (
         <div style={{ opacity: leaving ? 0 : 1, transition: "opacity 1400ms ease" }}>
           {/* a pale veil under the wash, so the band reads as light on the paper rather than a strip */}

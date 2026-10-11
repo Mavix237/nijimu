@@ -1,6 +1,8 @@
 import { LIFE_EVENTS, MemoryEvent } from "../data/memoryData";
 import { COLOR_PALETTE } from "./colors";
 import { loadMemories, toMemoryEvent, SavedMemory, type MemoryLook } from "./memoryStore";
+import { curatedShape } from "./galleryLibrary";
+import { hashString, mulberry32 } from "./seededRandom";
 import { ArtifactForm, formForMemory } from "./superformula";
 
 /*
@@ -35,39 +37,17 @@ export interface ArchiveArtifact {
   look?: MemoryLook;
 }
 
-// Deterministic per-memory texture, so a curated memory keeps its surface
-// across visits and across screens. (Its form is seeded the same way, in
-// formForMemory.)
-function hashString(s: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function mulberry32(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
 const yearOf = (year: string) => parseInt(year) || 0;
 
 /** A saved memory replays the form it was given and the surface the user
-    sculpted; a curated one gets a seeded form and surface, alternating
-    between barely-bumped and openly textured. */
+    sculpted; a curated one wears its shape from the gallery library. */
 function artifactFor(event: MemoryEvent, index: number, saved?: SavedMemory): ArchiveArtifact {
+  // Deterministic per-memory texture, for a memory the library does not hold.
   const rand = mulberry32(hashString(`shape|${event.id}|${event.year}|${event.event}`));
   // The first draw once picked a GLB model. It is still taken, so every
   // curated memory keeps the texture it had.
   rand();
+  const y = saved ? null : curatedShape(event.id);
   return {
     id: event.id,
     year: event.year,
@@ -83,10 +63,10 @@ function artifactFor(event: MemoryEvent, index: number, saved?: SavedMemory): Ar
           bumpAmount: saved.shape.bumpAmount,
         }
       : {
-          form: formForMemory(event.id),
-          fluidity: rand() * 0.5 + 0.5,
-          evolve: rand() * 0.5 + 0.5,
-          bumpAmount: index % 2 === 0 ? rand() * 0.03 : 0.03 + rand() * 0.12,
+          form: y?.form ?? formForMemory(event.id),
+          fluidity: y ? 0 : rand() * 0.5 + 0.5,
+          evolve: y ? y.morph : rand() * 0.5 + 0.5,
+          bumpAmount: y ? 0 : index % 2 === 0 ? rand() * 0.03 : 0.03 + rand() * 0.12,
         },
     // a curated memory has no look of its own but its colour
     ...(saved?.look ? { look: saved.look } : event.feeling ? { look: { oklch: event.feeling } } : {}),

@@ -4,6 +4,7 @@ import NewMomoryIdle from "../../imports/NewMomoryIdle";
 import { LIFE_EVENTS, COLORS as MEMORY_COLORS, MemoryEvent } from "../data/memoryData";
 import { loadMemories, toMemoryEvent, SavedMemory } from "../lib/memoryStore";
 import { SceneViewer } from "./SceneViewer";
+import { curatedShape } from "../lib/galleryLibrary";
 import { ArtifactForm, formForMemory } from "../lib/superformula";
 import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
 import { GalleryViewToggle } from "./GalleryViewToggle";
@@ -167,11 +168,11 @@ function generateBlobs(
             bumpAmount: savedMemory.shape.bumpAmount,
           }
         : {
-            form: formForMemory(events[i].id),
+            form: curatedShape(events[i].id)?.form ?? formForMemory(events[i].id),
             colorIndex: colorIndex % COLOR_PALETTE.length, // Use the same color index
-            fluidity: Math.random() * 0.5 + 0.5,
-            evolve: Math.random() * 0.5 + 0.5,
-            bumpAmount: i % 2 === 0 ? Math.random() * 0.03 : 0.03 + Math.random() * 0.12,
+            fluidity: 0,
+            evolve: curatedShape(events[i].id)?.morph ?? 1,
+            bumpAmount: 0,
           },
     };
   });

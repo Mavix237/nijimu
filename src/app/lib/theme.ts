@@ -27,6 +27,8 @@ export const BODY_SIZE = "clamp(14px, 3.2vw, 15px)";
 export const INSTRUCTION_SIZE = "clamp(14px, 3.2vw, 16px)";
 /** Spoken transcript on the pond. */
 export const PROSE_SIZE = "clamp(13px, 2.4vw, 15px)";
+/** Naming step: the same words under the vessel, at four-fifths the pond size. */
+export const NAMING_PROSE_SIZE = `calc(${PROSE_SIZE} * 0.8)`;
 /** Wash behind a word the highlight step has lifted. */
 export const TRANSCRIPT_HIGHLIGHT = "rgba(123, 123, 135, 0.22)";
 /** Exposure Trial Plus, as the pond sets the spoken words. Color stays with the page. */

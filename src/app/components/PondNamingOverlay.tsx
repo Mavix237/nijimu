@@ -9,7 +9,8 @@ import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { draftArtifactOf, resumeColorState } from "../lib/namingDraft";
 import { formKey } from "../lib/superformula";
 import { ARTIFACT_LIGHT, useArtifactGlow } from "./ArtifactGlow";
-import { FLOW_PAGE } from "../lib/theme";
+import { CHROME_GRAY } from "../lib/colors";
+import { FLOW_PAGE, NAMING_PROSE_SIZE, TRANSCRIPT } from "../lib/theme";
 import { FlowPageGrid } from "./FlowPageGrid";
 import {
   useNamingRim,
@@ -31,6 +32,8 @@ const RISE_MS = POND_SINK.durationMs * 1.2;
 const ARTIFACT_RISE_MS = RISE_MS * 1.5;
 /** Going back down: the words leave first, then the eye sinks. */
 const CHROME_OUT_MS = 420;
+/** Spoken words under the vessel — only after it has come to rest. */
+const PASSAGE_IN_MS = 480;
 /** How far the memory travels on the way up, as a share of the viewport height. */
 const LIFT_VH = 18;
 /**
@@ -89,6 +92,8 @@ export function PondNamingOverlay({
   const washRef = useRef<HTMLDivElement>(null);
   const artifactRef = useRef<HTMLDivElement>(null);
   const chromeRef = useRef<HTMLDivElement>(null);
+  const passageRef = useRef<HTMLParagraphElement>(null);
+  const passage = (state.transcript ?? "").trim();
   const raf = useRef<number | null>(null);
   const leaving = useRef(false);
 
@@ -113,6 +118,9 @@ export function PondNamingOverlay({
     if (washRef.current) washRef.current.style.opacity = String(wash);
     if (chromeRef.current) chromeRef.current.style.opacity = String(1 - smooth(sink / 0.4));
   };
+  const showPassage = (opacity: number) => {
+    if (passageRef.current) passageRef.current.style.opacity = String(opacity);
+  };
   const placeArtifact = (lift: number, light: { fill: number; white: number }) => {
     liftRef.current = lift;
     lightRef.current = light;
@@ -129,6 +137,7 @@ export function PondNamingOverlay({
     sinkRef.current = 1;
     pose(1);
     placeArtifact(1, { fill: 1, white: 0.65 });
+    showPassage(0);
     if (handoff?.artifactOnly) glow.apply(handoffRef.current, 1, .65);
     let last = performance.now();
     let elapsed = 0;
@@ -140,7 +149,9 @@ export function PondNamingOverlay({
       pose(sink);
       const way = Math.min(1, elapsed / ARTIFACT_RISE_MS);
       placeArtifact(1 - smooth(way), lightAt(way));
-      if (way >= 1) {
+      // Held at 0 until the vessel is in its seat; then it fades in.
+      showPassage(way >= 1 ? smooth((elapsed - ARTIFACT_RISE_MS) / PASSAGE_IN_MS) : 0);
+      if (way >= 1 && elapsed - ARTIFACT_RISE_MS >= PASSAGE_IN_MS) {
         raf.current = null;
         return;
       }
@@ -179,7 +190,9 @@ export function PondNamingOverlay({
       pose(sink);
       const out = 1 - smooth(elapsed / LIGHT_OUT_MS);
       placeArtifact(Math.max(liftFrom, smooth(sink)), { fill: lightFrom.fill * out, white: lightFrom.white * out });
-      if (chromeRef.current) chromeRef.current.style.opacity = String(1 - clamp01(elapsed / CHROME_OUT_MS));
+      const chrome = 1 - clamp01(elapsed / CHROME_OUT_MS);
+      if (chromeRef.current) chromeRef.current.style.opacity = String(chrome);
+      showPassage(chrome);
       if (sink >= 1) { raf.current = null; go(); return; }
       raf.current = requestAnimationFrame(tick);
     };
@@ -214,7 +227,8 @@ export function PondNamingOverlay({
 
       {/* Naming is content, not navigation: it shares the step-heading row. */}
       <FlowPageGrid headingRef={chromeRef} heading={rim.caption}
-        scene={<div
+        scene={<>
+        <div
         ref={artifactRef}
         role="img"
         aria-label="the memory being made"
@@ -242,11 +256,32 @@ export function PondNamingOverlay({
             focused still={false} frameloop="always"
           />
         </div>
-      </div>}
+      </div>
+        {passage && (
+          <p
+            ref={passageRef}
+            style={{
+              ...TRANSCRIPT,
+              fontSize: NAMING_PROSE_SIZE,
+              position: "absolute",
+              left: "50%",
+              transform: "translateX(-50%)",
+              top: `calc(${artifactTop} + ${frame.size + 28}px)`,
+              width: "min(80ch, calc(100vw - 40px))",
+              maxWidth: "80ch",
+              margin: 0,
+              color: CHROME_GRAY,
+              textAlign: "center",
+              opacity: rising ? 0 : 1,
+              pointerEvents: "none",
+              zIndex: 1,
+            }}
+          >
+            {passage}
+          </p>
+        )}
+        </>}
         actions={rim.actions}
-        actionsStyle={{ position: "absolute", gridRow: "scene", alignSelf: "start",
-          // Follow the artifact's lower edge, including its minimum top inset.
-          top: `calc(${artifactTop} + ${frame.size + 24}px)` }}
         headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />

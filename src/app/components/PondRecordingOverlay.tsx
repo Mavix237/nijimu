@@ -200,13 +200,23 @@ export function PondRecordingOverlay({
           </div>
           {/* as wide as the transcript that follows: measured in its font */}
           <div style={{ fontFamily: TRANSCRIPT.fontFamily, fontSize: TRANSCRIPT.fontSize, width: TRANSCRIPT_WIDTH }}>
-            <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6, textAlign: "center" }}>
+            <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6, textAlign: "center",
+              display: "flex", flexDirection: "column", gap: 14 }}>
               <ParticleText
-                text="Find a memory in your mind, and choose wherever you want to begin. Don’t worry about making it perfect, just speak naturally and stop when the story feels complete."
+                text="Think of a memory in your mind, and talk about it freely."
                 seed={53}
                 animate={!reducedMotion}
                 delay={NOTE_1_DELAY_S}
-                sweep={NOTE_SWEEP_S * 2}
+                sweep={NOTE_SWEEP_S}
+                wrap
+                soft
+              />
+              <ParticleText
+                text="Stop when the story feels complete."
+                seed={59}
+                animate={!reducedMotion}
+                delay={NOTE_1_DELAY_S + NOTE_SWEEP_S}
+                sweep={NOTE_SWEEP_S}
                 wrap
                 soft
               />

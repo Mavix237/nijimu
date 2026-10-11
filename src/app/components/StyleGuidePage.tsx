@@ -3,16 +3,21 @@ import { useNavigate } from "react-router";
 import { CHROME_GRAY, COLOR_PALETTE, PANE_INK } from "../lib/colors";
 import { PAGE_BG } from "./PuddleBackdrop";
 import {
-  BODY_SIZE, BUTTON_SIZE_SM, FLOW_PAGE, INSTRUCTION_SIZE, LABEL_SIZE, META, NAMING_PROSE_SIZE, TEXT_ENTER_MS,
-  NOTE_SIZE, PROSE_SIZE, SANS, SANS_UI, SERIF, SERIF_CJK, SERIF_DISPLAY, SERIF_EXPOSURE,
-  SERIF_ITALIC_TRACKING, TITLE, TITLE_SIZE, TRANSCRIPT,
+  BODY_SIZE, BUTTON_SIZE_SM, FLOW_PAGE, GALLERY_TRANSCRIPT, INSTRUCTION_SIZE, LABEL_SIZE, META,
+  NAMING_PROSE_SIZE, NOTE_SIZE, PANE_ACTION, PANE_CONTENT_GAP, PROSE_SIZE, SANS, SANS_UI, SERIF,
+  SERIF_CJK, SERIF_DISPLAY, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, TITLE, TITLE_SIZE,
+  TRANSCRIPT,
 } from "../lib/theme";
+import { LANDING_RETURN } from "../lib/landingReturn";
 import { CAPTION_TITLE_GAP, CAPTION_TITLE_STYLE, CAPTION_YEAR_STYLE } from "./PuddleDiveGallery";
 import { PAGE_HEADER_MARK, PageHeader } from "./PageHeader";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
 import { SpectrumSlider } from "./SpectrumSlider";
 import { BackButton } from "./BackButton";
+import {
+  ArrowIcon, CameraIcon, ClockIcon, MicIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions,
+} from "./PaneOption";
 
 const TRAIL_INK = "#c4c4c9";
 const TRANSCRIPT_INK = "#a4a4ab";
@@ -75,6 +80,38 @@ function Token({ name, value }: { name: string; value: string }) {
   );
 }
 
+/** The glass card as the dialogs draw it, without the modal scrim. */
+function PaneCard({ children }: { children: ReactNode }) {
+  return (
+    <div style={{
+      position: "relative", width: "min(480px, 100%)", borderRadius: 12, overflow: "hidden",
+      background: "linear-gradient(165deg, rgba(240, 240, 238, 0.42), rgba(240, 240, 238, 0.32))",
+      backdropFilter: "blur(16px) saturate(1.15)", WebkitBackdropFilter: "blur(16px) saturate(1.15)",
+      boxShadow: "0 22px 60px rgba(70, 70, 84, 0.09)",
+    }}>
+      <div style={{
+        position: "relative", display: "flex", flexDirection: "column", alignItems: "stretch",
+        gap: PANE_CONTENT_GAP * 1.5,
+        padding: `calc(clamp(32px, 7vw, 44px) - 4px) clamp(24px, 6.4vw, 44px) calc(clamp(30px, 6.4vw, 40px) - ${PANE_ACTION.paddingY}px - 4px)`,
+      }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ActionPair({ left, right }: { left: string; right: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
+      <TextButton label={left} onClick={noop} style={{ width: "9em", justifyContent: "center" }} />
+      <span aria-hidden style={{ width: 1, height: "1em", background: "rgba(123, 123, 135, 0.45)", flexShrink: 0 }} />
+      <TextButton label={right} onClick={noop} style={{ width: "9em", justifyContent: "center" }} />
+    </div>
+  );
+}
+
+const noop = () => {};
+
 const StopIcon = ({ fill }: { fill: string }) => (
   <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden>
     <rect x="4" y="4" width="12" height="12" rx="2" fill={fill} />
@@ -93,7 +130,6 @@ function PlusMark() {
 
 export function StyleGuidePage() {
   const navigate = useNavigate();
-  const noop = () => {};
   const [shape, setShape] = useState(0.42);
   const [rhythm, setRhythm] = useState(0.35);
   const [distance, setDistance] = useState(0.2);
@@ -153,11 +189,12 @@ export function StyleGuidePage() {
           <Heading>color — semantic</Heading>
           <Token name="page.ground" value="PAGE_BG — landing, gallery, this guide" />
           <Token name="ink.chrome" value="CHROME_GRAY — wordmark, icons, instructions" />
-          <Token name="ink.pane.title" value="PANE_INK.title — dialog headings" />
-          <Token name="ink.pane.body" value="PANE_INK.body — dialog copy, slider knob rest" />
-          <Token name="ink.pane.primary" value="PANE_INK.primary — the option the pane hopes for" />
-          <Token name="ink.pane.secondary" value="PANE_INK.secondary — the way out" />
-          <Token name="ink.gallery.words" value="#a4a4ab — transcript under the year" />
+          <Token name="ink.pane.title" value="PANE_INK.title — pane headings, same chrome" />
+          <Token name="ink.pane.body" value="PANE_INK.body — pane copy" />
+          <Token name="ink.pane.primary" value="PANE_INK.primary — every option; weight 500 is the hoped-for one" />
+          <Token name="ink.pane.secondary" value="PANE_INK.secondary — slider knobs, notes" />
+          <Token name="ink.pane.ring" value="PANE_INK.ring — the way-out hover ring" />
+          <Token name="ink.gallery.words" value="GALLERY_TRANSCRIPT — transcript under the year" />
           <Token name="ink.gallery.trail" value="#c4c4c9 — words that follow the pointer" />
           <Token name="ink.gallery.rule" value="#4a4a4a — timescale ticks and playhead stroke" />
         </section>
@@ -177,8 +214,12 @@ export function StyleGuidePage() {
             </span>
           </Specimen>
 
-          <Specimen name="title" note={`TITLE, Exposure Trial, ${TITLE_SIZE}`}>
+          <Specimen name="title" note={`TITLE, Exposure Trial, ${TITLE_SIZE} — pond and page headings`}>
             <span style={{ ...TITLE, color: PANE_INK.title }}>before you begin</span>
+          </Specimen>
+
+          <Specimen name="pane title" note="PANE_TITLE, Switzer 20 / 600">
+            <span style={PANE_TITLE}>To hear your voice</span>
           </Specimen>
 
           <Specimen name="instruction" note={`INSTRUCTION_SIZE, Rowan`}>
@@ -187,15 +228,21 @@ export function StyleGuidePage() {
               fontWeight: 400, fontSynthesis: "none", fontSize: INSTRUCTION_SIZE,
               lineHeight: 1.45, color: CHROME_GRAY,
             }}>
-              each memory already has a shape.
+              Based on your words, this memory has been given a vessel.
               <br />
-              open your hands, and let these words find theirs.
+              Bring your hands together, then slowly open them to reveal its shape.
             </p>
           </Specimen>
 
           <Specimen name="body" note={`BODY_SIZE, Rowan`}>
             <p style={{ margin: 0, fontFamily: SERIF, fontSize: BODY_SIZE, lineHeight: 1.5, color: CHROME_GRAY }}>
               some memories are never spoken.
+            </p>
+          </Specimen>
+
+          <Specimen name="pane body" note="PANE_BODY, a step under the page">
+            <p style={{ ...PANE_BODY }}>
+              If you’d like to speak about a memory, please allow microphone access in your browser.
             </p>
           </Specimen>
 
@@ -213,8 +260,7 @@ export function StyleGuidePage() {
               <p style={{ ...CAPTION_TITLE_STYLE, marginBottom: CAPTION_TITLE_GAP }}>the year everything slowed down</p>
               <p style={CAPTION_YEAR_STYLE}>2020</p>
               <p style={{
-                color: TRANSCRIPT_INK, margin: "1.6em 0 0", maxWidth: "60ch",
-                fontFamily: SERIF, fontWeight: 400, fontSize: "clamp(12px, 0.9vw, 14px)",
+                ...GALLERY_TRANSCRIPT, margin: "1.6em 0 0", maxWidth: "60ch",
                 lineHeight: 1.6, textAlign: "center",
               }}>
                 That year, the days stopped having edges. What I remember is the window:
@@ -225,8 +271,7 @@ export function StyleGuidePage() {
 
           <Specimen name="trail" note="same face as the caption words, lighter">
             <span style={{
-              fontFamily: SERIF, fontSize: "clamp(12px, 0.9vw, 14px)", fontWeight: 400,
-              color: TRAIL_INK,
+              ...GALLERY_TRANSCRIPT, color: TRAIL_INK,
             }}>
               rectangle
             </span>
@@ -287,74 +332,74 @@ export function StyleGuidePage() {
 
         <section style={{ ...SECTION, marginBottom: 72 }}>
           <Heading>buttons</Heading>
+          <p style={{ margin: 0, fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.secondary, lineHeight: 1.55 }}>
+            Three families, one size. Pill is the capsule on the water and in
+            the labs. Text is the pond, the transcript, and naming. Pane
+            options are the full-width rows inside the glass.
+          </p>
 
-          <Specimen name="primary" note="PillButton light">
+          <Specimen name="pill" note="PillButton light — underwater continue, labs, revisit">
             <PillButton label="continue" onClick={noop} />
             <PillButton label="continue" onClick={noop} trailing="›" />
             <PillButton label="record" onClick={noop} />
           </Specimen>
 
-          <Specimen name="primary, sentence case" note="instruction dialogs">
-            <PillButton label="Allow microphone & record" onClick={noop} transform="none" />
-          </Specimen>
-
-          <Specimen name="primary disabled">
+          <Specimen name="pill disabled">
             <PillButton label="continue" onClick={noop} disabled trailing="›" />
           </Specimen>
 
-          <Specimen name="secondary" note="PillButton outline">
+          <Specimen name="pill outline" note="secondary capsule">
             <PillButton label="show sample transcript" onClick={noop} variant="outline" />
             <PillButton label="record again" onClick={noop} variant="outline" />
           </Specimen>
 
-          <Specimen name="dark primary" note="PillButton dark" ground="#1c1c1e">
+          <Specimen name="pill dark" note="on a dark field" ground="#1c1c1e">
             <PillButton label="record" onClick={noop} variant="dark" />
             <PillButton label="stop" onClick={noop} variant="dark" icon={<StopIcon fill="white" />} />
           </Specimen>
 
-          <Specimen name="primary with icon">
+          <Specimen name="pill with icon">
             <PillButton label="stop" onClick={noop} icon={<StopIcon fill={CHROME_GRAY} />} />
           </Specimen>
 
-          <Specimen name="create flow" note="recording and the sample story share this pair">
-            <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-              <TextButton label="record again" onClick={noop} style={{ width: "9em", justifyContent: "center" }} />
-              <span aria-hidden style={{ width: 1, height: "1em", background: "rgba(123, 123, 135, 0.45)" }} />
-              <TextButton label="continue" onClick={noop} style={{ width: "9em", justifyContent: "center" }} />
+          <Specimen name="text pair" note="TextButton — pond record / sample">
+            <ActionPair left="record" right="sample story" />
+          </Specimen>
+
+          <Specimen name="text pair" note="transcript, after a recording">
+            <ActionPair left="record again" right="continue" />
+          </Specimen>
+
+          <Specimen name="text" note="naming">
+            <TextButton label="save memory" onClick={noop} />
+            <TextButton label="see it among the others" onClick={noop} />
+            <TextButton label="save memory" onClick={noop} disabled />
+          </Specimen>
+
+          <Specimen name="pane option" note="PaneOption — hoped-for in Medium, the way out in Regular">
+            <div style={{ width: "min(420px, 100%)" }}>
+              <PaneOptions>
+                <PaneOption primary mark={<MicIcon />} label="Allow microphone & record my story" onClick={noop} />
+                <PaneOption mark={<ArrowIcon />} label="Skip to a sample story" onClick={noop} />
+              </PaneOptions>
             </div>
           </Specimen>
 
-          <p style={{ margin: 0, fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.secondary, lineHeight: 1.55 }}>
-            The pond actions are text-only now — same seat, same pair. Bare Switzer
-            can disappear on pale water. Studies below keep the type, no pill.
-            Nothing here is the default yet.
-          </p>
-
-          <Specimen name="study A" note="heavier — 500">
-            <TextButton label="continue" onClick={noop} style={{ fontWeight: 500 }} />
+          <Specimen name="pane option" note="camera, with a clock that opens into the ring">
+            <div style={{ width: "min(420px, 100%)" }}>
+              <PaneOptions>
+                <PaneOption primary mark={<CameraIcon />} label="Allow camera & Begin" onClick={noop} />
+                <PaneOption mark={<ClockIcon />} ring label="Maybe later" onClick={noop} />
+              </PaneOptions>
+            </div>
           </Specimen>
 
-          <Specimen name="study B" note="16px, still Switzer">
-            <TextButton label="continue" onClick={noop} style={{ fontSize: 16 }} />
-          </Specimen>
-
-          <Specimen name="study C" note="Rowan, the page's voice">
-            <TextButton label="continue" onClick={noop} style={{ fontFamily: SERIF }} />
-          </Specimen>
-
-          <Specimen name="study D" note="hairline under the word">
-            <TextButton label="continue" onClick={noop} style={{
-              paddingBottom: 3,
-              boxShadow: "inset 0 -1px 0 rgba(123, 123, 135, 0.45)",
-            }} />
-          </Specimen>
-
-          <Specimen name="study E" note="the continue mark, no capsule">
-            <TextButton label="continue" onClick={noop} trailing="›" />
-          </Specimen>
-
-          <Specimen name="study F" note="darker ink, PANE_INK.primary">
-            <TextButton label="continue" onClick={noop} style={{ color: PANE_INK.primary }} />
+          <Specimen name="pane option" note="a single way out">
+            <div style={{ width: "min(420px, 100%)" }}>
+              <PaneOptions>
+                <PaneOption label="close" onClick={noop} />
+              </PaneOptions>
+            </div>
           </Specimen>
 
           <Specimen name="chrome" note="back / plus">
@@ -373,22 +418,22 @@ export function StyleGuidePage() {
         <section style={{ ...SECTION, marginBottom: 72 }}>
           <Heading>panes</Heading>
           <p style={{ margin: 0, fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.secondary, lineHeight: 1.5 }}>
-            GlassPane: squircle 12 / 0.6, grain, tint at ~70% of the old wash.
-            Title 16px Exposure in PANE_INK.title. Rowan body in PANE_INK.body.
+            GlassPane: squircle 12 / 0.6, grain, pale tint. Title is PANE_TITLE.
+            Copy is PANE_BODY. Actions are PaneOption rows with shared rules.
           </p>
-          <div style={{
-            maxWidth: 420, padding: "28px 32px 32px", borderRadius: 12,
-            background: "rgba(240, 240, 238, 0.42)", boxShadow: "0 18px 48px rgba(70,70,78,0.08)",
-          }}>
-            <p style={{ ...TITLE, fontSize: 16, color: PANE_INK.title, margin: "0 0 12px" }}>To hear your voice</p>
-            <p style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.body, lineHeight: 1.55, margin: "0 0 22px" }}>
-              If you’d like to speak about a memory, please allow microphone access in your browser.
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              <span style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.primary }}>Allow microphone & record my story</span>
-              <span style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: PANE_INK.secondary }}>Skip to a sample story</span>
+          <PaneCard>
+            <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
+              <h2 style={PANE_TITLE}>To hear your voice</h2>
+              <div className="nijimuPaneBody" style={PANE_BODY}>
+                <p>If you’d like to speak about a memory, please allow microphone access in your browser.</p>
+                <p>Or, skip to a sample story to experience the full flow without recording yourself.</p>
+              </div>
             </div>
-          </div>
+            <PaneOptions>
+              <PaneOption primary mark={<MicIcon />} label="Allow microphone & record my story" onClick={noop} />
+              <PaneOption mark={<ArrowIcon />} label="Skip to a sample story" onClick={noop} />
+            </PaneOptions>
+          </PaneCard>
         </section>
 
         <section style={{ ...SECTION, marginBottom: 72 }}>
@@ -413,7 +458,7 @@ export function StyleGuidePage() {
           <Token name="hint.breathe" value="3.6s, opacity 1 ↔ 0.566" />
           <Token name="trail.stagger" value="140ms after the pointer sets a word down" />
           <Token name="timescale.magnet" value="34px pull, playhead pulse 720ms on settle" />
-          <Token name="pane.leave" value="LANDING_RETURN.profileLeaveMs" />
+          <Token name="pane.leave" value={`${LANDING_RETURN.profileLeaveMs}ms`} />
         </section>
 
         <section style={SECTION}>
@@ -422,9 +467,12 @@ export function StyleGuidePage() {
           <Token name="flow.headingWidth" value={String(FLOW_PAGE.headingWidth)} />
           <Token name="flow.actionBottom" value={String(FLOW_PAGE.actionBottom)} />
           <Token name="flow.namingRaise" value={String(FLOW_PAGE.namingArtifactRaise)} />
+          <Token name="pane.contentGap" value={`${PANE_CONTENT_GAP}px — title to copy; copy to actions is 1.5×`} />
+          <Token name="pane.actionPad" value={`${PANE_ACTION.paddingY}px vertical on each option`} />
           <Token name="compact" value="max-width 600px — chrome packs in, burger menu" />
           <Token name="caption" value="60ch, under title and year, only over the vessel" />
         </section>
+        <style>{`.nijimuPaneBody > p { margin: 0; } .nijimuPaneBody > p + p { margin-top: .4em; }`}</style>
       </main>
     </div>
   );

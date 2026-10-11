@@ -2042,12 +2042,12 @@ const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, stri
   rhythm: {
     mark: "律",
     name: "rhythm",
-    lines: ["Does this memory stir complex feelings like a jagged ballad, or soothe you like a steady hum?", "Pinch your thumb and index finger to compose its form."],
+    lines: ["Does this memory stir complex feelings, like a jagged ballad, or soothe you like a steady hum?", "Pinch your thumb and index finger to compose its form and texture."],
   },
   distance: {
     mark: "間",
     name: "distance",
-    lines: ["Is this a vivid memory that you kept close, or buried deep in the galaxy of time?", "Push your open palm towards the camera to locate it."],
+    lines: ["Is this a vivid memory that still feels close to you, or is it deeply buried in the back of your mind?", "Push your open palm toward the camera to place it in your archive."],
   },
   color: {
     mark: "染",

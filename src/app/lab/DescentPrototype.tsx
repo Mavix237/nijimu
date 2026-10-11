@@ -29,7 +29,7 @@ import { GestureHint } from "../components/GestureHint";
 import { ShutterCamera } from "../components/ShutterCamera";
 import { MATERIAL_PRESETS } from "../components/SceneViewer";
 import { draftColorIndex } from "../components/NamingRim";
-import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, TITLE } from "../lib/theme";
+import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE } from "../lib/theme";
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
@@ -1752,24 +1752,28 @@ const UNDER_INK = CHROME_GRAY;
 
 /* The gesture ranges, as ShapeGrowPage reads them. The hint under the copy
    names the drag only while no camera is driving the step. */
-const STEP_COPY: Record<Step, { title: string; lines: [string, string]; drag: string }> = {
+const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string]; drag: string }> = {
   shape: {
-    title: "shape",
+    mark: "形",
+    name: "shape",
     lines: ["each memory already has a shape.", "open your hands, and let these words find theirs."],
     drag: "or drag across to grow it",
   },
   rhythm: {
-    title: "rhythm",
+    mark: "律",
+    name: "rhythm",
     lines: ["let its contours find their rhythm.", "spread thumb and index finger for more folds; pinch for fewer."],
     drag: "or drag across to change its rhythm",
   },
   distance: {
-    title: "distance",
+    mark: "间",
+    name: "distance",
     lines: ["time blurs the edges, not the feeling.", "push your open palm toward the camera to send it farther into the blur."],
     drag: "or drag across to move it deeper into the constellation",
   },
   color: {
-    title: "color",
+    mark: "染",
+    name: "color",
     lines: ["remembering dyes what happened.", "how does it feel, returning to it today?"],
     drag: "",
   },
@@ -2704,7 +2708,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {step && <>
         <FlowPageGrid style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
           heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
-            <p style={{ ...TITLE, margin: 0, color: UNDER_INK }}>{STEP_COPY[step].title}</p>
+            <p style={{ ...TITLE, margin: 0, color: UNDER_INK }}>
+              <span style={{ fontFamily: SERIF_CJK }}>{STEP_COPY[step].mark}</span>
+              {" "}{STEP_COPY[step].name}
+            </p>
             <p style={{ margin: "14px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}
             </p>

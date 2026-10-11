@@ -135,6 +135,17 @@ is a live canvas.
   a rebuild or a new camera request. Detection runs once per new camera frame.
   Updating `@mediapipe/tasks-vision` keeps the engine in step; refresh the
   model file only if Google publishes a new one.
+- Phone colour, ascent and naming (2026-10-11): the colour field's bowl mask
+  (`OklchColorField`) is computed per pixel on phones, at the wash's own size
+  (dip .07 of the width, 40 px soft edge), instead of the 1024×512 image
+  stretched into a narrow screen. Safari ignores canvas `ctx.filter`, so the
+  desktop mask uses the same per-pixel fallback where the filter is not
+  honoured (within ~1/255 of Chrome's). The colour → naming float
+  (`ascendSeconds`) is timed in screen heights: `ASCEND_S` × (landscape view
+  ÷ the view the camera shows), so an upright phone's taller view takes
+  ~3.75 s, not 6.5. On a phone, naming shows no transcript; the vessel sits
+  under the fields and pressing it opens `MemoryReadingPane` with the words
+  alone (name and year are optional there).
 - Grain: the landing's is one grain per device pixel from a 512 px tile; the
   glass pane's tile is 256 px.
 - Header menu (phones, ≤600px): the corner icons fold into a burger
@@ -181,6 +192,15 @@ is a live canvas.
   32 px of its words (`HINT_NEAR_PX`, a trigger zone that blocks nothing), it
   fades; it returns once that zone is clear (checked on pointer events and
   every 150 ms).
+- Phone underwater steps (2026-10-11): everything keeps the header's side
+  margin, `--chrome-inset` (18 px: the back arrow's and burger's glyphs from
+  the edges; 14 px ≤359px; 20 px elsewhere, which FlowPageGrid's columns use).
+  Heading lower and form higher (`UNDERWATER_PHONE.headingTop`/`artifactDrop`);
+  the slider spans the margins above a 52 px foot row, a grid of
+  [gesture illustration (scaled to the row) | camera capsule | round continue].
+  With the camera off the capsule keeps its place: a pale fill and a
+  struck-through camera; the gesture stays shown. Desktop keeps the corner
+  camera, the pill continue and the gesture above the camera.
 - Glass panes (profile, dialogs): `IridescentSheen` draws premultiplied into
   a premultiplied canvas — the unpremultiplied canvas it used is composited
   differently by Safari and likely read as a bright white rim there (not

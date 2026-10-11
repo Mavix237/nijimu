@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPaletteWater, type PaletteWater } from "../lib/paletteWater";
 import { Oklch, oklchToHex, sampleField } from "../lib/oklch";
+import { useCompact } from "../hooks/useCompact";
 
 const COLS = 196;
 const ROWS = 72;
@@ -49,7 +50,114 @@ function bakeCurveMask(): string {
   return `url(${canvas.toDataURL("image/png")})`;
 }
 
-const CURVE_MASK = bakeCurveMask();
+/** Whether a 2D canvas honours `filter` (Safari ships it disabled, and then
+    the baked mask above has a hard edge). */
+function canvasBlurWorks(): boolean {
+  if (typeof document === "undefined") return false;
+  const c = document.createElement("canvas");
+  c.width = 9;
+  c.height = 9;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return false;
+  ctx.filter = "blur(2px)";
+  ctx.fillRect(4, 4, 1, 1);
+  return ctx.getImageData(1, 4, 1, 1).data[3] > 0;
+}
+
+/** The normal distribution's CDF: how much of a Gaussian-blurred straight edge is on at distance `d`. */
+function gaussEdge(d: number, sigma: number): number {
+  const x = d / (sigma * Math.SQRT2);
+  // Abramowitz & Stegun 7.1.26
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const erf = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return 0.5 * (1 + (x < 0 ? -erf : erf));
+}
+
+type MaskShape = {
+  w: number;
+  h: number;
+  /** The curve's height at both ends, and its control height (the same cubic as bakeCurveMask). */
+  endY: number;
+  controlY: number;
+  /** The blur across the curve, at the sides, and at the foot, in mask pixels (0 for no fade there). */
+  edge: number;
+  sides: number;
+  foot: number;
+};
+
+/**
+ * The same bowl, softened by computing each pixel's distance from the curve
+ * rather than with a canvas filter, so it is blurred in every browser.
+ */
+function computeCurveMask({ w, h, endY, controlY, edge, sides, foot }: MaskShape): string {
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "none";
+  // the curve's height and slope per column, from the cubic sampled densely
+  const curveY = new Float32Array(w);
+  const slope = new Float32Array(w);
+  const N = w * 4;
+  let prevX = 0;
+  let prevY = endY;
+  let col = 0;
+  for (let i = 1; i <= N && col < w; i++) {
+    const t = i / N;
+    const a = 3 * (1 - t) * (1 - t) * t;
+    const b = 3 * (1 - t) * t * t;
+    const x = a * 0.22 * w + b * 0.78 * w + t * t * t * w;
+    const y = (1 - t) ** 3 * endY + (a + b) * controlY + t * t * t * endY;
+    while (col < w && col + 0.5 <= x) {
+      const f = x > prevX ? (col + 0.5 - prevX) / (x - prevX) : 0;
+      curveY[col] = prevY + (y - prevY) * f;
+      slope[col] = x > prevX ? (y - prevY) / (x - prevX) : 0;
+      col++;
+    }
+    prevX = x;
+    prevY = y;
+  }
+  const img = ctx.createImageData(w, h);
+  const data = img.data;
+  for (let x = 0; x < w; x++) {
+    const across = 1 / Math.sqrt(1 + slope[x] * slope[x]);
+    const side = sides > 0 ? gaussEdge(x + 0.5, sides) * gaussEdge(w - x - 0.5, sides) : 1;
+    for (let y = 0; y < h; y++) {
+      const footFade = foot > 0 ? gaussEdge(h - y - 0.5, foot) : 1;
+      const a = gaussEdge((y + 0.5 - curveY[x]) * across, edge) * side * footFade;
+      const i = (y * w + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = 255;
+      data[i + 3] = Math.round(255 * a);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return `url(${canvas.toDataURL("image/png")})`;
+}
+
+const CURVE_MASK = canvasBlurWorks()
+  ? bakeCurveMask()
+  : computeCurveMask({ w: 1024, h: MASK_HEIGHT, endY: MASK_EDGE_Y, controlY: MASK_CONTROL_Y, edge: 42, sides: 42, foot: 42 });
+
+/** On a phone the bowl is baked at the wash's own size (half resolution), so a
+    narrow screen does not squeeze it into a deep curve with a thin edge: its
+    dip is this share of the width, about what a wide screen shows. */
+const PHONE_DIP = 0.07;
+/** The phone's blur across the curve, at the sides and at the foot, in CSS px. */
+const PHONE_EDGE_PX = 40;
+const PHONE_SIDES_PX = 16;
+const PHONE_FOOT_PX = 30;
+
+function phoneCurveMask(width: number, height: number): string {
+  const w = Math.max(8, Math.round(width / 2));
+  const h = Math.max(8, Math.round(height / 2));
+  // the centre of the edge stays where the wide mask puts it, so as much colour shows
+  const centreY = h * (1 - VISIBLE_HEIGHT_RATIO);
+  const endY = centreY - PHONE_DIP * w;
+  return computeCurveMask({
+    w, h, endY, controlY: (centreY - 0.25 * endY) / 0.75,
+    edge: PHONE_EDGE_PX / 2, sides: PHONE_SIDES_PX / 2, foot: PHONE_FOOT_PX / 2,
+  });
+}
 
 type Props = {
   u: number;
@@ -75,6 +183,28 @@ export function OklchColorField({ u, v, held = false, onPick, sample = sampleFie
   const hoverUv = useRef({ u, v, t: 0 });
   const flowPx = useRef({ x: 0, y: 0 });
   const [liveWater, setLiveWater] = useState(false);
+  const compact = useCompact();
+  const [phoneMask, setPhoneMask] = useState<string | null>(null);
+
+  useLayoutEffect(() => {
+    const el = wrapRef.current;
+    if (!compact || !el) {
+      setPhoneMask(null);
+      return;
+    }
+    let size = "";
+    const bake = () => {
+      const next = `${el.offsetWidth}x${el.offsetHeight}`;
+      if (next === size || !el.offsetWidth || !el.offsetHeight) return;
+      size = next;
+      setPhoneMask(phoneCurveMask(el.offsetWidth, el.offsetHeight));
+    };
+    bake();
+    const observer = new ResizeObserver(bake);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [compact]);
+  const mask = compact ? phoneMask ?? "none" : CURVE_MASK;
 
   const slideWash = (du: number, dv: number) => {
     const canvas = canvasRef.current;
@@ -217,8 +347,8 @@ export function OklchColorField({ u, v, held = false, onPick, sample = sampleFie
         zIndex: 10,
         cursor: "crosshair",
         touchAction: "none",
-        WebkitMaskImage: CURVE_MASK,
-        maskImage: CURVE_MASK,
+        WebkitMaskImage: mask,
+        maskImage: mask,
         WebkitMaskSize: "100% 100%",
         maskSize: "100% 100%",
         WebkitMaskRepeat: "no-repeat",

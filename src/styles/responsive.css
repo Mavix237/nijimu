@@ -16,6 +16,10 @@
   --chrome-r3: calc(156px + env(safe-area-inset-right, 0px));
   /* The back arrow's left edge. */
   --chrome-left: calc(30px + env(safe-area-inset-left, 0px));
+  /* Content's inline margin, matched to the header: on a phone, the distance
+     from the screen's edge to the back arrow's glyph and to the burger's
+     (the buttons' seats plus the air inside them). The flow's side columns. */
+  --chrome-inset: 20px;
   /* The gallery's older / newer triangles, from the screen's sides. */
   --gallery-arrow-inset: clamp(28px, 6vw, 96px);
   /* Their triangle's size; the button around it does not change. */
@@ -31,6 +35,8 @@
     --chrome-r3: calc(104px + env(safe-area-inset-right, 0px));
     --chrome-left: calc(12px + env(safe-area-inset-left, 0px));
     --gallery-arrow-inset: 6px;
+    /* 12px seat + 6px inside the 32px back button = 8px seat + 10px inside the 36px burger */
+    --chrome-inset: calc(18px + env(safe-area-inset-left, 0px));
     --gallery-arrow-scale: 0.5;
   }
 }
@@ -44,6 +50,7 @@
     --chrome-r2: calc(64px + env(safe-area-inset-right, 0px));
     --chrome-r3: calc(94px + env(safe-area-inset-right, 0px));
     --chrome-left: calc(8px + env(safe-area-inset-left, 0px));
+    --chrome-inset: calc(14px + env(safe-area-inset-left, 0px));
   }
 }
 

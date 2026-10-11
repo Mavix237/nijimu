@@ -79,8 +79,13 @@ export const FLOW_PAGE = {
 
 /** Phone-only handling layout: shape, rhythm, distance and colour. */
 export const UNDERWATER_PHONE = {
-  headingTop: "max(env(safe-area-inset-top, 0px), clamp(96px, 14dvh, 116px))",
+  headingTop: "max(env(safe-area-inset-top, 0px), clamp(118px, 17dvh, 140px))",
   instructionSize: 13,
   instructionGap: 14,
-  artifactDrop: .075,
+  /** How far below the view's centre the handled form sits, as a share of the view's height. */
+  artifactDrop: .045,
+  /** The foot row — gesture, camera, continue — and the slider above it. */
+  rowHeight: 52,
+  rowBottom: "max(24px, env(safe-area-inset-bottom, 0px))",
+  sliderGap: 24,
 } as const;

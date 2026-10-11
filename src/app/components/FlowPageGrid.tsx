@@ -15,7 +15,8 @@ export function FlowPageGrid({ heading, scene, actions, headingRef, headingStyle
 }) {
   return <div data-flow-grid style={{
     position: "absolute", inset: 0, display: "grid",
-    gridTemplateColumns: "20px minmax(0, 1fr) 20px",
+    // the side margin the header keeps (responsive.css; 20px off a phone)
+    gridTemplateColumns: "var(--chrome-inset, 20px) minmax(0, 1fr) var(--chrome-inset, 20px)",
     gridTemplateRows: `[navigation] ${FLOW_PAGE.navigationHeight}px [space] calc(${headingTop} - ${FLOW_PAGE.navigationHeight}px) [heading] max-content [scene] minmax(0, 1fr) [actions] max-content [footer] ${FLOW_PAGE.actionBottom}`,
     pointerEvents: "none", zIndex: 30, ...style,
   }}>

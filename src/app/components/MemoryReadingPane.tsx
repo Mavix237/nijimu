@@ -9,8 +9,9 @@ const PANE_GAP = "clamp(20px, 4vh, 30px)";
 
 export interface ReadableMemory {
   id: string;
-  event: string;
-  year: string;
+  /** The name and year head the pane; naming opens it before they are kept, words only. */
+  event?: string;
+  year?: string;
   transcript: string;
 }
 
@@ -19,19 +20,22 @@ export interface ReadableMemory {
  * and year under the vessel, and pressing the vessel opens this. The same
  * glass pane as the profile, at a reading height, scrolling inside;
  * the name and year set as the gallery's caption sets them (the name at the
- * size of the words), the words left-aligned below.
+ * size of the words), the words left-aligned below. On the naming step the
+ * memory has no name or year yet, and the pane holds the words alone.
  */
 export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory | null; onClose: () => void }) {
   // the last memory stays in the pane while it leaves
   const [shown, setShown] = useState<ReadableMemory | null>(memory);
   if (memory && memory !== shown) setShown(memory);
   const words = shown?.transcript.trim() ?? "";
+  const titled = !!(shown?.event || shown?.year);
 
   return (
-    <GlassPane open={!!memory} onClose={onClose} onExited={() => setShown(null)} labelledBy="memory-reading-title" tall>
+    <GlassPane open={!!memory} onClose={onClose} onExited={() => setShown(null)}
+      labelledBy={titled ? "memory-reading-title" : undefined} label="the words of this memory" tall>
       {shown && (
         <>
-          <header style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }}>
+          {titled && <header style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }}>
             <h2
               id="memory-reading-title"
               style={{
@@ -65,14 +69,14 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
             >
               {shown.year}
             </p>
-          </header>
+          </header>}
 
           <p
             lang="en"
             style={{
               // no rule between name and words; three quarters of the space it
               // held (gap + rule + gap) stays: one pane gap, plus half of one here
-              margin: `calc(${PANE_GAP} * 0.5 + 0.75px) 0 0`,
+              margin: titled ? `calc(${PANE_GAP} * 0.5 + 0.75px) 0 0` : 0,
               width: "100%",
               maxWidth: "34em",
               fontFamily: SERIF,

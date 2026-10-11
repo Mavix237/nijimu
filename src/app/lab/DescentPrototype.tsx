@@ -862,6 +862,14 @@ interface StageState {
     are one movement with the rise. */
 const ASCEND_S = 6.5;
 const ASCEND_TO_Y = -0.8;
+/** The landscape view the float is timed for: the handling lens (48°) at zoom 1. */
+const ASCEND_VIEW_HALF_TAN = Math.tan(THREE.MathUtils.degToRad(24));
+/** The float travels in screen heights: a view that shows more water above and
+    below (a phone held upright) covers the same climb sooner, so it rises past
+    the eye at the same apparent speed. Never longer than ASCEND_S. */
+function ascendSeconds(camera: THREE.PerspectiveCamera): number {
+  return ASCEND_S * Math.min(1, ASCEND_VIEW_HALF_TAN / viewHalfTan(camera));
+}
 
 
 interface StageProps {
@@ -931,6 +939,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   const riseAt = useRef<number | null>(null);
   const risen = useRef(false);
   const ascendAt = useRef<number | null>(null);
+  const ascendSpan = useRef(ASCEND_S);
   const ascended = useRef(false);
   const broke = useRef(false);
   const film = useRef<THREE.Mesh>(null);
@@ -1481,11 +1490,14 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     }
     // The ascent: after the release, eye and form float up together toward the
     // surface — the same framing, carried up into the light under the ceiling.
-    if (s.ascend && ascendAt.current === null && wrapAt.current === null && riseAt.current === null) ascendAt.current = t;
+    if (s.ascend && ascendAt.current === null && wrapAt.current === null && riseAt.current === null) {
+      ascendAt.current = t;
+      ascendSpan.current = ascendSeconds(camera as THREE.PerspectiveCamera);
+    }
     if (!s.ascend) { ascendAt.current = null; ascended.current = false; }
     let ascentProgress = 0;
     if (ascendAt.current !== null) {
-      const k = Math.min(1, (t - ascendAt.current) / ASCEND_S);
+      const k = Math.min(1, (t - ascendAt.current) / ascendSpan.current);
       const u = k * k * (3 - 2 * k);
       const lift = u * Math.max(0, ASCEND_TO_Y - cameraAt.y);
       cameraAt.y += lift; lookAt.y += lift; formAt.y += lift;
@@ -1975,6 +1987,8 @@ const easeMorph = (m: number) => m * m * (3 - 2 * m);
 const UNDER_INK = CHROME_GRAY;
 /** Signed shift of the handled vessel from the look point, as a fraction of the view. Negative sits higher. */
 const HANDLING_DROP = 0.01;
+/** The gesture illustration in a phone's foot row: its 88px stage fitted to the row. */
+const HINT_ROW_SCALE = UNDERWATER_PHONE.rowHeight / 88;
 
 /* The gesture ranges, as ShapeGrowPage reads them. */
 const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string] }> = {
@@ -2309,6 +2323,8 @@ interface PondEntryProps { arrival?: number; active?: boolean; onReady?: () => v
 
 function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport>; pondEntry?: PondEntryProps }) {
   const compact = useCompact();
+  // a phone's slider spans the side margins its wrapper keeps
+  const sliderFill = compact ? { width: "100%" } : undefined;
   const navigate = useNavigate();
   const location = useLocation();
   const routeStep = lab ? null : descentStepForPath(location.pathname);
@@ -2911,10 +2927,11 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           for the hand tracker. */}
       <video ref={videoRef} playsInline muted aria-hidden
         style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96, opacity: 0, pointerEvents: "none" }} />
-      <ShutterCamera video={videoRef} active={!!step && tracking.isTracking}
+      {/* a phone seats it in the foot row instead (below, with the steps) */}
+      {!compact && <ShutterCamera video={videoRef} active={!!step && tracking.isTracking}
         style={{ position: "absolute", right: 28, bottom: 28, width: 128, height: 96,
           borderRadius: 10, transform: "scaleX(-1)", zIndex: 20, pointerEvents: "none",
-          opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease" }} />
+          opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease" }} />}
 
       <div data-descent-photo-controls hidden={!surfaceControlsVisible}
         style={{ display: surfaceControlsVisible ? "contents" : "none" }}>
@@ -3006,14 +3023,18 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           style={{ position: "absolute", inset: 0, zIndex: 5, touchAction: "none", cursor: "ew-resize" }} />
       )}
       {step && step !== "color" && (
-        <div style={{ position: "absolute", bottom: 124, left: "50%", transform: "translateX(-50%)", zIndex: 10,
-          opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}>
+        <div style={{ position: "absolute", zIndex: 10, opacity: leaving ? 0 : 1, transition: "opacity 700ms ease",
+          // a phone: the header's side margin, just above the foot row
+          ...(compact
+            ? { left: "var(--chrome-inset)", right: "var(--chrome-inset)",
+              bottom: `calc(${UNDERWATER_PHONE.rowBottom} + ${UNDERWATER_PHONE.rowHeight + UNDERWATER_PHONE.sliderGap}px)` }
+            : { bottom: 124, left: "50%", transform: "translateX(-50%)" }) }}>
           {step === "shape" && <SpectrumSlider value={morph} onChange={setSignal} from="circle" to="flower"
-            label="memory shape" valueText={`${Math.round(morph * 100)}% shaped`} />}
+            label="memory shape" valueText={`${Math.round(morph * 100)}% shaped`} style={sliderFill} />}
           {step === "rhythm" && <SpectrumSlider value={m2 / RHYTHM_MAX} onChange={setSignal} from="petals" to="bloom"
-            label="shape rhythm" valueText={`${Math.round(m2 * 4) / 4} folds`} keyStep={1 / RHYTHM_MAX} />}
+            label="shape rhythm" valueText={`${Math.round(m2 * 4) / 4} folds`} keyStep={1 / RHYTHM_MAX} style={sliderFill} />}
           {step === "distance" && <SpectrumSlider value={distanceShare} onChange={setSignal} from="circle" to="haze"
-            label="memory distance" valueText={`${Math.round(distanceShare * 100)}% distant`} />}
+            label="memory distance" valueText={`${Math.round(distanceShare * 100)}% distant`} style={sliderFill} />}
         </div>
       )}
       {step === "color" && (
@@ -3037,9 +3058,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
               {STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}
             </p>
           </div>}
-          actions={<PillButton label="continue" trailing="›" onClick={continueStep} />}
+          actions={compact ? undefined : <PillButton label="continue" trailing="›" onClick={continueStep} />}
           actionsStyle={{ pointerEvents: leaving ? "none" : "auto" }} />
-        <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
+        {!compact && <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
           opacity: (step === "distance" || tracking.isTracking) && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
           <GestureHint kind={step} active={gestureLive} style={{
             top: "auto", left: "auto", right: 28 + 64, bottom: 28 + 96 + 12, transform: "translateX(50%)",
@@ -3047,7 +3068,48 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             // including when the camera is off or a hand is already in frame.
             ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),
           }} />
-        </div>
+        </div>}
+        {/* a phone's foot row, at the header's side margin: the gesture to make,
+            the camera seeing it (a capsule), and continue as a round button */}
+        {compact && <div style={{ position: "absolute", left: "var(--chrome-inset)", right: "var(--chrome-inset)",
+          bottom: UNDERWATER_PHONE.rowBottom, height: UNDERWATER_PHONE.rowHeight, zIndex: 21, pointerEvents: "none",
+          display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", alignItems: "center", columnGap: 14,
+          opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}>
+          {/* the gesture stays shown here whether or not the camera is on */}
+          <div style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight,
+            width: (step === "shape" ? 180 : 96) * HINT_ROW_SCALE, opacity: 0.8 }}>
+            <GestureHint kind={step} active={gestureLive} style={{
+              top: "50%", left: "50%", transform: `translate(-50%, -50%) scale(${HINT_ROW_SCALE})`,
+              ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),
+            }} />
+          </div>
+          {/* the capsule keeps its place with the camera off: a pale fill and a struck-through camera */}
+          <div style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight, borderRadius: UNDERWATER_PHONE.rowHeight / 2,
+            overflow: "hidden", background: "rgba(123, 123, 135, 0.1)" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.5"
+              strokeLinecap="round" strokeLinejoin="round" aria-label="camera off" role="img"
+              style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+                opacity: tracking.isTracking ? 0 : 0.7, transition: "opacity 700ms ease" }}>
+              <path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.25-3.15a.5.5 0 0 1 .75.43v8.44a.5.5 0 0 1-.75.43L16 13.5" />
+              <path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" />
+              <path d="M2 2l20 20" />
+            </svg>
+            <ShutterCamera video={videoRef} active={tracking.isTracking}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%",
+                transform: "scaleX(-1)", pointerEvents: "none",
+                opacity: tracking.isTracking ? 1 : 0, transition: "opacity 700ms ease" }} />
+          </div>
+          <button type="button" aria-label="continue" onClick={continueStep}
+            style={{ width: UNDERWATER_PHONE.rowHeight, height: UNDERWATER_PHONE.rowHeight, borderRadius: "50%",
+              border: "none", padding: 0, background: "rgba(123, 123, 135, 0.16)", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              pointerEvents: leaving ? "none" : "auto" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.6"
+              strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+              <path d="M5 12h14M13 6l6 6-6 6" />
+            </svg>
+          </button>
+        </div>}
       </>}
 
       {/* ── the caption: typed while the memory floats, then left as words ── */}

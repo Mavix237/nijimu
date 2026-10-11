@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { carouselFrame } from "../lib/carouselLayout";
 import { surfaceReturnBlurAt } from "../lib/ascentLight";
@@ -12,6 +12,8 @@ import { formKey } from "../lib/superformula";
 import { CHROME_GRAY } from "../lib/colors";
 import { FLOW_PAGE, NAMING_PROSE_SIZE, TRANSCRIPT } from "../lib/theme";
 import { FlowPageGrid } from "./FlowPageGrid";
+import { MemoryReadingPane, type ReadableMemory } from "./MemoryReadingPane";
+import { useCompact } from "../hooks/useCompact";
 import {
   useNamingRim,
   type NameFlowState,
@@ -24,7 +26,9 @@ import {
  * speak; the memory has risen with it and hangs in the air over the water,
  * centred, turning, in the gallery's own glass. The name and the year are
  * typed above the transcript, with the vessel below the words. The content
- * stays inside the scene row, leaving the save action clear.
+ * stays inside the scene row, leaving the save action clear. A phone has no
+ * room for the words: the vessel takes their place under the fields, and
+ * pressing it opens them in a reading pane (as the gallery does there).
  */
 
 /** Air left between the year and the scene content. */
@@ -113,6 +117,15 @@ export function PondNamingOverlay({
   const chromeRef = useRef<HTMLDivElement>(null);
   const passageRef = useRef<HTMLParagraphElement>(null);
   const passage = (state.transcript ?? "").trim();
+  const compact = useCompact();
+  /** The words under the fields, on wider screens; a phone keeps them in the pane. */
+  const inlinePassage = compact ? "" : passage;
+  const [reading, setReading] = useState(false);
+  const readable = useMemo<ReadableMemory | null>(
+    () => (reading ? { id: session.draftId, transcript: passage } : null),
+    [reading, session.draftId, passage],
+  );
+  const openWords = compact && passage ? () => setReading(true) : undefined;
   const raf = useRef<number | null>(null);
   const leaving = useRef(false);
 
@@ -279,8 +292,8 @@ export function PondNamingOverlay({
       {/* Naming is content, not navigation: it shares the step-heading row. */}
       <FlowPageGrid headingRef={chromeRef} heading={rim.caption}
         scene={<div ref={contentRef} style={{ position: "absolute", top: contentTop, bottom: 12,
-          left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: passage ? 28 : 0 }}>
-        {passage && (
+          left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: inlinePassage ? 28 : 0 }}>
+        {inlinePassage && (
           <p
             ref={passageRef}
             style={{
@@ -302,14 +315,18 @@ export function PondNamingOverlay({
               zIndex: 1,
             }}
           >
-            {passage}
+            {inlinePassage}
           </p>
         )}
         <div style={{ flex: "1 1 0", minHeight: 0, width: "100%" }}>
         <div
         ref={artifactRef}
-        role="img"
-        aria-label="the memory being made"
+        {...(openWords ? {
+          role: "button", tabIndex: 0, "aria-label": "the memory being made — read its words",
+          onKeyDown: (e: KeyboardEvent) => {
+            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openWords(); }
+          },
+        } : { role: "img", "aria-label": "the memory being made" })}
         style={{
           position: "relative",
           height: "100%",
@@ -334,6 +351,7 @@ export function PondNamingOverlay({
             sheetSize={vessel.tune.sheetSize}
             onReady={() => { vesselReady.current = true; }}
             focused still={false} frameloop="always"
+            onPick={openWords}
           />
         </div>
       </div>
@@ -344,6 +362,11 @@ export function PondNamingOverlay({
           transform: `translateY(calc(${fieldDrop}px - ${TEXT_LIFT}))`,
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />
+
+      {/* the overlay lets presses through to the water; the pane takes its own */}
+      {compact && passage && <div style={{ pointerEvents: "auto" }}>
+        <MemoryReadingPane memory={readable} onClose={() => setReading(false)} />
+      </div>}
 
       <div
         ref={washRef}

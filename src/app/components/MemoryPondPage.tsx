@@ -247,7 +247,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       Hold to begin
     </div>
     {recording && <PondRecordingOverlay reducedMotion={reducedMotion} onVoicePulse={pulseWater} />}
-    {transcript && <PuddleTranscriptPage />}
+    {transcript && <PuddleTranscriptPage reducedMotion={reducedMotion} onTranscribingPulse={pulseWater} />}
     {naming && onNamingSaved && <PondNamingOverlay key={naming.draftId} session={naming} reducedMotion={reducedMotion} sinkRef={sinkRef} onSaved={onNamingSaved} backRef={namingBackRef} />}
     <span className="sr-only" role="status">{recording ? "ready to record" : ""}</span>
   </section>;

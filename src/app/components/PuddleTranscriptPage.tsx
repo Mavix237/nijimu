@@ -1,7 +1,7 @@
 import { FlowPageGrid } from "./FlowPageGrid";
 import { FLOW_PAGE } from "../lib/theme";
 import { SAMPLE_TRANSCRIPT } from "../data/sampleMemory";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { CHROME_GRAY } from "../lib/colors";
 import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
@@ -10,6 +10,8 @@ import { getTranscription } from "../lib/transcribe";
 import type { ArtifactForm } from "../lib/superformula";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
+import { transcriptCharacters, transcriptTypingDelay } from "../lib/transcriptTyping";
+import type { VoiceRippleSpot } from "../lib/voicePeaks";
 
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
 const POND_FADE = "rgba(226, 230, 226, 0.88)";
@@ -18,9 +20,7 @@ const POND_FADE = "rgba(226, 230, 226, 0.88)";
 
 
 
-/** Word-by-word fade as the transcript arrives. */
-const WORD_IN_MS = 80;
-const WORD_IN = "opacity 0.3s ease-in";
+const TRANSCRIBING_SPOT = { x: .5, y: .7, strength: .7 };
 
 interface PuddleTranscriptState {
   transcript?: string;
@@ -61,7 +61,10 @@ function highlightedPhrases(words: string[], indices: Set<number>): string[] {
  * Transcript chrome over the pond — same words as the former transcript
  * page, without leaving the water or painting a second puddle.
  */
-export function PuddleTranscriptPage() {
+export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPulse }: {
+  reducedMotion?: boolean;
+  onTranscribingPulse?: (at: VoiceRippleSpot) => void;
+}) {
   const location = useLocation();
   const navigate = useNavigate();
   const state = (location.state as PuddleTranscriptState | null) ?? null;
@@ -89,11 +92,21 @@ export function PuddleTranscriptPage() {
   );
 
   const words = transcript.split(/\s+/);
+  const printing = useMemo(() => {
+    let start = 0;
+    const parts = transcript.split(/\s+/).map(word => {
+      const characters = transcriptCharacters(word);
+      const part = { characters, start };
+      start += characters.length + 1;
+      return part;
+    });
+    return { parts, characters: transcriptCharacters(transcript.split(/\s+/).join(" ")) };
+  }, [transcript]);
   const restored = state?.transcriptReady || (state?.highlightedWordIndices?.length ?? 0) > 0;
   /** The stand-in memory, not a recording still being heard. */
   const isSample = !transcriptionId && transcript === SAMPLE_TRANSCRIPT;
 
-  const [visibleWordCount, setVisibleWordCount] = useState(() => (restored ? words.length : 0));
+  const [visibleCharacterCount, setVisibleCharacterCount] = useState(() => (restored ? printing.characters.length : 0));
   const [isTyping, setIsTyping] = useState(!restored);
   const [showContinue, setShowContinue] = useState(restored);
   const [highlightMode, setHighlightMode] = useState(
@@ -110,7 +123,17 @@ export function PuddleTranscriptPage() {
   useEffect(() => () => {
     if (continueTimer.current !== null) window.clearTimeout(continueTimer.current);
   }, []);
-  const typingIntervalRef = useRef<number | null>(null);
+  const typingTimerRef = useRef<number | null>(null);
+  const typingFinishRef = useRef<number | null>(null);
+  const pulseRef = useRef(onTranscribingPulse);
+  pulseRef.current = onTranscribingPulse;
+  useEffect(() => {
+    if (!awaitingTranscript || transcribeError || reducedMotion) return;
+    const pulse = () => pulseRef.current?.(TRANSCRIBING_SPOT);
+    pulse();
+    const timer = window.setInterval(pulse, 950);
+    return () => window.clearInterval(timer);
+  }, [awaitingTranscript, transcribeError, reducedMotion]);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [showBottomFade, setShowBottomFade] = useState(false);
 
@@ -155,31 +178,33 @@ export function PuddleTranscriptPage() {
 
   useEffect(() => {
     if (awaitingTranscript || transcribeError || !transcript.trim()) return;
-    if (typingDoneRef.current) {
-      setVisibleWordCount(words.length);
+    if (typingDoneRef.current || reducedMotion) {
+      setVisibleCharacterCount(printing.characters.length);
+      typingDoneRef.current = true;
+      setIsTyping(false);
+      setShowContinue(true);
       return;
     }
-    typingIntervalRef.current = window.setInterval(() => {
-      setVisibleWordCount((count) => {
-        if (count < words.length) {
-          return count + 1;
-        }
-        if (typingIntervalRef.current) {
-          clearInterval(typingIntervalRef.current);
-        }
+    let count = 0;
+    setVisibleCharacterCount(0);
+    const typeNext = () => {
+      count++;
+      setVisibleCharacterCount(count);
+      if (count >= printing.characters.length) {
         typingDoneRef.current = true;
         setIsTyping(false);
-        setTimeout(() => setShowContinue(true), 300);
-        return count;
-      });
-    }, WORD_IN_MS);
+        typingFinishRef.current = window.setTimeout(() => setShowContinue(true), 300);
+        return;
+      }
+      typingTimerRef.current = window.setTimeout(typeNext, transcriptTypingDelay(printing.characters[count - 1], count - 1));
+    };
+    typingTimerRef.current = window.setTimeout(typeNext, 180);
 
     return () => {
-      if (typingIntervalRef.current) {
-        clearInterval(typingIntervalRef.current);
-      }
+      if (typingTimerRef.current !== null) window.clearTimeout(typingTimerRef.current);
+      if (typingFinishRef.current !== null) window.clearTimeout(typingFinishRef.current);
     };
-  }, [words.length, awaitingTranscript, transcribeError, transcript]);
+  }, [printing, awaitingTranscript, transcribeError, transcript, reducedMotion]);
 
   /* A click while the sample is still printing shows the whole body at once.
      Buttons and links are left alone. */
@@ -189,18 +214,18 @@ export function PuddleTranscriptPage() {
       if (event.button !== 0) return;
       const target = event.target;
       if (target instanceof Element && target.closest("button, a, input, textarea")) return;
-      if (typingIntervalRef.current) {
-        clearInterval(typingIntervalRef.current);
-        typingIntervalRef.current = null;
+      if (typingTimerRef.current !== null) {
+        clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
       }
       typingDoneRef.current = true;
-      setVisibleWordCount(words.length);
+      setVisibleCharacterCount(printing.characters.length);
       setIsTyping(false);
       setShowContinue(true);
     };
     window.addEventListener("pointerdown", skip);
     return () => window.removeEventListener("pointerdown", skip);
-  }, [isSample, isTyping, words.length]);
+  }, [isSample, isTyping, printing]);
 
   const goToRecord = () => {
     navigate(RECORD_START_PATH, {
@@ -320,6 +345,11 @@ export function PuddleTranscriptPage() {
         pointerEvents: "none",
       }}
     >
+        {awaitingTranscript && !transcribeError && <p role="status" style={{
+          position: "absolute", left: `${TRANSCRIBING_SPOT.x * 100}%`, top: `${TRANSCRIBING_SPOT.y * 100}%`,
+          transform: "translate(-50%, -100%)", margin: "-24px 0 0", fontFamily: SERIF,
+          fontSize: NOTE_SIZE, lineHeight: 1.45, color: CHROME_GRAY, textAlign: "center",
+        }}>transcribing</p>}
         <FlowPageGrid actions={(pairReady || transcribeError) && (
               <div
                 style={{
@@ -412,14 +442,14 @@ export function PuddleTranscriptPage() {
               lineHeight: 1.45,
               color: CHROME_GRAY,
               visibility:
-                !highlightMode && (awaitingTranscript || transcribeError || isTyping)
+                !highlightMode && transcribeError
                   ? "visible"
                   : "hidden",
             }}
           >
             {transcribeError
               ? `couldn't hear that — ${transcribeError.toLowerCase()}`
-              : "transcribing..."}
+              : ""}
           </p>
           <div
             style={{
@@ -451,8 +481,10 @@ export function PuddleTranscriptPage() {
                 zIndex: 0,
               }}
             >
+              {isTyping && <span className="sr-only">{transcript}</span>}
               {words.map((word, index) => {
-                const isVisible = index < visibleWordCount;
+                const printedWord = printing.parts[index];
+                const isVisible = visibleCharacterCount > printedWord.start;
                 const isHighlighted = isWordHighlighted(index);
                 // a run of highlighted words is one band, carried across the gaps
                 const joinsNext = isHighlighted && index < words.length - 1 && isWordHighlighted(index + 1);
@@ -460,6 +492,7 @@ export function PuddleTranscriptPage() {
                 return (
                   <span
                     key={index}
+                    aria-hidden={isTyping || !isVisible}
                     onPointerDown={(e) => {
                       // a finger captures the word it lands on; let go so the drag can reach the next one
                       e.currentTarget.releasePointerCapture(e.pointerId);
@@ -470,7 +503,6 @@ export function PuddleTranscriptPage() {
                       position: "relative",
                       display: "inline-block",
                       opacity: isVisible ? 1 : 0,
-                      transition: isTyping ? WORD_IN : "none",
                       cursor: highlightMode ? "pointer" : "default",
                       // a sideways drag highlights; an upright one still scrolls the passage
                       touchAction: highlightMode ? "pan-y" : undefined,
@@ -491,7 +523,10 @@ export function PuddleTranscriptPage() {
                         }}
                       />
                     )}
-                    <span style={{ position: "relative", zIndex: 1 }}>{word}</span>
+                    <span style={{ position: "relative", zIndex: 1 }}>
+                      {isTyping ? printedWord.characters.map((character, at) => <span key={at}
+                        style={{ opacity: printedWord.start + at < visibleCharacterCount ? 1 : 0 }}>{character}</span>) : word}
+                    </span>
                   </span>
                 );
               })}

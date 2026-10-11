@@ -34,7 +34,7 @@ import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
 import { PondWater, type PondProps, POND_WAVES_GLSL } from "../components/PerspectivePond";
-import { PageHeader } from "../components/PageHeader";
+import { PAGE_HEADER_MARK, PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { PillButton } from "../components/PillButton";
 import { OklchColorField } from "../components/OklchColorField";
@@ -927,7 +927,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     flat: new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, FILM_YAW, 0, "YXZ")),
     cameraAt: new THREE.Vector3(), lookAt: new THREE.Vector3(), formAt: new THREE.Vector3(),
     wrapCamera: WRAP_CAMERA.clone(), wrapLook: WRAP_LOOK.clone(), wrapForm: WRAP_FORM_AT.clone(),
-    roomAbove: new THREE.Color(), roomBelow: new THREE.Color(),
+    roomAbove: new THREE.Color(), roomBelow: new THREE.Color(), roomAir: new THREE.Color(),
   }), []);
 
   /* The form: a superformula artifact of its own, grown from its sphere pose.
@@ -1087,15 +1087,17 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   const vesselTune = useMemo(() => ({ ...VESSEL_TUNE }), []);
   const vesselKey = useMemo(() => keyFrom(VESSEL_TUNE.keyAzimuth, VESSEL_TUNE.keyElevation), []);
   const vesselPatches = useMemo(() => seedDirections(filmUniforms.uSeed.value, 3, 1.1), [filmUniforms]);
-  const writeVessel = (haze: number, above: THREE.Color, below: THREE.Color) => {
+  const writeVessel = (haze: number, above: THREE.Color, below: THREE.Color, fog: THREE.Color, arrivalHaze: number) => {
     vesselTune.haze = haze;
+    // Arrival is water obscuring the body, not a luminous halo around it.
+    vesselTune.hazeGlow = VESSEL_TUNE.hazeGlow * (1 - arrivalHaze);
     Object.assign(vesselTune, vesselTint(stage.current.oklch));
     // the stain comes in with the colour step and stays on the glass after it: the water lets
     // the colour go on release, the memory keeps it
     vesselTune.memoryTintAmount *= smooth.current.stain;
     vesselTune.memoryFlash *= smooth.current.stain;
     const seed = filmUniforms.uSeed.value;
-    const air = [above.r, above.g, above.b] as const;
+    const air = [fog.r, fog.g, fog.b] as const;
     writeSheetUniforms(sheetU, {
       tune: vesselTune, seed, sheet: vessel.sheet, sheetMode: "draped", face: "glass", key: vesselKey,
       edgePrint: filmUniforms.uEdgePrint.value, groundY: vessel.groundY, reflect: -1, air,
@@ -1689,12 +1691,18 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         writeMorph(sm.morph, delta, false);
       }
       const air = 1 - smoothProgress(-formAt.y, -0.2, 0.3);
-      const { roomAbove, roomBelow } = scratch;
+      const { roomAbove, roomBelow, roomAir } = scratch;
       roomAbove.copy(ROOM_WATER_ABOVE).lerp(ROOM_PAPER_ABOVE, sm.wash).lerp(ROOM_SKY, air);
       roomBelow.copy(ROOM_WATER_BELOW).lerp(ROOM_PAPER_BELOW, sm.wash).lerp(ROOM_SURFACE, air);
       const dye = water.uTintAmount.value * 0.06;
       roomAbove.lerp(water.uTint.value, dye);
       roomBelow.lerp(water.uTint.value, dye);
+      // Match arrival fog to the water behind the rising body instead of
+      // filling its silhouette with the brighter overhead reflection colour.
+      scratch.v.copy(formAt).sub(camera.position).normalize();
+      roomAir.copy(roomBelow).lerp(roomAbove, smoothProgress(scratch.v.y, -.8, .7))
+        .multiplyScalar(1 - water.uDescentShade.value)
+        .lerp(roomAbove, 1 - arrivalHaze);
       // the refraction's bend and smear are fractions of the screen, tuned with the vessel
       // filling the lab's view; here it is smaller on screen, so they scale with its size
       // or the picture inside would be smeared several times as much
@@ -1703,7 +1711,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       const sizeK = Math.min(1.5, Math.max(0.15, onScreen / LAB_ON_SCREEN));
       vesselTune.bend = VESSEL_TUNE.bend * sizeK;
       vesselTune.glassSoft = VESSEL_TUNE.glassSoft * sizeK;
-      writeVessel(visibleHaze, roomAbove, roomBelow);
+      writeVessel(visibleHaze, roomAbove, roomBelow, roomAir, arrivalHaze);
       distanceDepth.current = memoryDepth(sm.frost);
       sheetU.uReveal.value = reveal;
       glassU.uReveal.value = reveal;
@@ -2694,7 +2702,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       </>}
       {reading && <>
         <BackButton onClick={() => navigate(RECORD_START_PATH, { state: location.state })} />
-        <PuddleTranscriptPage />
+        <PuddleTranscriptPage reducedMotion={reducedMotion}
+          onTranscribingPulse={pulse => { stage.current.voicePulses.push(pulse); }} />
       </>}
       {!prelude && <>
       {lab && <p style={{ ...META, position: "absolute", top: 26, left: step ? 76 : 28, margin: 0, zIndex: 20 }}>lab — descent</p>}
@@ -2846,7 +2855,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         <FlowPageGrid style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
           heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
-            <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
+            <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
             </p>
             <p style={{ margin: "28px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>

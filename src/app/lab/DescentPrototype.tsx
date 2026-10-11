@@ -102,7 +102,9 @@ const EMERGE_S: [number, number] = [0.2, 2.0];
 /** The chosen photo develops into the window, and the strip is let go a beat later. */
 const DEVELOP_S = 1.4;
 const LET_GO_S = 2.1;
-const FALL_S = 3.0;
+const FALL_S = 3.8;
+/** The pond answers a beat before the strip has quite settled on it. */
+const RIPPLE_LEAD_S = 0.45;
 const SETTLE_S = 0.9;
 const HOLD_S = 1.1;
 const DESCENT_S = 6.2;
@@ -331,7 +333,8 @@ const VOLUME_GLSL = /* glsl */ `
     float cloud = washNoise(dir.xy * 2.4 + vec2(uClock * .012, dir.z * .5)) * .65
                 + washNoise(dir.xy * 6.0 - vec2(0.0, uClock * .02)) * .35;
     vec3 washed = mix(paper, c, .08) + (cloud - .5) * .035;
-    washed = mix(washed, uTint, uTintAmount * (.22 + .3 * cloud));
+    // only a breath of it: the colour step's water stays the paper of the distance step
+    washed = mix(washed, uTint, uTintAmount * (.04 + .07 * cloud));
     return mix(c, washed, uWash);
   }
 `;
@@ -790,7 +793,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
   const voicePoint = useMemo(() => new THREE.Vector3(), []);
   const fall = useRef<{
     at: number; pos: THREE.Vector3; quat: THREE.Quaternion; right: THREE.Vector3;
-    width: number; height: number;
+    width: number; height: number; flex: number; rippled: boolean;
   } | null>(null);
   const developAt = useRef<number | null>(null);
   const landedAt = useRef<number | null>(null);
@@ -1200,7 +1203,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       developAt.current = longAgo;
       fall.current = {
         at: longAgo, pos: FILM_AT.clone(), quat: scratch.flat.clone(),
-        right: new THREE.Vector3(1, 0, 0), width: FILM_LENGTH, height: FILM_WIDTH,
+        right: new THREE.Vector3(1, 0, 0), width: FILM_LENGTH, height: FILM_WIDTH, flex: 0, rippled: true,
       };
       landedAt.current = longAgo;
       settled.current = true;
@@ -1324,7 +1327,7 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
     const colorStep = s.step === "color" || wrapAt.current !== null;
     sm.dye = ease(sm.dye, colorStep ? 1 : 0, 1.6);
     // the pick reaches the water as a faint, light tint — a cloud's worth, not a dye
-    tint.set(oklchToHex({ l: Math.max(0.9, s.oklch.l), c: s.oklch.c * 0.7, h: s.oklch.h }));
+    tint.set(oklchToHex({ l: Math.max(0.9, s.oklch.l), c: s.oklch.c * 0.45, h: s.oklch.h }));
     water.uTint.value.lerp(tint, 1 - Math.exp(-3 * dt));
     water.uTintAmount.value = ease(water.uTintAmount.value, colorStep ? 1 : 0, 1.4);
     volumeUniforms.uInvProjection.value.copy(camera.projectionMatrixInverse);
@@ -1417,6 +1420,8 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
             right: new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion),
             width: FILM_LENGTH,
             height: FILM_WIDTH,
+            flex: filmUniforms.uFlex.value,
+            rippled: false,
           };
           onFallStart();
         }
@@ -1436,29 +1441,34 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
       }
     }
 
-    /* The fall: from where it hung to the water, fluttering, settling flat. */
+    /* The fall: from where it hung to the water, fluttering, settling flat.
+       Everything starts from rest — the hand opens, the strip begins to sink
+       before the air takes it. The drop leads and the drift away over the
+       water follows, so it is seen falling, not blown off; the flutter swells
+       in as it gathers speed and dies out before it touches. */
     const f = fall.current;
     if (f && mesh) {
       const k = Math.min(1, (t - f.at) / FALL_S);
-      const glide = flowProgress(k, 0, 1);
-      const decay = (1 - k) ** 1.6;
-      mesh.position.lerpVectors(f.pos, FILM_AT, glide);
-      // it drops along its own curve: a breath of lift, then a soft landing
-      mesh.position.y = THREE.MathUtils.lerp(f.pos.y, FILM_AT.y, smoothProgress(k, 0.08, 1))
-        + (k < 1 / 2.2 ? 0.2 * Math.sin(Math.PI * k * 2.2) : 0);
-      mesh.position.addScaledVector(f.right, 0.28 * Math.sin(k * Math.PI * 2.6) * decay);
-      scratch.q.copy(f.quat).slerp(scratch.flat, smoothProgress(k, 0.05, 0.85));
-      scratch.euler.set(0.55 * Math.sin(k * Math.PI * 2.6 + 0.9) * decay, 0, 0.4 * Math.sin(k * Math.PI * 2.6) * decay, "XYZ");
+      const phase = (t - f.at) * 2.7;
+      const air = smoothProgress(k, 0, 0.3) * (1 - k) ** 1.6;
+      const sink = k * k * (3 - 2 * k);
+      mesh.position.lerpVectors(f.pos, FILM_AT, smoothProgress(k, 0.1, 1));
+      mesh.position.y = THREE.MathUtils.lerp(f.pos.y, FILM_AT.y, sink);
+      mesh.position.addScaledVector(f.right, 0.26 * Math.sin(phase) * air);
+      scratch.q.copy(f.quat).slerp(scratch.flat, smoothProgress(k, 0.08, 0.9));
+      scratch.euler.set(0.5 * Math.sin(phase + 0.9) * air, 0, 0.36 * Math.sin(phase) * air, "XYZ");
       mesh.quaternion.copy(scratch.q).multiply(scratch.flutter.setFromEuler(scratch.euler));
       // the curl flexes with the air on the way down; the water presses some of it out
       filmUniforms.uCurl.value = 1 - 0.3 * filmUniforms.uFloat.value;
-      filmUniforms.uFlex.value = 0.6 * Math.sin(k * Math.PI * 2.6 + 1.7) * decay * smoothProgress(k, 0.0, 0.3);
-      if (k >= 1 && landedAt.current === null) {
-        landedAt.current = t;
+      filmUniforms.uFlex.value = f.flex * (1 - smoothProgress(k, 0, 0.25))
+        + 0.6 * Math.sin(phase + 1.7) * air;
+      if (!f.rippled && t - f.at >= FALL_S - RIPPLE_LEAD_S) {
+        f.rippled = true;
         drop(FILM_AT.x, FILM_AT.z, t, 1.6);
         drop(FILM_AT.x - f.width * 0.45, FILM_AT.z + f.height * 0.3, t + 0.12, 0.5);
         drop(FILM_AT.x + f.width * 0.4, FILM_AT.z - f.height * 0.35, t + 0.2, 0.4);
       }
+      if (k >= 1 && landedAt.current === null) landedAt.current = t;
     }
 
     if (landedAt.current !== null) {
@@ -1616,7 +1626,9 @@ function Stage({ stage, form: artifactForm, from, tune, transport, crossingRef, 
         top = Math.min(top, y); bottom = Math.max(bottom, y);
       }
       const gap = 28, w = hint.offsetWidth;
-      const onRight = right + gap + w <= size.width - 24;
+      // the lab's knobs panel covers the right of the canvas; the line keeps out from under it
+      const covered = document.querySelector("[data-covers-right]")?.getBoundingClientRect().left ?? size.width;
+      const onRight = right + gap + w <= Math.min(size.width, covered) - 24;
       const x = onRight ? right + gap : Math.max(24, left - gap - w);
       hint.style.transform = `translate(${x.toFixed(1)}px, ${((top + bottom) / 2).toFixed(1)}px) translateY(-50%)`;
       hint.style.textAlign = onRight ? "left" : "right";
@@ -1785,7 +1797,7 @@ function WrapTunePanel({ tune, onChange, focus }: { tune: WrapTune; onChange: (n
       <TextButton label={open ? "hide knobs" : "knobs"} onClick={() => setOpen((o) => !o)}
         style={{ position: "fixed", right: 28, top: 22, zIndex: 40, fontSize: NOTE_SIZE }} />
       {open && (
-        <aside aria-label="wrap knobs" style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 250, padding: "56px 24px 28px 22px",
+        <aside aria-label="wrap knobs" data-covers-right style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 250, padding: "56px 24px 28px 22px",
           boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 8, zIndex: 35, overflowY: "auto",
           borderLeft: "1px solid rgba(123, 123, 135, 0.14)", background: "rgba(236, 237, 236, 0.55)", backdropFilter: "blur(6px)" }}>
           {WRAP_KNOBS.filter((g) => g.knobs.length > 0).map(({ group, knobs }) => (
@@ -2421,7 +2433,7 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
       </div>
 
       {phase === "floating" && (
-        <button type="button" aria-label="hold to pass through the picture" aria-describedby="descent-hint"
+        <button type="button" aria-label="press to pass through" aria-describedby="descent-hint"
           disabled={assessmentPending}
           onPointerDown={(e) => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setHolding(true); }}
           onPointerUp={() => setHolding(false)}
@@ -2437,12 +2449,12 @@ function DescentRun({ lab, onAgain, tune, transport }: { lab: boolean; onAgain: 
       {/* beside the floating photo: the stage keeps it there (hintRef) */}
       <p ref={hintRef} id="descent-hint" aria-hidden style={{
         position: "absolute", left: 0, top: 0, margin: 0,
-        width: "max-content", maxWidth: "min(14em, 40vw)", pointerEvents: "none", zIndex: 6,
+        width: "max-content", maxWidth: "min(20em, 40vw)", pointerEvents: "none", zIndex: 6,
         color: CHROME_GRAY, fontFamily: SERIF, fontWeight: 400, fontSynthesis: "none",
         fontSize: INSTRUCTION_SIZE, lineHeight: 1.45,
         opacity: phase === "floating" ? 1 : 0, filter: phase === "floating" ? "none" : "blur(6px)",
         transition: "opacity 720ms ease, filter 720ms ease" }}>
-        {assessmentPending ? "finding your memory’s form…" : "hold to pass through the picture"}
+        {assessmentPending ? "finding your memory’s form…" : "press to pass through"}
       </p>
 
       {/* ── the four steps, under the water ── */}

@@ -67,7 +67,8 @@ for (const viewport of [{ w: 1280, h: 720 }, { w: 390, h: 844 }]) {
       assert.ok(Math.abs(seat.size * Math.max(.3, seat.depth) - initial.size * initial.depth) < 1e-8,
         'slider changes perspective without scaling the reference meshes');
       const radius = Math.hypot(seat.x - viewport.w / 2, seat.y - viewport.h / 2);
-      assert.ok(radius - seat.size / 2 > viewport.h * .22, 'neighbours leave the central artifact clear throughout the slider');
+      // the clear space follows the screen's short side (the height on a desktop, the width on an upright phone)
+      assert.ok(radius - seat.size / 2 > Math.min(viewport.w, viewport.h) * .22, 'neighbours leave the central artifact clear throughout the slider');
     }
     const end = field.distancePreviewSeat(i, place, field.memoryDepth(1), viewport);
     assert.equal(end.opacity, 0, 'the dispersed reference field still passes completely out of view');

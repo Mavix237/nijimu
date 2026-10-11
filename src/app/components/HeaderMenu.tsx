@@ -81,7 +81,7 @@ export function HeaderMenuRow({ icon, label, ariaLabel, expanded, order, onClick
         gap: 10,
         margin: 0,
         // the dock's row, with room for a fingertip
-        padding: "8px 12px",
+        padding: "11px 12px",
         border: "none",
         background: "transparent",
         color: CHROME_GRAY,

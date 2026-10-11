@@ -95,6 +95,7 @@ export const DOLLY_IN = -0.35;
 export const SURFACE_FROM = 1.6;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
+const frac = (v: number) => v - Math.floor(v);
 const smoothstep = (a: number, b: number, v: number) => {
   const t = clamp01((v - a) / (b - a));
   return t * t * (3 - 2 * t);
@@ -154,15 +155,25 @@ export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDep
   // slightly. This is a fixed world size; slider travel only moves the camera.
   const sizeBoost = 1.15 * z / (2.4 + place.z * 2.8);
   const frame = carouselFrame(viewport.w, viewport.h);
-  const clearance = viewport.h * .225 + frame.size * sizeBoost * FIELD_FOCAL / z / 2;
+  // the handled form is about as wide as it is tall, so its clear space follows
+  // the screen's short side: the height on a desktop, the width on an upright
+  // phone (where the height made nearly every neighbour "too close" and piled
+  // them into two bands above and below it)
+  const clearance = Math.min(viewport.w, viewport.h) * .225 + frame.size * sizeBoost * FIELD_FOCAL / z / 2;
   let x = place.sx * viewport.w;
   let y = place.sy * viewport.h;
   // Only a neighbour inside the handled form's space needs moving. Slide it
   // along its dominant axis, preserving the other coordinate and the rest
   // of the gallery arrangement instead of putting every memory on a ring.
+  const portrait = viewport.w < viewport.h;
   if (Math.abs(x) < clearance && Math.abs(y) < clearance) {
-    if (Math.abs(x) > Math.abs(y) && viewport.w > viewport.h) x = (Math.sign(x) || 1) * clearance;
-    else y = (Math.sign(y) || 1) * clearance;
+    // on an upright phone every pushed neighbour would land on the same edge of
+    // the clear space and line up; each place keeps its own share of the way out.
+    // The way is up or down there: pushed sideways on a narrow screen they
+    // would leave it soon after the slider's middle.
+    const out = portrait ? clearance * (1 + 0.45 * frac(place.sx * 7.31 + place.sy * 3.17 + place.z)) : clearance;
+    if (Math.abs(x) > Math.abs(y) && viewport.w > viewport.h) x = (Math.sign(x) || 1) * out;
+    else y = (Math.sign(y) || 1) * out;
   }
   if (foreground) {
     // Reserve space for the entire silhouette, not just its centre. Adjust the
@@ -174,8 +185,29 @@ export function distancePreviewSeat(_index: number, place: FieldPlace, chosenDep
     const cy = viewport.h * (.5 + foreground.shift) + y;
     const b = foreground.bounds;
     if (cx + pad > b.left && cx - pad < b.right && cy + pad > b.top && cy - pad < b.bottom) {
-      const left = b.left - pad, right = b.right + pad;
-      x = (cx - left < right - cx ? left : right) - viewport.w * .5;
+      if (!portrait) {
+        // a desktop's copy is narrow: step to whichever side of it is nearer
+        const left = b.left - pad, right = b.right + pad;
+        x = (cx - left < right - cx ? left : right) - viewport.w * .5;
+      } else {
+        // an upright phone's copy spans the width, so a sideways step leaves the
+        // screen: take the shortest way out of the copy — sideways, above or
+        // below, each clearing it entirely — that keeps the neighbour on the
+        // screen and out of the form's space; failing that, one on the screen;
+        // failing that, the desktop's sideways step
+        const formY = viewport.h * (.5 + foreground.shift);
+        const left = b.left - pad, right = b.right + pad;
+        // above or below already clears the copy, so those may also slide in from a side edge
+        const inside = Math.min(viewport.w - pad, Math.max(pad, cx));
+        const ways = [{ x: left, y: cy }, { x: right, y: cy }, { x: inside, y: b.top - pad }, { x: inside, y: b.bottom + pad }];
+        const onScreen = (p: { x: number; y: number }) => p.x >= pad && p.x <= viewport.w - pad && p.y >= pad && p.y <= viewport.h - pad;
+        const offForm = (p: { x: number; y: number }) => !(Math.abs(p.x - viewport.w * .5) < clearance && Math.abs(p.y - formY) < clearance);
+        const nearest = (list: { x: number; y: number }[]) => list.sort((p, q) => Math.hypot(p.x - cx, p.y - cy) - Math.hypot(q.x - cx, q.y - cy))[0];
+        const way = nearest(ways.filter((p) => onScreen(p) && offForm(p))) ?? nearest(ways.filter(onScreen))
+          ?? { x: cx - left < right - cx ? left : right, y: cy };
+        x = way.x - viewport.w * .5;
+        y = way.y - formY;
+      }
     }
   }
   const dispersed = {

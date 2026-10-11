@@ -1987,14 +1987,18 @@ const easeMorph = (m: number) => m * m * (3 - 2 * m);
 const UNDER_INK = CHROME_GRAY;
 /** Signed shift of the handled vessel from the look point, as a fraction of the view. Negative sits higher. */
 const HANDLING_DROP = 0.01;
-/** The gesture illustration in a phone's foot row: each scaled so its own drawn
-    height fills the row, centred in one cell as wide as the widest of them
-    once so scaled — the capsule beside it keeps its width from step to step. */
-const HINT_ROW_STEPS = ["shape", "rhythm", "distance", "color"] as const;
-const hintRowScale = (kind: (typeof HINT_ROW_STEPS)[number]) => UNDERWATER_PHONE.rowHeight / GESTURE_EXTENT[kind].h;
-const HINT_ROW_WIDTH = Math.ceil(Math.max(...HINT_ROW_STEPS.map((kind) => GESTURE_EXTENT[kind].w * hintRowScale(kind))));
+/** The gesture illustration in a phone's foot row sits in a square cell the
+    size of the continue button across from it, so the camera capsule between
+    them is centred on the screen whatever the step. Each illustration is scaled
+    to fit that square — its drawn height or width (GESTURE_EXTENT, motion
+    included), whichever meets it first. */
+const HINT_ROW_CELL = UNDERWATER_PHONE.rowHeight;
+const hintRowScale = (kind: "shape" | "rhythm" | "distance" | "color") =>
+  Math.min(HINT_ROW_CELL / GESTURE_EXTENT[kind].h, HINT_ROW_CELL / GESTURE_EXTENT[kind].w);
 
 /* The gesture ranges, as ShapeGrowPage reads them. */
+/** The instructions under each handling step's title: a narrower measure than the heading row. */
+const UNDERWATER_INSTRUCTION_WIDTH = "24em";
 const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string] }> = {
   shape: {
     mark: "形",
@@ -3058,8 +3062,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
             </p>
-            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px 0 0`, fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK }}>
-              {STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}
+            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`, maxWidth: UNDERWATER_INSTRUCTION_WIDTH,
+              fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK }}>
+              {STEP_COPY[step].lines.map((line) => <span key={line} style={{ display: "block", textWrap: "balance" }}>{line}</span>)}
             </p>
           </div>}
           actions={compact ? undefined : <PillButton label="continue" trailing="›" onClick={continueStep} />}
@@ -3077,10 +3082,11 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             the camera seeing it (a capsule), and continue as a round button */}
         {compact && <div style={{ position: "absolute", left: "var(--chrome-inset)", right: "var(--chrome-inset)",
           bottom: UNDERWATER_PHONE.rowBottom, height: UNDERWATER_PHONE.rowHeight, zIndex: 21, pointerEvents: "none",
-          display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", alignItems: "center", columnGap: 14,
+          // equal side columns: the capsule is centred on the screen
+          display: "grid", gridTemplateColumns: `${HINT_ROW_CELL}px minmax(0, 1fr) ${HINT_ROW_CELL}px`, alignItems: "center", columnGap: 14,
           opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}>
           {/* the gesture stays shown here whether or not the camera is on */}
-          <div style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight, width: HINT_ROW_WIDTH, opacity: 0.8 }}>
+          <div style={{ position: "relative", height: HINT_ROW_CELL, width: HINT_ROW_CELL, opacity: 0.8 }}>
             <GestureHint kind={step} active={gestureLive} style={{
               top: "50%", left: "50%", transform: `translate(-50%, -50%) scale(${hintRowScale(step)})`,
               ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),

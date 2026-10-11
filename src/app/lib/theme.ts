@@ -85,7 +85,7 @@ export const UNDERWATER_PHONE = {
   /** How far below the view's centre the handled form sits, as a share of the view's height. */
   artifactDrop: .015,
   /** The foot row — gesture, camera, continue — and the slider above it. */
-  rowHeight: 64,
+  rowHeight: 80,
   rowBottom: "max(24px, env(safe-area-inset-bottom, 0px))",
   sliderGap: 24,
 } as const;

@@ -155,7 +155,7 @@ is a live canvas.
   corner icon. The list's panel is the page itself: blur(24px) under a
   rgba(234,234,234,.6) paper tint (within a few levels of the landing, gallery
   and pond grounds) with the landing's per-device-pixel grain overlaid;
-  rows are icon + name, 8×12 px padding, a soft shadow under the panel, ordered by `HEADER_MENU_ORDER`; the burger
+  rows are icon + name, 11×12 px padding, a soft shadow under the panel, ordered by `HEADER_MENU_ORDER`; the burger
   turns −90° as it opens. Wider screens keep the separate icons.
 - Phone landing and gallery (2026-10-11): blobs at 0.62 scale, spawned 8–92%
   across, keeping 0.9 of their desktop blur so overlaps pool (`blobBlur`); dots
@@ -196,14 +196,22 @@ is a live canvas.
   margin, `--chrome-inset` (18 px: the back arrow's and burger's glyphs from
   the edges; 14 px ≤359px; 20 px elsewhere, which FlowPageGrid's columns use).
   Heading lower and form higher (`UNDERWATER_PHONE.headingTop`/`artifactDrop`);
-  the slider spans the margins above a 64 px foot row, a grid of
-  [gesture illustration | camera capsule | round continue]. Each illustration
-  is scaled so its drawn height (`GESTURE_EXTENT`, GestureHint.tsx) fills the
-  row, centred in one cell as wide as the widest so scaled (104 px, colour),
-  so the capsule keeps one width on every step.
+  the slider spans the margins above an 80 px foot row, a grid of
+  [gesture illustration | camera capsule | round continue]. The illustration's
+  cell is a square the size of the button, so the capsule is centred on the
+  screen and keeps one width on every step; each illustration is scaled to
+  fit that square (its drawn extent, `GESTURE_EXTENT` in GestureHint.tsx).
   With the camera off the capsule keeps its place: a pale fill and a
   struck-through camera; the gesture stays shown. Desktop keeps the corner
   camera, the pill continue and the gesture above the camera.
+- Distance constellation on phones (`distancePreviewSeat`, vesselField.ts):
+  the clear space round the handled form follows the screen's short side
+  (desktop's height; an upright phone's width — the height pushed nearly every
+  neighbour into two bands, several off screen). On portrait the push out of
+  it is vertical with a per-place share (up to +45%), and a neighbour over the
+  wrapped copy takes the nearest way out — sideways, above or below — that is
+  on screen and clear of the form. Desktop placement is unchanged.
+  `check-memory-distance.mjs` now asserts the clear space by the short side.
 - Glass panes (profile, dialogs): `IridescentSheen` draws premultiplied into
   a premultiplied canvas — the unpremultiplied canvas it used is composited
   differently by Safari and likely read as a bright white rim there (not

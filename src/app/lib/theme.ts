@@ -65,6 +65,13 @@ export const TITLE = {
   fontSynthesis: "none",
 } as const;
 
+/** Shared copy entrance: fade and a little blur, no rise. Objects and
+    ParticleText keep their own motion. */
+export const TEXT_ENTER_MS = 700;
+export const TEXT_ENTER_BLUR = "4px";
+export const textEnter = (ms = TEXT_ENTER_MS) =>
+  `nijimuTextIn ${ms}ms ease both` as const;
+
 /** Current create-flow grid. Change these once to move every screen's rows. */
 export const FLOW_PAGE = {
   navigationTop: 30,
@@ -74,7 +81,7 @@ export const FLOW_PAGE = {
   /** Naming vessel, above the centre of the scene once the rise has landed. */
   namingArtifactRaise: "14vh",
   actionHeight: 45,
-  actionBottom: "max(40px, env(safe-area-inset-bottom))",
+  actionBottom: "max(72px, env(safe-area-inset-bottom))",
 } as const;
 
 /** Phone-only handling layout: shape, rhythm, distance and colour. */

@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from "react-router";
 import { useState, useEffect, useRef } from "react";
-import { SANS, SANS_UI, SERIF } from "../lib/theme";
+import { SANS, SANS_UI, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { COLOR_PALETTE } from "../lib/colors";
 import { saveMemory } from "../lib/memoryStore";
 import type { ArtifactForm } from "../lib/superformula";
@@ -108,11 +108,11 @@ export function MemorySavedPage() {
         >
           {/* Success message */}
           <div
-            className="transition-all duration-1000"
             style={{
               textAlign: "center",
               opacity: showText ? 1 : 0,
-              transform: showText ? "translateY(0)" : "translateY(20px)",
+              filter: showText ? "none" : "blur(4px)",
+              transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
             }}
           >
             <p

@@ -11,6 +11,7 @@ import { PANE_INK } from "../lib/colors";
 
 export const PANE_TITLE: CSSProperties = {
   ...TITLE,
+  fontSize: 16,
   color: PANE_INK.title,
   margin: 0,
   textAlign: "left",

@@ -1414,8 +1414,8 @@ export function PuddleScene({
           100% { opacity: 0; filter: blur(6px); }
         }
         @keyframes puddleHintIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
+          from { opacity: 0; filter: blur(4px); }
+          to { opacity: 1; filter: none; }
         }
         @keyframes puddleHoldRing {
           from {

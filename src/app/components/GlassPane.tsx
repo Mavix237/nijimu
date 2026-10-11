@@ -1,5 +1,4 @@
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { IridescentSheen } from "./IridescentSheen";
 import { LANDING_RETURN } from "../lib/landingReturn";
 import { squirclePath } from "../lib/squircle";
 import { useCompact } from "../hooks/useCompact";
@@ -164,14 +163,12 @@ export function GlassPane({
             borderRadius: PANEL_RADIUS,
             overflow: "hidden",
             background: compact
-              ? "linear-gradient(165deg, rgba(240, 240, 238, 0.72), rgba(240, 240, 238, 0.6))"
-              : "linear-gradient(165deg, rgba(240, 240, 238, 0.6), rgba(240, 240, 238, 0.46))",
+              ? "linear-gradient(165deg, rgba(240, 240, 238, 0.50), rgba(240, 240, 238, 0.42))"
+              : "linear-gradient(165deg, rgba(240, 240, 238, 0.42), rgba(240, 240, 238, 0.32))",
             backdropFilter: compact ? "blur(26px) saturate(1.1)" : "blur(16px) saturate(1.15)",
             WebkitBackdropFilter: compact ? "blur(26px) saturate(1.1)" : "blur(16px) saturate(1.15)",
           }}
         >
-          <IridescentSheen radius={PANEL_RADIUS} band={14} />
-
           <div
             aria-hidden
             style={{

@@ -1,6 +1,9 @@
 /* ───────── particle text: letters drift in from scatter and focus ─────────
    The way words surface on the puddle screens — captions, the cursor hint,
-   and the recording screen's arrival all speak through it. */
+   and the recording screen's arrival all speak through it. Soft mode
+   keeps the letter sweep but uses the same fade-and-focus as other copy. */
+
+import { TEXT_ENTER_BLUR, TEXT_ENTER_MS } from "../lib/theme";
 
 function mulberry32(seed: number): () => number {
   let a = seed;
@@ -28,6 +31,10 @@ export const PARTICLE_TEXT_KEYFRAMES = `
       transform: translate(0, 0) scale(1);
     }
   }
+  @keyframes puddleLetterInSoft {
+    from { opacity: 0; filter: blur(${TEXT_ENTER_BLUR}); }
+    to { opacity: 1; filter: none; }
+  }
 `;
 
 /** Scatter timing: how long the letters of a run keep arriving, in seconds. */
@@ -43,6 +50,7 @@ export function ParticleText({
   wrap = false,
   delay = 0,
   sweep,
+  soft = false,
 }: {
   text: string;
   seed: number;
@@ -59,6 +67,8 @@ export function ParticleText({
    * scattered, the way the homescreen captions do.
    */
   sweep?: number;
+  /** Fade and a little blur, no bounce — the same entrance as other copy. */
+  soft?: boolean;
 }) {
   const rand = mulberry32(seed);
   const Line = inline ? "span" : "div";
@@ -71,22 +81,24 @@ export function ParticleText({
         let emitted = 0;
 
         const letter = (ch: string, key: number) => {
-          const dx = (rand() - 0.5) * 30;
-          const dy = (rand() - 0.5) * 24;
+          const dx = soft ? 0 : (rand() - 0.5) * 30;
+          const dy = soft ? 0 : (rand() - 0.5) * 24;
           const at = total > 1 ? emitted / (total - 1) : 0;
           emitted++;
           const d =
             delay +
             (sweep === undefined
               ? rand() * SCATTER_SPREAD_S
-              : at * sweep + rand() * SWEEP_JITTER_S);
+              : at * sweep + rand() * (soft ? 0 : SWEEP_JITTER_S));
           return (
             <span
               key={key}
               style={{
                 display: "inline-block",
                 animation: animate
-                  ? `puddleLetterIn 1.1s cubic-bezier(0.22, 1, 0.36, 1) ${d}s backwards`
+                  ? soft
+                    ? `puddleLetterInSoft ${TEXT_ENTER_MS}ms ease ${d}s backwards`
+                    : `puddleLetterIn 1.1s cubic-bezier(0.22, 1, 0.36, 1) ${d}s backwards`
                   : "none",
                 ["--dx" as string]: `${dx}px`,
                 ["--dy" as string]: `${dy}px`,

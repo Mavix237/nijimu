@@ -1,4 +1,4 @@
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type Ref } from "react";
 import { Link } from "react-router";
 import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
@@ -9,7 +9,7 @@ import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { TranscriptTrail } from "./TranscriptTrail";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
+import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
 import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
@@ -146,7 +146,7 @@ const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
   lineHeight: 1.45,
   textAlign: "center",
   textWrap: "pretty",
-  transition: "opacity 0.6s ease",
+  transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
 };
 
 /** A transcript line slides down into place over LINE_IN_MS, the next LINE_STAGGER_MS after. */
@@ -1070,10 +1070,15 @@ export function PuddleDiveGallery({
           items={items}
           activeIdx={rimAt}
           viewport={viewport}
-          visible={yearsVisible}
+          visible={yearsVisible && !inField}
           travelMs={0}
           travelEase={travelEase}
           enterAnimation={carriedChrome}
+          onSeek={(i) => {
+            if (inField || pondDeparture > 0) return;
+            const next = Math.max(0, Math.min(items.length - 1, i));
+            if (next !== activeIdx) onNavigate(next - activeIdx);
+          }}
         />
       )}
 
@@ -1095,12 +1100,14 @@ export function PuddleDiveGallery({
         {shownCaption && <div
           key={shownCaption.id}
           style={{
-            /* the opening fade waits for the memory; once the rim is in
-               motion the words stay put and simply change with the step */
+            /* first arrival waits for the vessel; later steps use the same
+               fade-and-focus as the rest of the copy */
             animation:
-              caption || reducedMotion || rimReady || carriedIds.has(shownCaption.id)
+              caption || reducedMotion
                 ? undefined
-                : `diveCaptionIn ${travelMs}ms ease`,
+                : rimReady || carriedIds.has(shownCaption.id)
+                  ? textEnter()
+                  : `diveCaptionIn ${travelMs}ms ease both`,
             pointerEvents: caption ? "auto" : "none",
           }}
         >
@@ -1269,9 +1276,8 @@ export function PuddleDiveGallery({
         }
         /* the words arrive after the memory they belong to */
         @keyframes diveCaptionIn {
-          0%   { opacity: 0; }
-          45%  { opacity: 0; }
-          100% { opacity: 1; }
+          0%, 45% { opacity: 0; filter: blur(4px); }
+          100%    { opacity: 1; filter: none; }
         }
         @keyframes diveResolveReduced {
           from { opacity: 0; }
@@ -1348,6 +1354,11 @@ export function PuddleDiveGallery({
         @keyframes diveChromeIn {
           from { opacity: 0; filter: blur(6px); }
         }
+        @keyframes tsMagnet {
+          0% { transform: scale(1); }
+          42% { transform: scale(1.14); }
+          100% { transform: scale(1); }
+        }
       `}</style>
     </div>
   );
@@ -1370,6 +1381,28 @@ const TS_YEAR_TICK = 9;
 const TS_LABEL_DROP = 22;
 /** Major ticks every N years (2010, 2015, …). */
 const TS_YEAR_STEP = 5;
+/** How far a pointer can be from a memory, px, and still be drawn to it. */
+const TS_MAGNET_PX = 34;
+
+function nearestMemory(t: number, positions: number[]) {
+  let best = 0;
+  let dist = Infinity;
+  for (let i = 0; i < positions.length; i++) {
+    const d = Math.abs((positions[i] ?? 0) - t);
+    if (d < dist) { dist = d; best = i; }
+  }
+  return best;
+}
+
+/** Pull `t` toward the nearest memory; stronger as it comes inside the magnet. */
+function magnetize(t: number, positions: number[], inner: number) {
+  const i = nearestMemory(t, positions);
+  const dest = positions[i] ?? t;
+  const distPx = Math.abs(dest - t) * inner;
+  const u = distPx >= TS_MAGNET_PX ? 0 : 1 - distPx / TS_MAGNET_PX;
+  const pull = u * u;
+  return { i, displayT: t + (dest - t) * pull * 0.88, pull };
+}
 
 function TimeScale({
   svgRef,
@@ -1380,6 +1413,7 @@ function TimeScale({
   travelMs,
   travelEase,
   enterAnimation,
+  onSeek,
 }: {
   svgRef?: Ref<SVGSVGElement>;
   items: DiveGalleryItem[];
@@ -1390,6 +1424,7 @@ function TimeScale({
   travelEase: string;
   /** Set when the ruler is new to the screen and has to draw itself in. */
   enterAnimation?: string;
+  onSeek?: (index: number) => void;
 }) {
   /** Memory places + the five-year ticks that frame them. */
   const { positions, yearTicks } = useMemo(() => {
@@ -1427,25 +1462,73 @@ function TimeScale({
   const inner = Math.max(1, viewport.w - pad * 2);
   const y = viewport.h - (viewport.w <= 600 ? TS_BOTTOM_PX_PHONE : TS_BOTTOM_PX);
   const x = (t: number) => pad + t * inner;
+  const [dragT, setDragT] = useState<number | null>(null);
+  const [pulse, setPulse] = useState(0);
+  const dragRef = useRef<{ id: number; x: number; travelled: number; last: number } | null>(null);
+  const selected = Math.round(Math.max(0, Math.min(positions.length - 1, activeIdx)));
+  const selectedRef = useRef(selected);
+  useEffect(() => {
+    if (dragT !== null) return;
+    if (selectedRef.current === selected) return;
+    selectedRef.current = selected;
+    setPulse((n) => n + 1);
+  }, [selected, dragT]);
+
+  const tFromX = (clientX: number) => Math.max(0, Math.min(1, (clientX - pad) / inner));
+  const applyPointer = (clientX: number, commit: boolean) => {
+    const raw = tFromX(clientX);
+    const { i, displayT, pull } = magnetize(raw, positions, inner);
+    setDragT(displayT);
+    if (commit || pull > 0.42) onSeek?.(i);
+    return i;
+  };
+
+  const onPointerDown = (e: PointerEvent<SVGRectElement>) => {
+    if (!visible || !onSeek || (e.button !== 0 && e.pointerType === "mouse")) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = { id: e.pointerId, x: e.clientX, travelled: 0, last: selected };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* already released */ }
+    applyPointer(e.clientX, false);
+  };
+  const onPointerMove = (e: PointerEvent<SVGRectElement>) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.travelled += Math.abs(e.clientX - drag.x);
+    drag.x = e.clientX;
+    const i = applyPointer(e.clientX, false);
+    drag.last = i;
+  };
+  const onPointerUp = (e: PointerEvent<SVGRectElement>) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.id) return;
+    dragRef.current = null;
+    const i = applyPointer(e.clientX, true);
+    setDragT(null);
+    if (i !== selectedRef.current) { selectedRef.current = i; setPulse((n) => n + 1); }
+  };
+
   const markAt = (() => {
+    if (dragT !== null) return dragT;
     const a = Math.max(0, Math.min(positions.length - 1, activeIdx));
     const i = Math.floor(a);
     const t0 = positions[i] ?? 0;
     const t1 = positions[Math.min(i + 1, positions.length - 1)] ?? t0;
     return t0 + (t1 - t0) * (a - i);
   })();
+  const magnet = magnetize(markAt, positions, inner);
 
   return (
     <svg
       ref={svgRef}
-      aria-hidden
-      className="absolute inset-0 pointer-events-none"
+      className="absolute inset-0"
       width="100%"
       height="100%"
       style={{
         opacity: visible ? 1 : 0,
         transition: "opacity 0.8s ease",
         animation: enterAnimation,
+        pointerEvents: "none",
       }}
     >
       <defs>
@@ -1468,18 +1551,22 @@ function TimeScale({
       <line x1={0} y1={y} x2={viewport.w} y2={y} stroke="url(#dive-timescale-fade)" strokeWidth={1} />
 
       {/* every memory — short tick, no year */}
-      {positions.map((t, i) => (
-        <line
-          key={`m-${items[i].id}`}
-          x1={x(t)}
-          y1={y - TS_MEMORY_TICK / 2}
-          x2={x(t)}
-          y2={y + TS_MEMORY_TICK / 2}
-          stroke="#4a4a4a"
-          strokeOpacity={0.28}
-          strokeWidth={1}
-        />
-      ))}
+      {positions.map((t, i) => {
+        const on = i === selected;
+        const lift = on ? 1 + magnet.pull * 0.55 : 1;
+        return (
+          <line
+            key={`m-${items[i].id}`}
+            x1={x(t)}
+            y1={y - (TS_MEMORY_TICK / 2) * lift - (on ? 1.6 : 0)}
+            x2={x(t)}
+            y2={y + (TS_MEMORY_TICK / 2) * lift + (on ? 1.6 : 0)}
+            stroke="#4a4a4a"
+            strokeOpacity={on ? 0.42 + magnet.pull * 0.22 : 0.28}
+            strokeWidth={on ? 1.25 : 1}
+          />
+        );
+      })}
 
       {/* regular five-year increments — long tick + year */}
       {yearTicks.map(({ year, t }) => (
@@ -1515,17 +1602,43 @@ function TimeScale({
       <g
         style={{
           transform: `translate(${x(markAt).toFixed(2)}px, ${y}px)`,
-          transition: travelMs ? `transform ${travelMs}ms ${travelEase}` : "none",
+          transition: dragT !== null || !travelMs ? "none" : `transform ${travelMs}ms ${travelEase}`,
         }}
       >
         <circle
+          key={pulse}
           r={TS_YEAR_TICK / 2}
           fill="#f7f7f8"
           stroke="#4a4a4a"
           strokeWidth={0.3}
-          style={{ filter: "drop-shadow(0 1px 11px rgba(45, 45, 45, 0.38))" }}
+          style={{
+            filter: `drop-shadow(0 1px ${11 + magnet.pull * 6}px rgba(45, 45, 45, ${0.38 + magnet.pull * 0.16}))`,
+            transform: `scale(${1 + magnet.pull * 0.06})`,
+            transformOrigin: "center",
+            transformBox: "fill-box",
+            animation: pulse && dragT === null ? "tsMagnet 720ms ease" : "none",
+          }}
         />
       </g>
+
+      <rect
+        x={0}
+        y={y - 32}
+        width={viewport.w}
+        height={68}
+        fill="transparent"
+        role="slider"
+        aria-label="memories in time"
+        aria-valuemin={0}
+        aria-valuemax={Math.max(0, items.length - 1)}
+        aria-valuenow={selected}
+        aria-valuetext={items[selected] ? `${items[selected].year} ${items[selected].event.replace(/\n/g, " ")}` : undefined}
+        style={{ pointerEvents: visible && onSeek ? "auto" : "none", cursor: dragT !== null ? "grabbing" : "ew-resize", touchAction: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      />
     </svg>
   );
 }

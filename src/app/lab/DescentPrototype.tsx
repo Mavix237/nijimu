@@ -35,7 +35,7 @@ import { ShutterCamera } from "../components/ShutterCamera";
 import { HandTrackingDialog } from "../components/HandTrackingDialog";
 import { MATERIAL_PRESETS } from "../components/SceneViewer";
 import { draftColorIndex } from "../components/NamingRim";
-import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE, UNDERWATER_PHONE } from "../lib/theme";
+import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE, UNDERWATER_PHONE, textEnter } from "../lib/theme";
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
@@ -102,6 +102,11 @@ type Phase =
 type Step = DescentStep;
 /** The distance step's farthest place: half of the old full fade. */
 const DISTANCE_MAX = DISTANCE_FAR;
+/** Soften the handled vessel as it goes far — a light layer blur over the
+    existing frost, still leaving its contour. The first half of the slider
+    stays almost sharp; the blur only gathers after DISTANCE_BLUR_FROM. */
+const DISTANCE_BLUR_PX = 14;
+const DISTANCE_BLUR_FROM = 0.5;
 /** At far & faded the neighbours have moved this far along the gallery's depth range (memoryDepth's share): most have passed the eye. */
 const PREVIEW_TRAVEL = 0.75;
 /** At far & faded the handled memory reads at this share of its near size, by standing farther along the same line of sight. */
@@ -1772,7 +1777,6 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       // It reaches exactly zero at the final seat, before shaping starts.
       const arrivalHaze = descentAt.current === null || wrapAt.current !== null || riseAt.current !== null ? 0
         : 1 - smoothProgress(t - descentAt.current, FORM_ASCENT_S[0], FORM_ASCENT_S[1]);
-      touch.material.uniforms.uArrivalBlur.value = reveal > .001 ? Math.max(28 * arrivalHaze, light.blur) : 0;
       scratch.v.copy(formAt).project(camera);
       touch.material.uniforms.uArrivalCenter.value.set(scratch.v.x * .5 + .5, scratch.v.y * .5 + .5);
       body.visible = reveal > 0.001;
@@ -1784,6 +1788,15 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       water.uShapePush.value = ease(water.uShapePush.value, THREE.MathUtils.clamp(morphVelocity * 1.8 + rhythmVelocity * .08, -1, 1), 4);
       water.uShapeRay.value.copy(formAt).sub(camera.position).normalize();
       sm.frost = ease(sm.frost, s.frost, 7);
+      // Distance keeps the vessel's frost and adds a little layer blur, only
+      // while it is still under the water. Arrival and the naming rise keep
+      // the stronger silhouette soften they already had.
+      const distanceBlur = wrapAt.current === null && riseAt.current === null
+        ? DISTANCE_BLUR_PX * smoothProgress(Math.min(1, sm.frost / DISTANCE_MAX), DISTANCE_BLUR_FROM, 1)
+        : 0;
+      touch.material.uniforms.uArrivalBlur.value = reveal > .001
+        ? Math.max(28 * arrivalHaze, light.blur, distanceBlur)
+        : 0;
       const visibleHaze = Math.max(sm.frost, arrivalHaze);
       if (settledPose.current !== targetPose || Math.abs(sm.morph - written.current) > 0.0015) {
         writeMorph(sm.morph, delta, false);
@@ -2950,11 +2963,20 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       } headingStyle={{ opacity: choosing ? 1 : 0, transition: "opacity 700ms ease",
         animation: choosing && !from ? "descentFadeIn 1400ms ease 900ms backwards" : "none" }} />
 
-      {/* The strip itself is the picker: an unseen button kept over it by the stage. */}
+      {/* The strip itself is the picker: a button kept over it by the stage.
+          A thin plus sits in the empty window so the frame reads as addable. */}
       <button ref={pickRef} type="button" aria-label="choose a photo for the film"
         onClick={() => inputRef.current?.click()} disabled={!choosing}
         style={{ position: "absolute", top: 0, left: 0, border: "none", padding: 0, background: "transparent",
-          cursor: choosing ? "pointer" : "default", zIndex: 10, pointerEvents: choosing ? "auto" : "none" }} />
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: choosing ? "pointer" : "default", zIndex: 10, pointerEvents: choosing ? "auto" : "none" }}>
+        {choosing && (
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" aria-hidden
+            style={{ opacity: 0.48, animation: from ? undefined : "descentFadeIn 1400ms ease 1100ms backwards" }}>
+            <path d="M18 7.3V28.7M7.3 18H28.7" stroke={CHROME_GRAY} strokeWidth="1" strokeLinecap="round" />
+          </svg>
+        )}
+      </button>
       <input ref={inputRef} type="file" accept="image/*" aria-label="choose a photo" style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
@@ -3057,7 +3079,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         <FlowPageGrid headingRef={handlingHeadingRef} style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
           headingTop={compact ? UNDERWATER_PHONE.headingTop : undefined}
           headingStyle={{ marginTop: compact ? 0 : -28 }}
-          heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
+          heading={<div key={step} className="nijimu-text-in" style={{ animation: textEnter() }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
@@ -3150,8 +3172,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       )}
 
       <style>{`
-        @keyframes descentFadeIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes descentStepIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes descentFadeIn { from { opacity: 0; filter: blur(4px); } to { opacity: 1; filter: none; } }
         .descent-field { background: transparent; border: none; outline: none; padding: 0; }
         .descent-field::placeholder { color: inherit; opacity: .35; font-style: inherit; }
       `}</style>

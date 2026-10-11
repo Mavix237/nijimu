@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router";
 import { useHoldToCreate } from "../hooks/useHoldToCreate";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, RECORD_START_PATH } from "../lib/routes";
 import { CHROME_GRAY } from "../lib/colors";
-import { INSTRUCTION_SIZE, SANS, SERIF, SERIF_EXPOSURE } from "../lib/theme";
+import { INSTRUCTION_SIZE, SANS, SERIF, SERIF_EXPOSURE, TEXT_ENTER_MS } from "../lib/theme";
 import { POND_THOUGHTS, hasSeenPondInstruction, markPondInstructionSeen, pondPromptCue } from "../lib/pondPrompts";
 import { PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
 import { PondRecordingOverlay } from "./PondRecordingOverlay";
@@ -59,18 +59,20 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     const line = lineRef.current;
     if (!line) return;
     let raf = 0, elapsed = 0, last = performance.now();
-    const appearMs = reducedMotion ? 1 : 920;
+    const appearMs = reducedMotion ? 1 : TEXT_ENTER_MS;
     const riseMs = reducedMotion ? 1 : 1100;
     const ease = (t: number) => t * t * (3 - 2 * t);
     line.style.opacity = "0";
-    line.style.transform = "translate(-50%, -50%) translateY(18px)";
+    line.style.filter = "blur(4px)";
+    line.style.transform = "translate(-50%, -50%)";
     const tick = (now: number) => {
       if (!document.hidden) elapsed += Math.min(50, now - last);
       last = now;
       const appear = ease(Math.min(1, elapsed / appearMs));
       const rise = ease(Math.min(1, Math.max(0, (elapsed - appearMs) / riseMs)));
       line.style.opacity = String(appear);
-      line.style.transform = `translate(-50%, -50%) translateY(calc(${(1 - appear) * 18}px - ${rise * 20}vh))`;
+      line.style.filter = `blur(${(1 - appear) * 4}px)`;
+      line.style.transform = `translate(-50%, -50%) translateY(-${rise * 20}vh)`;
       if (appear >= 1 && rise >= 1) {
         markPondInstructionSeen();
         seen.current = true;
@@ -202,7 +204,8 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
         top: "50%",
         transform: seen.current
           ? "translate(-50%, -50%) translateY(-20vh)"
-          : "translate(-50%, -50%) translateY(18px)",
+          : "translate(-50%, -50%)",
+        filter: seen.current ? "none" : "blur(4px)",
         margin: 0,
         width: "min(28em, 86vw)",
         textAlign: "center",

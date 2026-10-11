@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CHROME_GRAY } from "../lib/colors";
-import { SERIF } from "../lib/theme";
+import { SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { INK_ENTRY, flowProgress } from "../lib/landingTransition";
 import { PAGE_HEADER_MARK } from "./PageHeader";
 
@@ -151,7 +151,7 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
       // the size of the wordmark just above it
       fontSize: PAGE_HEADER_MARK.fontSize,
       zIndex: 31, opacity: on ? 1 : 0,
-      filter: on ? "none" : "blur(4px)", transition: "opacity 700ms ease, filter 700ms ease" }}>
+      filter: on ? "none" : "blur(4px)", transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease` }}>
       <style>{`
         @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .566; } }
         .gallery-hint-breathe { animation: galleryHintBreathe 3.6s ease-in-out infinite; }

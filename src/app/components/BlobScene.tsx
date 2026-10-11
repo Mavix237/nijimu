@@ -487,7 +487,19 @@ export function BlobScene({
   /* On a phone the blobs shrink with `scale` but keep most of their desktop
      softness: halved blur left each overlap a crisp disc, read as separate
      circles instead of one pooled stain. The dots go smaller with the type. */
-  const blobBlur = (blur: number) => blur * (isMobile ? 0.9 : scale);
+  // (with no gooey filter to firm their edges, a phone's blobs keep a little
+  // more of their shape than the 0.9 they had under it, still softer than scale)
+  const blobBlur = (blur: number) => blur * (isMobile ? 0.6 : scale);
+  /* A phone draws a lighter field: no gooey SVG filter (recomputed over the
+     whole layer whenever a blob moves) and no border-radius morph (it repaints
+     each blurred blob every frame). What is left — drift and breath — is
+     transform only, so each blob's blur is drawn once and moved by the GPU;
+     the soft blur and multiply still pool them. */
+  const lite = isMobile;
+  const blobAnimation = (blob: BlobData) =>
+    `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite, `
+    + (lite ? "" : `blobMorph ${blob.animDuration * 1.3}s ease-in-out ${blob.animDelay}s infinite, `)
+    + `blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`;
   const dotSize = isMobile ? 5 : BLOB_DOT;
   const canvasWidth = isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
   // never shorter than the screen: the pan's bounds assume the field covers it
@@ -549,6 +561,21 @@ export function BlobScene({
       const height = lerp(captured.height, INK_POINTER_SIZE * pointerScale, entryShrink);
       el.style.animation = "none";
       el.style.scale = "1";
+      if (lite) {
+        // a phone moves and shrinks the blob it has already drawn: size and
+        // place stay as captured and only the transform changes, so nothing is
+        // laid out or repainted per frame. Its blur shrinks with it.
+        const sx = width / captured.width, sy = height / captured.height;
+        el.style.left = `${captured.x - cr.left}px`; el.style.top = `${captured.y - cr.top}px`;
+        el.style.width = `${captured.width}px`; el.style.height = `${captured.height}px`;
+        el.style.willChange = "transform, opacity";
+        el.style.transform = `translate(${x - captured.x}px, ${y - captured.y}px) translate(-50%, -50%) matrix(${lerp(captured.a, 1, entryShrink) * sx}, ${lerp(captured.b, 0, entryShrink) * sx}, ${lerp(captured.c, 0, entryShrink) * sy}, ${lerp(captured.d, 1, entryShrink) * sy}, 0, 0)`;
+        el.style.borderRadius = entryShrink > 0.98 ? "50%" : captured.radius;
+        el.style.filter = `blur(${captured.blur}px)`;
+        el.style.opacity = `${lerp(captured.opacity, 1, entryShrink) * lerp(1, becomesArtifact ? seat.opacity : 1, unfold) * (becomesArtifact || entryReduced ? 1 - flowProgress(growth, 0.01, entryReduced ? 1 : 0.24) : 1)}`;
+        if (entryShrink > 0.98) el.style.background = blobs[i].color.match(/#[0-9a-f]{6}/i)?.[0] ?? MEMORY_COLORS[0];
+        return;
+      }
       el.style.left = `${x - cr.left}px`; el.style.top = `${y - cr.top}px`;
       el.style.width = `${width}px`; el.style.height = `${height}px`;
       el.style.transform = `matrix(${lerp(captured.a, 1, entryShrink)}, ${lerp(captured.b, 0, entryShrink)}, ${lerp(captured.c, 0, entryShrink)}, ${lerp(captured.d, 1, entryShrink)}, ${-width / 2}, ${-height / 2})`;
@@ -737,7 +764,7 @@ export function BlobScene({
             el.style.mixBlendMode = "multiply";
             el.style.transform = `translate(-50%, -50%) rotate(${blob.rotate}deg)`;
             el.style.boxShadow = "none";
-            el.style.animation = `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite, blobMorph ${blob.animDuration * 1.3}s ease-in-out ${blob.animDelay}s infinite, blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`;
+            el.style.animation = blobAnimation(blob);
           }
         }
         const morphBucket = Math.round(mp * 50);
@@ -1226,7 +1253,7 @@ export function BlobScene({
   }, [classicChrome, blobs]);
 
   /* ─── derived ─── */
-  const showGooey = morphVal < 0.5 && entryShrink < 0.34;
+  const showGooey = !lite && morphVal < 0.5 && entryShrink < 0.34;
   const gooeyT = clamp(Math.max(morphVal * 2.2, entryShrink * 3), 0, 1);
 
   // Connection lines: from hovered event's dot to each connected event's dot
@@ -1442,9 +1469,7 @@ export function BlobScene({
                 filter: `blur(${blobBlur(blob.blur)}px)`,
                 mixBlendMode: "multiply",
                 transform: `translate(-50%, -50%) rotate(${blob.rotate}deg)`,
-                animation: `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite,
-                  blobMorph ${blob.animDuration * 1.3}s ease-in-out ${blob.animDelay}s infinite,
-                  blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`,
+                animation: blobAnimation(blob),
                 willChange: classicChrome ? undefined : "transform, left, top, width, height",
               }}
             />

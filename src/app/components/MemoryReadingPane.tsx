@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { CHROME_GRAY } from "../lib/colors";
-import { BODY_SIZE, NOTE_SIZE, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TITLE_SIZE } from "../lib/theme";
+import { BODY_SIZE, NOTE_SIZE, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
 import { PillButton } from "./PillButton";
+
+/** The space GlassPane keeps between its rows when centred (its `gap`). */
+const PANE_GAP = "clamp(20px, 4vh, 30px)";
 
 export interface ReadableMemory {
   id: string;
@@ -15,8 +18,8 @@ export interface ReadableMemory {
  * A memory's whole text, on a phone: the gallery there shows only the name
  * and year under the vessel, and pressing the vessel opens this. The same
  * glass pane as the profile, at a reading height, scrolling inside;
- * the name and year set as the gallery's caption sets them, the words
- * centred, as the gallery lays them out.
+ * the name and year set as the gallery's caption sets them (the name at the
+ * size of the words), the words left-aligned below.
  */
 export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory | null; onClose: () => void }) {
   // the last memory stays in the pane while it leaves
@@ -36,9 +39,10 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
                 fontFamily: SERIF,
                 fontStyle: "italic",
                 fontWeight: 400,
-                fontSize: TITLE_SIZE,
+                // the size of the words below it: the name leads by its italic, not its scale
+                fontSize: BODY_SIZE,
                 letterSpacing: SERIF_ITALIC_TRACKING,
-                lineHeight: 1.3,
+                lineHeight: 1.4,
                 color: CHROME_GRAY,
                 textAlign: "center",
                 textWrap: "balance",
@@ -63,20 +67,12 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
             </p>
           </header>
 
-          <div
-            aria-hidden
-            style={{
-              width: "min(220px, 60%)",
-              height: 1,
-              flexShrink: 0,
-              background: "linear-gradient(90deg, transparent, rgba(123, 123, 135, 0.25), transparent)",
-            }}
-          />
-
           <p
             lang="en"
             style={{
-              margin: 0,
+              // no rule between name and words; three quarters of the space it
+              // held (gap + rule + gap) stays: one pane gap, plus half of one here
+              margin: `calc(${PANE_GAP} * 0.5 + 0.75px) 0 0`,
               width: "100%",
               maxWidth: "34em",
               fontFamily: SERIF,
@@ -84,7 +80,7 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
               fontWeight: 400,
               lineHeight: 1.7,
               color: "#7b7b87",
-              textAlign: "center",
+              textAlign: "left",
               overflowWrap: "break-word",
               whiteSpace: "pre-line",
             }}

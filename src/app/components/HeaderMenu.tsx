@@ -30,6 +30,26 @@ export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, music: 3 } as c
 
 const ROW_ICON = 16;
 
+/** The landing's paper grain as a repeating tile: one grain per device pixel,
+    at the alpha the landing paints its own (BlobScene's grain canvas). */
+let grainTile: string | null = null;
+function paperGrain(): string {
+  if (grainTile) return grainTile;
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return (grainTile = "none");
+  const img = ctx.createImageData(size, size);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = Math.random() * 255;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 42;
+  }
+  ctx.putImageData(img, 0, 0);
+  return (grainTile = `url(${canvas.toDataURL()})`);
+}
+
 /** One header control as a row of the folded menu. Renders nothing when the header is not folded. */
 export function HeaderMenuRow({ icon, label, ariaLabel, expanded, order, onClick }: {
   icon: ReactNode;
@@ -54,12 +74,14 @@ export function HeaderMenuRow({ icon, label, ariaLabel, expanded, order, onClick
       }}
       style={{
         order,
+        position: "relative",
+        zIndex: 1,
         display: "flex",
         alignItems: "center",
         gap: 10,
         margin: 0,
         // the dock's row, with room for a fingertip
-        padding: "11px 12px",
+        padding: "8px 12px",
         border: "none",
         background: "transparent",
         color: CHROME_GRAY,
@@ -181,16 +203,33 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
           zIndex: 99999,
           display: "flex",
           flexDirection: "column",
-          padding: 4,
-          // no panel of its own: the names sit on the page, as the editor dock's did
-          background: "transparent",
+          padding: "2px 4px",
+          borderRadius: 12,
+          // lifted a breath off the page
+          boxShadow: "0 8px 28px rgba(70, 70, 84, 0.1)",
+          // the page itself, blurred, under a paper tint: within a few levels of
+          // each ground it opens over (the landing's #e4e4e6, the gallery's water
+          // paper ≈ rgb(235,234,232), the pond's pale sky), and what lies beneath —
+          // the tip, a vessel — is muted rather than smudged grey. The grain over
+          // it is the landing's.
+          backgroundColor: "rgba(234, 234, 234, 0.6)",
+          backdropFilter: "blur(24px)",
+          WebkitBackdropFilter: "blur(24px)",
           opacity: open ? 1 : 0,
           transform: open ? "translateY(0)" : "translateY(-6px)",
           transformOrigin: "top right",
           transition: reduced ? "none" : `opacity ${TURN_MS - 60}ms ease, transform ${TURN_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
           pointerEvents: open ? "auto" : "none",
         }}
-      />
+      >
+        <div aria-hidden style={{
+          position: "absolute", inset: 0, borderRadius: "inherit", pointerEvents: "none", zIndex: 0,
+          backgroundImage: paperGrain(),
+          backgroundSize: `${128 / Math.min(window.devicePixelRatio || 1, 3)}px`,
+          mixBlendMode: "overlay",
+          opacity: 0.48,
+        }} />
+      </div>
     </>
   );
 }

@@ -15,7 +15,7 @@ Run `npm run dev` to start the development server.
 - `/memory/pond`: hold to record a memory
 - `/ripple`: home canvas where memories sit as a watercolor puddle, blob field, or ripple field
 - `/record/start`: speak a memory aloud — the recording step of the create flow
-- `/record/transcript`: archived highlight screen; redirects to the descent
+- `/record/transcript`: read the finished transcript, record again or continue to the photo
 - `/record/descent`: choose a photo, let the film settle, then hold to descend
 - `/record/descent/shape`: shape the memory underwater
 - `/record/descent/rhythm`: adjust the form's folds and rhythm
@@ -136,7 +136,7 @@ SANS_UI        = 'SF Pro', system-ui, sans-serif
 ## Memory-to-form study (`/lab/meaning`)
 
 This lab connects a full recorded or typed transcript to the photo/descent lab.
-The create route does the same after highlighting a transcript, at
+The create route does the same after reviewing the finished transcript, at
 `/record/descent`, without the lab knobs. Start the app with `pnpm dev`, open
 `http://localhost:5180/lab/meaning`, record/paste a memory, then **find its form**.
 The four mesh cards and score sliders also work without an API key, explicitly

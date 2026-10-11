@@ -59,6 +59,22 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* The pond is a scene, not a page of copy. iOS still opens its text magnifier
+   on a long press of the full-screen hold button unless the callout is off
+   here; naming fields stay editable. */
+[data-pond-page] {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+[data-pond-page] input,
+[data-pond-page] textarea,
+[data-pond-page] [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 /* Names under the header icons appear on hover. A touch screen has no
    hover, and a tap would leave the name standing after focus. */
 @media (hover: none) {

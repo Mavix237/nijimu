@@ -836,7 +836,8 @@ export function PuddleDiveGallery({
              Over the wash and under the dome. Not on the naming step, whose
              memory is still being made, nor in the field, where no memory is
              selected. ═══ */}
-      {!caption && !compact && items[activeIdx] && (
+      {/* not on a phone, nor any touch-first screen (a phone held sideways is wider than `compact`) */}
+      {!caption && !compact && !touchFirst && items[activeIdx] && (
         <TranscriptTrail
           memoryId={items[activeIdx].id}
           transcript={items[activeIdx].transcript}

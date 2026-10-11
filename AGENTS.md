@@ -4,15 +4,18 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
-## Transcript highlight archived (2026-10-11)
+## Transcript review restored; highlighting archived (2026-10-11)
 
-The spoken-word highlight step is out of the create flow. Recording and the
-sample go from `/record/start` to `/record/descent`; the descent waits for a
-real transcription before it will read the memory or allow the hold. A failure
-offers “record again” and does not substitute the sample. `/record/transcript`
-redirects to the descent with its carried draft. The screen is
-`archive/highlight-transcript/PuddleTranscriptPage.tsx`. The gallery trail still
-lets words fall behind the pointer; it no longer inks highlighted phrases.
+Recording and the sample go from `/record/start` to `/record/transcript`, which
+prints the complete memory over the same mounted pond. “record again” returns
+to recording; “continue” goes directly to `/record/descent` for the photo.
+There is no select/drag-to-highlight step. The live screen is
+`components/PuddleTranscriptPage.tsx`; the old highlighting implementation stays
+in `archive/highlight-transcript/`. The transcript entry saves the words and
+completion state so photo Back and reload restore the finished text. Failed or
+lost real transcriptions offer “record again” and never substitute the sample.
+The descent retains its transcription guard for older carried drafts. The
+gallery trail still lets words fall behind the pointer without highlighted ink.
 
 ## Water surface continuity (2026-10-11)
 
@@ -126,8 +129,10 @@ is a live canvas.
   (`components/HeaderMenu.tsx`). Each control (App's profile/music, the
   gallery's plus/view toggle, the field toggle) renders a `HeaderMenuRow`
   portaled into the list when `useHeaderMenu().list` is set, else its own
-  corner icon. The list has no panel (transparent, like the editor dock);
-  rows are icon + name, 11×12 px padding, ordered by `HEADER_MENU_ORDER`; the burger
+  corner icon. The list's panel is the page itself: blur(24px) under a
+  rgba(234,234,234,.6) paper tint (within a few levels of the landing, gallery
+  and pond grounds) with the landing's per-device-pixel grain overlaid;
+  rows are icon + name, 8×12 px padding, a soft shadow under the panel, ordered by `HEADER_MENU_ORDER`; the burger
   turns −90° as it opens. Wider screens keep the separate icons.
 - Phone landing and gallery (2026-10-11): blobs at 0.62 scale, spawned 8–92%
   across, keeping 0.9 of their desktop blur so overlaps pool (`blobBlur`); dots
@@ -140,13 +145,20 @@ is a live canvas.
   hover for a mouse only (a tap used to leave them dark). The field
   toggle's menu row says "constellation view" / "timeline view".
 - Phone gallery text (2026-10-11): ≤600px the gallery shows only name and
-  year — no transcript under the year, no pointer trail. Pressing the vessel
+  year — no transcript under the year, no pointer trail (the trail is also off
+  on any touch-first screen, and ignores every pointer that is not a mouse). Pressing the vessel
   at the apex opens `MemoryReadingPane` (GlassPane `tall`: fixed
   min(86dvh, 760px), scrolling inside; name in the caption's serif italic at
-  TITLE_SIZE, year in SERIF_CJK, the words centred, an outline "close" at
-  the foot). Wired in `LiveVesselGallery` via
+  BODY_SIZE, year in SERIF_CJK, the words left-aligned with no divider —
+  three quarters of the old gap+rule+gap kept — an outline "close" at the foot). Wired in `LiveVesselGallery` via
   `onPick` on phones only; desktop's apex press is unchanged. The gallery's
   wheel/swipe/key handlers ignore events from an open `[role=dialog]`.
+- Phone landing, lighter (2026-10-11): `lite` (≤768px) in BlobScene drops the
+  gooey SVG filter and the `blobMorph` border-radius animation (both repaint
+  per frame); blobs keep transform-only drift/breath at blur 0.6×. The ink
+  entry on phones moves and shrinks each blob by transform alone (size, place
+  and blur held as captured), so nothing is laid out or repainted per frame.
+  The gallery tip is two rows (break before "to") at the wordmark's 12 px.
 - Transcript trail spacing (`TranscriptTrail`): the gap before the next word
   is GAP_X_EM / STEP_Y_EM × a per-word draw in `JITTER` (.72–1.32) × a pace
   factor from the pointer's eased speed (SLOW_GAP .6 below 120 px/s, full
@@ -164,6 +176,14 @@ is a live canvas.
   blur(26px) and a denser tint, since the pane covers the gallery's vessels.
 
 ## Phone layout (2026-10-10)
+
+Underwater handling (shape/rhythm/distance/colour) uses `UNDERWATER_PHONE` in
+`lib/theme.ts` at ≤600px: 13px instructions above the 12px English label,
+14px title-to-copy gap, heading top clamped to 96–116px (14dvh), and an artifact
+seat .075 of view height below the look point (desktop remains .01). The
+shared `FlowPageGrid.headingTop` override scopes this to handling; photo and
+naming retain their own rows. Constellation clearance follows the measured
+heading bounds and its anchor follows the lowered artifact.
 
 Breakpoint: `max-width: 600px` (`src/styles/responsive.css`, `useCompact()` in
 `hooks/useCompact.ts`). Header icons and the back arrow read `--chrome-r0…r3`,
@@ -238,9 +258,9 @@ so editing the fields never shifts the vessel. The photo heading is “imprint a
 and has no subtitle. Keep entrance transforms relative to the grid cell, with
 no old absolute-centering translateX offsets.
 
-The current create flow is `DescentFlow` (`/record/start`,
-`/record/descent`) followed by `PondNamingOverlay` (`/record/name`). The
-highlight transcript screen is archived. Older
+The current create flow is `DescentFlow` (`/record/start`, `/record/transcript`,
+`/record/descent`) followed by `PondNamingOverlay` (`/record/name`). The finished
+transcript is reviewed before the photo; only its highlighting mode is archived. Older
 standalone ShapeGrowPage, ShapeColorPage, ShapeTexturePage, and NameMemoryPage
 live in `src/app/archive/shape-flow/`. Home no longer links to those shape steps;
 `/record/shape/:step` redirects to the current descent with carried state.
@@ -1532,8 +1552,8 @@ Browser: PondRecordingOverlay (mounted by MemoryPondPage)
 
 **Current UI status:** the backend and browser helper remain implemented, but
 `requestPolish()` is only called by the archived gray `TranscriptPage`. The
-highlight screen is archived too; the live flow transcribes during the descent
-and does not highlight words.
+highlight screen is archived too; the live transcript review prints the full
+transcription before the photo and does not highlight words.
 The following describes the retained polish implementation, not an active step
 in the current create journey.
 

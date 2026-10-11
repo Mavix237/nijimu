@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CHROME_GRAY } from "../lib/colors";
 import { SERIF } from "../lib/theme";
 import { INK_ENTRY, flowProgress } from "../lib/landingTransition";
+import { PAGE_HEADER_MARK } from "./PageHeader";
 
 const INTRO_LINES = ["some memories are never spoken.", "this is a place to let them settle."] as const;
 
@@ -142,11 +143,14 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
   if (on && kind !== shown) setShown(kind);
   const copy = shown === "swipe-end" ? "swipe once more to begin yours"
     : shown === "scroll-end" ? "scroll once more to begin yours"
-    : shown === "swipe-mid" ? <>keep swiping or tap <PlusMark /> to leave a memory of your own</>
-    : <>keep scrolling or click <PlusMark /> to leave a memory of your own</>;
+    : shown === "swipe-mid" ? <>keep swiping or tap <PlusMark /><br />to leave a memory of your own</>
+    : <>keep scrolling or click <PlusMark /><br />to leave a memory of your own</>;
 
   return (
-    <p ref={ref} className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE, zIndex: 31, opacity: on ? 1 : 0,
+    <p ref={ref} className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE,
+      // the size of the wordmark just above it
+      fontSize: PAGE_HEADER_MARK.fontSize,
+      zIndex: 31, opacity: on ? 1 : 0,
       filter: on ? "none" : "blur(4px)", transition: "opacity 700ms ease, filter 700ms ease" }}>
       <style>{`
         @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .566; } }

@@ -76,3 +76,11 @@ export const FLOW_PAGE = {
   actionHeight: 45,
   actionBottom: "max(40px, env(safe-area-inset-bottom))",
 } as const;
+
+/** Phone-only handling layout: shape, rhythm, distance and colour. */
+export const UNDERWATER_PHONE = {
+  headingTop: "max(env(safe-area-inset-top, 0px), clamp(96px, 14dvh, 116px))",
+  instructionSize: 13,
+  instructionGap: 14,
+  artifactDrop: .075,
+} as const;

@@ -322,6 +322,8 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
   useEffect(() => {
     if (!visible || words.length === 0) return;
     const onMove = (e: PointerEvent) => {
+      // the words follow a hand on a mouse; a finger dragging the gallery lays none
+      if (e.pointerType !== "mouse") return;
       if (revealed || done.current) return;
       // the journey: every move counts, wherever it is on the screen
       const was = lastPointer.current;

@@ -110,11 +110,6 @@ function ArchivedShapeRedirect() {
   return <Navigate to={DESCENT_PATH} state={state} replace />;
 }
 
-function ArchivedTranscriptRedirect() {
-  const { state } = useLocation();
-  return <Navigate to={DESCENT_PATH} state={state} replace />;
-}
-
 const router = createBrowserRouter([
   { path: "/style", HydrateFallback: () => null, lazy: () => import("./components/StyleGuidePage").then((m) => ({ Component: m.StyleGuidePage })) },
   { path: "/lab/descent", HydrateFallback: () => null, lazy: () => import("./lab/DescentPrototype").then((m) => ({ Component: m.DescentPrototype })) },
@@ -137,6 +132,7 @@ const router = createBrowserRouter([
           { path: CAROUSEL_PATH, element: null },
           { path: MEMORY_POND_PATH, element: null },
           { path: RECORD_START_PATH, element: null },
+          { path: TRANSCRIPT_PATH, element: null },
           { path: DESCENT_PATH, element: null },
           ...Object.values(DESCENT_STEP_PATHS).map(path => ({ path, element: null })),
           { path: NAMING_PATH, element: null },
@@ -150,7 +146,6 @@ const router = createBrowserRouter([
       { path: "/lab/meaning", lazy: () => import("./lab/MemoryMeaningLab").then((m) => ({ Component: m.MemoryMeaningLab })) },
       { path: "/lab/shapes", lazy: () => import("./lab/ShapeLibraryLab").then((m) => ({ Component: m.ShapeLibraryLab })) },
       { path: "/record/shape/:step", Component: ArchivedShapeRedirect },
-      { path: TRANSCRIPT_PATH, Component: ArchivedTranscriptRedirect },
       { path: "/record/saved", lazy: () => import("./components/MemorySavedPage").then((m) => ({ Component: m.MemorySavedPage })) },
       { path: "/memory/scroll", lazy: () => import("./components/MemoryScrollPage").then((m) => ({ Component: m.MemoryScrollPage })) },
       { path: "/memory/revisit", lazy: () => import("./components/RevisitMemoryPage").then((m) => ({ Component: m.RevisitMemoryPage })) },

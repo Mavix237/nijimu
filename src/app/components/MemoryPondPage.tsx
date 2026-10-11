@@ -146,6 +146,17 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     buttonRef.current?.focus({ preventScroll: true });
   }, [enabled]);
   useEffect(() => {
+    const el = buttonRef.current;
+    if (!el) return;
+    // A long press on this full-screen button opens the iOS text magnifier
+    // unless the touch itself is cancelled. The listener has to be non-passive.
+    const stopMagnifier = (event: TouchEvent) => {
+      if (event.cancelable) event.preventDefault();
+    };
+    el.addEventListener("touchstart", stopMagnifier, { passive: false });
+    return () => el.removeEventListener("touchstart", stopMagnifier);
+  }, [overlaid]);
+  useEffect(() => {
     if (!enabled) return;
     let leftover = 0;
     let lockedUntil = 0;
@@ -173,8 +184,8 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     hintRef, hintRevealRef: hintReveal, promptRefs, cueRef, onReady: ready, lifeReady,
     promptRipples: !overlaid && active, sinkRef };
 
-  return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-ready={enabled}
-    style={{ position: "absolute", inset: 0, overflow: "hidden", background: "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}>
+  return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
+    style={{ position: "absolute", inset: 0, overflow: "hidden", background: "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)", WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
     {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
     {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
 
@@ -237,7 +248,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       onBlur={hold.cancel} onContextMenu={e => e.preventDefault()}
       onKeyDown={e => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); hold.start(); } }}
       onKeyUp={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); hold.cancel(); } }}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", outline: "none", background: "transparent", touchAction: "none", cursor: "default", zIndex: 10 }}>
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", outline: "none", background: "transparent", touchAction: "none", cursor: "default", zIndex: 10, WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
       <span className="sr-only">Hold for two seconds, or hold Space or Enter. Release to cancel.</span>
     </button>}
     <div ref={hintRef} id="pond-hold-help" aria-hidden

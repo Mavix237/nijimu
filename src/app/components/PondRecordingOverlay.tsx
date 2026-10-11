@@ -10,7 +10,7 @@ import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
 import { RecordingInstructionsDialog } from "./RecordingInstructionsDialog";
-import { DESCENT_PATH, MEMORY_POND_PATH } from "../lib/routes";
+import { TRANSCRIPT_PATH, MEMORY_POND_PATH } from "../lib/routes";
 import { ArtifactForm, createArtifactForm, formFromState } from "../lib/superformula";
 import { createVoiceRippleBurstPlanner, pickVoiceRippleSpot, type VoiceRippleSpot } from "../lib/voicePeaks";
 
@@ -101,7 +101,7 @@ export function PondRecordingOverlay({
       const transcriptionId = beginTranscription(audio);
       setLeaving(true);
       setTimeout(() => {
-        navigate(DESCENT_PATH, {
+        navigate(TRANSCRIPT_PATH + location.search, {
           state: {
             transcriptionId,
             shape: { form },
@@ -148,7 +148,7 @@ export function PondRecordingOverlay({
     setSkipping(true);
     setLeaving(true);
     setTimeout(() => {
-      navigate(DESCENT_PATH, {
+      navigate(TRANSCRIPT_PATH + location.search, {
         state: {
           shape: { form },
           ...(focus ? { focus } : {}),

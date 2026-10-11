@@ -1,3 +1,4 @@
+import { useCompact } from "../hooks/useCompact";
 import { createAscentBloom, createSilhouetteBlur } from "../lib/ascentBloom";
 import { ascentLightAt, ASCENT_LIGHT_GLSL, ASCENT_INTERIOR_GLSL } from "../lib/ascentLight";
 import { FlowPageGrid } from "../components/FlowPageGrid";
@@ -16,7 +17,8 @@ import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
-import { CAROUSEL_PATH, DESCENT_PATH as DESCENT_ROUTE, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH } from "../lib/routes";
+import { CAROUSEL_PATH, DESCENT_PATH as DESCENT_ROUTE, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
+import { PuddleTranscriptPage } from "../components/PuddleTranscriptPage";
 import { MemoryPondPage } from "../components/MemoryPondPage";
 import { PondRecordingOverlay } from "../components/PondRecordingOverlay";
 import { BackButton } from "../components/BackButton";
@@ -32,7 +34,7 @@ import { ShutterCamera } from "../components/ShutterCamera";
 import { HandTrackingDialog } from "../components/HandTrackingDialog";
 import { MATERIAL_PRESETS } from "../components/SceneViewer";
 import { draftColorIndex } from "../components/NamingRim";
-import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE } from "../lib/theme";
+import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE, UNDERWATER_PHONE } from "../lib/theme";
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
@@ -1737,10 +1739,11 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
        vessel's haze; the colour pick reaches the glass through the room it
        reflects, as it reaches the water. */
     const body = form.current;
+    const handlingSeat = size.width <= 600 ? UNDERWATER_PHONE.artifactDrop : HANDLING_DROP;
     const handlingTarget = riseAt.current !== null ? 0
-      : wrapAt.current !== null ? HANDLING_DROP * (1 - flowProgress(t - wrapAt.current, 0, WRAP_MOVE_S))
-      : s.step ? HANDLING_DROP : 0;
-    if (handlingDrop.current === null) handlingDrop.current = s.step ? HANDLING_DROP : 0;
+      : wrapAt.current !== null ? handlingSeat * (1 - flowProgress(t - wrapAt.current, 0, WRAP_MOVE_S))
+      : s.step ? handlingSeat : 0;
+    if (handlingDrop.current === null) handlingDrop.current = s.step ? handlingSeat : 0;
     if (wrapAt.current === null && riseAt.current === null) {
       handlingDrop.current += (handlingTarget - handlingDrop.current) * (1 - Math.exp(-3 * dt));
     } else handlingDrop.current = handlingTarget;
@@ -2304,6 +2307,7 @@ function Timeline({ transport, tune, onChange, onFocus }: {
 interface PondEntryProps { arrival?: number; active?: boolean; onReady?: () => void; onLeave?: () => void }
 
 function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport>; pondEntry?: PondEntryProps }) {
+  const compact = useCompact();
   const navigate = useNavigate();
   const location = useLocation();
   const routeStep = lab ? null : descentStepForPath(location.pathname);
@@ -2311,8 +2315,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const from = resume ? "color" : FROM;
   const restoredForm = useMemo(() => resume ? formFromState(resume) : null, [resume]);
   const recording = !lab && location.pathname === RECORD_START_PATH;
-  const invitation = !lab && !recording && !isDescentPath(location.pathname);
-  const prelude = invitation || recording;
+  const readingTranscript = !lab && location.pathname === TRANSCRIPT_PATH;
+  const invitation = !lab && !recording && !readingTranscript && !isDescentPath(location.pathname);
+  const prelude = invitation || recording || readingTranscript;
   const [reducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   // A recording arrives with an id while the words are still being heard.
   // The sample and a direct visit have no id, and use the sample memory.
@@ -2324,7 +2329,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const hearId = useRef(transcriptionId);
   hearId.current = transcriptionId;
   useEffect(() => {
-    if (!transcriptionId || carriedTranscript || heard?.id === transcriptionId) return;
+    if (prelude || !transcriptionId || carriedTranscript || heard?.id === transcriptionId) return;
     const pending = getTranscription(transcriptionId);
     if (!pending) {
       setHeard({ id: transcriptionId, transcript: "", error: "The transcription was lost — try recording again." });
@@ -2347,7 +2352,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     if (pending.result) take(pending.result);
     else void pending.promise.then(take);
     return () => { alive = false; };
-  }, [transcriptionId, carriedTranscript, heard?.id, memoryId, navigate, location.pathname, location.search, location.state]);
+  }, [prelude, transcriptionId, carriedTranscript, heard?.id, memoryId, navigate, location.pathname, location.search, location.state]);
   const heardNow = heard?.id === transcriptionId ? heard : null;
   const awaitingTranscript = !!transcriptionId && !carriedTranscript && !heardNow;
   const hearError = heardNow && !heardNow.transcript ? heardNow.error : null;
@@ -2865,15 +2870,21 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         <PondRecordingOverlay reducedMotion={reducedMotion}
           onVoicePulse={pulse => { stage.current.voicePulses.push(pulse); }} />
       </>}
+      {readingTranscript && <>
+        <BackButton onClick={() => navigate(RECORD_START_PATH + location.search, { state: location.state })} />
+        <PuddleTranscriptPage reducedMotion={reducedMotion}
+          onTranscribingPulse={pulse => { stage.current.voicePulses.push(pulse); }} />
+      </>}
       {!prelude && <>
       {lab && <p style={{ ...META, position: "absolute", top: 26, left: step ? 76 : 28, margin: 0, zIndex: 20 }}>lab — descent</p>}
       {step && <BackButton onClick={backStep} />}
       {!lab && (phase === "choose" || phase === "floating") && (
-        <BackButton onClick={() => navigate(RECORD_START_PATH, {
+        <BackButton onClick={() => navigate(TRANSCRIPT_PATH + location.search, {
           state: {
             ...draftState(),
             transcript,
             memoryId,
+            transcriptReady: true,
             ...(!assessmentPending && transcript ? { memoryAssignment: assignment } : {}),
             ...(location.state?.focus ? { focus: location.state.focus } : {}),
           },
@@ -3007,13 +3018,14 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       )}
       {step && <>
         <FlowPageGrid headingRef={handlingHeadingRef} style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
-          headingStyle={{ marginTop: -28 }}
+          headingTop={compact ? UNDERWATER_PHONE.headingTop : undefined}
+          headingStyle={{ marginTop: compact ? 0 : -28 }}
           heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
             </p>
-            <p style={{ margin: "28px 0 0", fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK }}>
+            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px 0 0`, fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}
             </p>
           </div>}

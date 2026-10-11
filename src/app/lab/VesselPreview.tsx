@@ -201,7 +201,7 @@ export const DISTANCE_FAR = 0.5;
  *  and DISTANCE_FAR — the far end of the distance slider — is this look at that share. */
 export const DISTANCE_FADE = {
   hazeFrost: 1.3, hazeGrain: 2.6, hazeShade: 1.35, hazeTone: 1, hazePhoto: 2.7,
-  hazeWash: 0.04, hazeEdge: 0, hazeMist: 0.1, hazeSpread: 0, hazeGlow: 0.35,
+  hazeWash: 0.22, hazeEdge: 0, hazeMist: 0.14, hazeSpread: 0, hazeGlow: 0.35,
 } as const satisfies Partial<VesselTune>;
 
 /* ───────── the backdrop, as the page and the canvas both draw it ───────── */

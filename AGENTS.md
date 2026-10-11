@@ -126,7 +126,8 @@ is a live canvas.
   (`components/HeaderMenu.tsx`). Each control (App's profile/music, the
   gallery's plus/view toggle, the field toggle) renders a `HeaderMenuRow`
   portaled into the list when `useHeaderMenu().list` is set, else its own
-  corner icon. Rows: icon + name, ordered by `HEADER_MENU_ORDER`; the burger
+  corner icon. The list has no panel (transparent, like the editor dock);
+  rows are icon + name, 11×12 px padding, ordered by `HEADER_MENU_ORDER`; the burger
   turns −90° as it opens. Wider screens keep the separate icons.
 - Phone landing and gallery (2026-10-11): blobs at 0.62 scale, spawned 8–92%
   across, keeping 0.9 of their desktop blur so overlaps pool (`blobBlur`); dots
@@ -135,7 +136,8 @@ is a live canvas.
   in idle moments (`warmGalleryTransition`, landingScenes.ts). Gallery arrows
   read `--gallery-arrow-inset` (6 px on phones); the ruler sits 54 px up
   (`TS_BOTTOM_PX_PHONE`); their triangles scale by `--gallery-arrow-scale`
-  (.45 on phones, .65 elsewhere) inside an unchanged button. The field
+  (.5 on phones, .65 elsewhere) inside an unchanged button; they darken on
+  hover for a mouse only (a tap used to leave them dark). The field
   toggle's menu row says "constellation view" / "timeline view".
 - Glass panes (profile, dialogs): `IridescentSheen` draws premultiplied into
   a premultiplied canvas — the unpremultiplied canvas it used is composited

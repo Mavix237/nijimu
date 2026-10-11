@@ -1060,8 +1060,9 @@ export function PuddleDiveGallery({
             e.stopPropagation();
             onNavigate(-1);
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
+          // darker only under a mouse: a tap fires mouseenter with no mouseleave, which left it dark
+          onPointerEnter={(e) => { if (e.pointerType === "mouse") e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0"; }}
+          onPointerLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
           <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
             <path d="M16 2 L2 12 L16 22 Z" />
@@ -1076,8 +1077,9 @@ export function PuddleDiveGallery({
             e.stopPropagation();
             onNavigate(1);
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
+          // darker only under a mouse: a tap fires mouseenter with no mouseleave, which left it dark
+          onPointerEnter={(e) => { if (e.pointerType === "mouse") e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0"; }}
+          onPointerLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
           <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
             <path d="M2 2 L16 12 L2 22 Z" />

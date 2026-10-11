@@ -31,7 +31,7 @@
     --chrome-r3: calc(104px + env(safe-area-inset-right, 0px));
     --chrome-left: calc(12px + env(safe-area-inset-left, 0px));
     --gallery-arrow-inset: 6px;
-    --gallery-arrow-scale: 0.45;
+    --gallery-arrow-scale: 0.5;
   }
 }
 

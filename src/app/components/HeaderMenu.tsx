@@ -59,7 +59,7 @@ export function HeaderMenuRow({ icon, label, ariaLabel, expanded, order, onClick
         gap: 10,
         margin: 0,
         // the dock's row, with room for a fingertip
-        padding: "9px 10px",
+        padding: "11px 12px",
         border: "none",
         background: "transparent",
         color: CHROME_GRAY,
@@ -182,12 +182,8 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
           display: "flex",
           flexDirection: "column",
           padding: 4,
-          borderRadius: 12,
-          // a breath of paper behind the names, so they read over the water and the vessels
-          background: "rgba(237, 237, 238, 0.78)",
-          backdropFilter: "blur(10px)",
-          WebkitBackdropFilter: "blur(10px)",
-          boxShadow: "0 6px 24px rgba(60, 60, 70, 0.08)",
+          // no panel of its own: the names sit on the page, as the editor dock's did
+          background: "transparent",
           opacity: open ? 1 : 0,
           transform: open ? "translateY(0)" : "translateY(-6px)",
           transformOrigin: "top right",

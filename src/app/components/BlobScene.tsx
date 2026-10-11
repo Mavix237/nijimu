@@ -136,8 +136,9 @@ function generateBlobs(
   const raw = Array.from({ length: events.length }, (_, i) => {
     let x, y;
     if (isMobile) {
-      // Mobile: 2x width, blobs can be generated across 200% width
-      x = Math.random() * 100; // 0-100% of the 2x container
+      // Mobile: 2x width, blobs spread over most of it, a little in from the
+      // edges so neighbours overlap and pool rather than sit apart
+      x = 8 + Math.random() * 84;
       y = 10 + Math.random() * 70;
     } else {
       // Desktop: 1.5x size canvas
@@ -195,7 +196,8 @@ function generateBlobs(
 function useScaleFactor(): number {
   const getScale = useCallback(() => {
     const w = window.innerWidth;
-    if (w <= 480) return 0.5;
+    // a phone's blobs a little larger than half, so the field still pools
+    if (w <= 480) return 0.62;
     if (w <= 768) return 0.6;
     if (w <= 1024) return 0.7;
     return 1;
@@ -482,6 +484,11 @@ export function BlobScene({
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const isMobile = vw <= 768;
+  /* On a phone the blobs shrink with `scale` but keep most of their desktop
+     softness: halved blur left each overlap a crisp disc, read as separate
+     circles instead of one pooled stain. The dots go smaller with the type. */
+  const blobBlur = (blur: number) => blur * (isMobile ? 0.9 : scale);
+  const dotSize = isMobile ? 5 : BLOB_DOT;
   const canvasWidth = isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
   // never shorter than the screen: the pan's bounds assume the field covers it
   const canvasHeight = isMobile ? vh : vh * 1.5 * 0.9;
@@ -518,7 +525,7 @@ export function BlobScene({
           dotY: annotations[i] ? cr.top + annotations[i].dotY : rect.top + rect.height / 2,
           width: parseFloat(style.width), height: parseFloat(style.height),
           a: matrix.a * s, b: matrix.b * s, c: matrix.c * s, d: matrix.d * s,
-          radius: style.borderRadius, blur: blobs[i].blur * scale, opacity: blobs[i].opacity };
+          radius: style.borderRadius, blur: blobBlur(blobs[i].blur), opacity: blobs[i].opacity };
       });
     }
     const gather = entryReduced ? 0 : flowProgress(entryTime, INK_ENTRY.shrinkEnd, INK_ENTRY.pathEnd);
@@ -726,7 +733,7 @@ export function BlobScene({
             el.style.width = `${blob.size * scale}px`;
             el.style.height = `${blob.size * scale}px`;
             el.style.opacity = `${blob.opacity}`;
-            el.style.filter = `blur(${blob.blur * scale}px)`;
+            el.style.filter = `blur(${blobBlur(blob.blur)}px)`;
             el.style.mixBlendMode = "multiply";
             el.style.transform = `translate(-50%, -50%) rotate(${blob.rotate}deg)`;
             el.style.boxShadow = "none";
@@ -811,7 +818,7 @@ export function BlobScene({
           ? 1
           : lerp(0.35, 0.55, Math.max(0, 1 - Math.abs(slot - carouselIdx.current) * 0.3));
         el.style.opacity = `${lerp(blob.opacity, galOp, mp)}`;
-        el.style.filter = `blur(${lerp(blob.blur * scale, Math.min(blob.blur * 0.12, 3), mp)}px)`;
+        el.style.filter = `blur(${lerp(blobBlur(blob.blur), Math.min(blob.blur * 0.12, 3), mp)}px)`;
         el.style.mixBlendMode = mp > 0.55 ? "normal" : "multiply";
 
         const breathe =
@@ -1262,8 +1269,8 @@ export function BlobScene({
           style={{
             left: `${a.dotX}px`,
             top: `${a.dotY}px`,
-            width: BLOB_DOT,
-            height: BLOB_DOT,
+            width: dotSize,
+            height: dotSize,
             borderRadius: "50%",
             backgroundColor: dotColor,
             transform: "translate(-50%, -50%)",
@@ -1278,8 +1285,8 @@ export function BlobScene({
             style={{
               left: `${a.dotX}px`,
               top: `${a.dotY}px`,
-              width: BLOB_DOT,
-              height: BLOB_DOT,
+              width: dotSize,
+              height: dotSize,
               borderRadius: "50%",
               border: `${BLOB_RING_STROKE}px solid ${dotColor}`,
               backgroundColor: "transparent",
@@ -1289,8 +1296,8 @@ export function BlobScene({
               opacity: (dimmed ? 0.15 : 1) * (classicChrome ? BLOB_DOT_OPACITY : 1),
               filter: softenFilter,
               animation: "ringPulse 2.5s ease-in-out infinite",
-              ["--ring-from" as string]: `${BLOB_DOT}px`,
-              ["--ring-to" as string]: `${BLOB_DOT * 5.6}px`,
+              ["--ring-from" as string]: `${dotSize}px`,
+              ["--ring-to" as string]: `${dotSize * 5.6}px`,
             }}
           />
         )}
@@ -1432,7 +1439,7 @@ export function BlobScene({
                 background: blob.color,
                 borderRadius: blob.borderRadius,
                 opacity: blob.opacity,
-                filter: `blur(${blob.blur * scale}px)`,
+                filter: `blur(${blobBlur(blob.blur)}px)`,
                 mixBlendMode: "multiply",
                 transform: `translate(-50%, -50%) rotate(${blob.rotate}deg)`,
                 animation: `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite,

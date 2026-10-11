@@ -8,14 +8,18 @@
 :root {
   --chrome-top: 22px;
   --chrome-icon: 36px;
-  /* Corner icons, counted from the right edge: music, profile, create /
-     gallery view, the vessel field's "in the air". */
+  /* Corner icons, counted from the right edge: music, create / gallery
+     view, the vessel field's "in the air". */
   --chrome-r0: calc(22px + env(safe-area-inset-right, 0px));
   --chrome-r1: calc(68px + env(safe-area-inset-right, 0px));
   --chrome-r2: calc(114px + env(safe-area-inset-right, 0px));
   --chrome-r3: calc(156px + env(safe-area-inset-right, 0px));
   /* The back arrow's left edge. */
   --chrome-left: calc(30px + env(safe-area-inset-left, 0px));
+  /* The gallery's older / newer triangles, from the screen's sides. */
+  --gallery-arrow-inset: clamp(28px, 6vw, 96px);
+  /* Their triangle's size; the button around it does not change. */
+  --gallery-arrow-scale: 0.65;
 }
 
 @media (max-width: 600px) {
@@ -26,6 +30,8 @@
     --chrome-r2: calc(72px + env(safe-area-inset-right, 0px));
     --chrome-r3: calc(104px + env(safe-area-inset-right, 0px));
     --chrome-left: calc(12px + env(safe-area-inset-left, 0px));
+    --gallery-arrow-inset: 6px;
+    --gallery-arrow-scale: 0.45;
   }
 }
 

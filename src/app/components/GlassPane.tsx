@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "re
 import { IridescentSheen } from "./IridescentSheen";
 import { LANDING_RETURN } from "../lib/landingReturn";
 import { squirclePath } from "../lib/squircle";
+import { useCompact } from "../hooks/useCompact";
 
 /** Paper grain — same recipe as SceneViewer / the dive gallery veil. */
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
@@ -34,6 +35,9 @@ export function GlassPane({
   align?: "center" | "start";
   children: ReactNode;
 }) {
+  // a phone's pane covers most of the screen, the gallery's vessels included:
+  // a deeper blur and a denser tint keep it reading as quiet frosted glass
+  const compact = useCompact();
   const [mounted, setMounted] = useState(open);
   const [leaving, setLeaving] = useState(false);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -151,9 +155,11 @@ export function GlassPane({
             maxHeight: PANEL_MAX_HEIGHT,
             borderRadius: PANEL_RADIUS,
             overflow: "hidden",
-            background: "linear-gradient(165deg, rgba(240, 240, 238, 0.6), rgba(240, 240, 238, 0.46))",
-            backdropFilter: "blur(16px) saturate(1.15)",
-            WebkitBackdropFilter: "blur(16px) saturate(1.15)",
+            background: compact
+              ? "linear-gradient(165deg, rgba(240, 240, 238, 0.72), rgba(240, 240, 238, 0.6))"
+              : "linear-gradient(165deg, rgba(240, 240, 238, 0.6), rgba(240, 240, 238, 0.46))",
+            backdropFilter: compact ? "blur(26px) saturate(1.1)" : "blur(16px) saturate(1.15)",
+            WebkitBackdropFilter: compact ? "blur(26px) saturate(1.1)" : "blur(16px) saturate(1.15)",
           }}
         >
           <IridescentSheen radius={PANEL_RADIUS} band={14} />

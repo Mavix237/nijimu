@@ -1,4 +1,4 @@
-import { createAscentBloom } from "../lib/ascentBloom";
+import { createAscentBloom, createSilhouetteBlur } from "../lib/ascentBloom";
 import { ascentLightAt, ASCENT_LIGHT_GLSL, ASCENT_INTERIOR_GLSL } from "../lib/ascentLight";
 import { FlowPageGrid } from "../components/FlowPageGrid";
 import { vesselTint } from "../lib/vesselTint";
@@ -364,10 +364,12 @@ const VOLUME_GLSL = /* glsl */ `
    pond plane and the full-frame underwater atmosphere. */
 const CEILING_GLSL = /* glsl */ `
   uniform float uCeiling;
+  uniform float uAtmosphericLight;
   float uwBreath(float t, float phase, float rate) {
     return 0.55 + 0.45 * sin(t * rate + phase) * (0.75 + 0.25 * sin(t * rate * 0.37 + phase * 1.7));
   }
   float uwFolds(vec2 p, float t) {
+    p += vec2(sin(t * .12) * .16, cos(t * .09) * .13);
     vec2 q = p + 0.38 * vec2(sin(p.y * 1.25), cos(p.x * 1.05));
     float a = sin(q.x * 2.0 + sin(q.y * 0.9) * 0.8);
     float b = sin(q.y * 1.8 + sin(q.x * 0.75) * 0.9);
@@ -394,7 +396,7 @@ const CEILING_GLSL = /* glsl */ `
     vec3 lightDir = normalize(vec3(0.42, -1.0, 0.55));
     float jitter = hash(gl_FragCoord.xy);
     vec3 rays = vec3(0.0);
-    const int STEPS = 8;
+    const int STEPS = 16;
     for (int i = 0; i < STEPS; i++) {
       float f = (float(i) + jitter) / float(STEPS);
       float dist = 0.4 + f * reach;
@@ -406,7 +408,7 @@ const CEILING_GLSL = /* glsl */ `
     }
     rays /= float(STEPS);
     float band = smoothstep(-0.7, 0.05, dir.y);
-    return rays * vec3(.95, .97, .96) * 0.9 * band;
+    return rays * vec3(.95, .97, .96) * 1.12 * band;
   }
   // A shared background for the plane and the full-frame water. As the eye
   // rises, a broad gradient picks up the surface's pale reflected sky. The
@@ -423,9 +425,13 @@ const CEILING_GLSL = /* glsl */ `
     color += shaft * smoothstep(-.2, .5, dir.y) * .08 * (1.0 - uWash * .7) * (1.0 - uCeiling);
     // The former dir.y < .2 cutoff drew a visible horizontal colour band.
     // Ease the shafts into the surface instead, identically in both passes.
-    if (uCeiling > .001) {
+    if (uAtmosphericLight > .001) {
       float shaftFade = 1.0 - smoothstep(-.06, .32, dir.y);
-      color += ceilingRays(dir, 9.0) * uCeiling * shaftFade;
+      // Lift the water's own hue without adding white and clipping channels.
+      float strength = ceilingRays(dir, 9.0).g * uAtmosphericLight * shaftFade;
+      float peak = max(max(color.r, color.g), max(color.b, .001));
+      vec3 litWater = color / peak * min(.94, peak + .16);
+      color = mix(color, litWater, 1.0 - exp(-strength * 3.0));
     }
     return color;
   }
@@ -694,6 +700,7 @@ const touchVertex = /* glsl */ `
 `;
 const touchFragment = /* glsl */ `
   uniform sampler2D tScene;
+  uniform sampler2D tSoftScene;
   uniform vec2 uHand[2];
   uniform vec2 uWake[2];
   uniform float uPress[2];
@@ -706,6 +713,7 @@ const touchFragment = /* glsl */ `
   uniform sampler2D tAscentBloom;
   uniform float uAscentBloom;
   uniform float uAscentExposure;
+  uniform float uAscentHandoff;
   uniform float uAscentAtmosphere;
   varying vec2 vUv;
   float touchHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -752,19 +760,9 @@ const touchFragment = /* glsl */ `
     // Water softens the approaching memory, and growing light diffuses its
     // silhouette during ascent. The page chrome stays crisp in both cases.
     if (uArrivalBlur > .05 && length((vUv - uArrivalCenter) * aspect) < .65) {
-      vec4 soft = vec4(0.0);
-      float weight = 0.0;
-      for (int y = -3; y <= 3; y++) {
-        for (int x = -3; x <= 3; x++) {
-          vec2 tap = vec2(float(x), float(y));
-          float w = exp(-dot(tap, tap) / 4.5);
-          vec2 uv = vUv + shift + tap * (uArrivalBlur / 3.0) / uViewport;
-          soft += texture2D(tScene, clamp(uv, .5 / uViewport, 1.0 - .5 / uViewport)) * w;
-          weight += w;
-        }
-      }
+      vec4 soft = texture2D(tSoftScene, vUv + shift);
       float mask = 1.0 - smoothstep(.38, .65, length((vUv - uArrivalCenter) * aspect));
-      c = mix(c, soft / weight, mask);
+      c = mix(c, soft, mask);
     }
     // A smooth highlight shoulder retains gradients instead of clipping HDR
     // faces to a flat white cutout. Begin adapting before emission is visible.
@@ -779,14 +777,17 @@ const touchFragment = /* glsl */ `
     // Keep the source's lit contours visible before the whole eye adapts.
     if (uAscentBloom > .001) {
       vec3 glow = texture2D(tAscentBloom, vUv + shift).rgb;
-      vec3 spill = vec3(1.0) - exp(-glow * (.8 + 1.4 * uAscentBloom));
-      c.rgb = mix(c.rgb, white, spill);
-      // Only the final beat saturates the exposure, after the artifact has lit
-      // its surroundings, matching the naming shot's incoming surface light.
-      float exposure = 1.0 - exp(-9.0 * pow(uAscentExposure, 5.0));
-      c.rgb = mix(c.rgb, white, exposure);
-      c.a = mix(c.a, 1.0, exposure);
+      vec3 spill = vec3(1.0) - exp(-glow * (.3 + .5 * uAscentBloom));
+      c.rgb = mix(c.rgb, vec3(.888, .902, .897), spill);
     }
+    // The atmospheric wash begins with the artifact's light, in the water's
+    // grey-green palette. Keep it translucent so the contour survives;
+    // only the last surface handoff takes the scene to full exposure.
+    float wash = .32 * (1.0 - exp(-4.0 * pow(uAscentExposure, 2.0)));
+    float exposure = mix(wash, 1.0 - exp(-9.0), uAscentHandoff);
+    vec3 atmosphericColor = mix(vec3(.888, .902, .897), white, uAscentHandoff);
+    c.rgb = mix(c.rgb, atmosphericColor, exposure);
+    c.a = mix(c.a, 1.0, exposure);
     gl_FragColor = c;
   }
 `;
@@ -797,8 +798,12 @@ function surfaceShader(fragment: string, interior = false) {
     void main() {
       surfaceBase();
       float light = ascentIllumination(vWorld, normalize(vNormalW)) * uAscentRadiance;
-      gl_FragColor.rgb += vec3(1.0, .985, .955) * light * .65;
-      ${interior ? "gl_FragColor.rgb += vec3(1.0, .985, .955) * ascentInterior(vWorld, normalize(vNormalW));" : ""}
+      // Transmitted light tints the face toward the surrounding water. Bounded
+      // mixing preserves the glass contour instead of clipping it to white.
+      vec3 waterLight = vec3(.888, .902, .897);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, waterLight, 1.0 - exp(-light * .32));
+      gl_FragColor.rgb += waterLight * light * .045;
+      ${interior ? "gl_FragColor.rgb += vec3(.888, .902, .897) * ascentInterior(vWorld, normalize(vNormalW));" : ""}
       gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.890196, 0.917647, 0.913725), uSurfaceLight);
       gl_FragColor.a *= 1.0 - uSurfaceLight;
     }`;
@@ -932,7 +937,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   const glassMesh = useRef<THREE.Mesh>(null);
   const mist = useRef<THREE.Group>(null);
   const particles = useRef<THREE.Points>(null);
-  const smooth = useRef({ morph: 0, frost: 0, wash: 0, dye: 0, spin: 0, ceiling: 0, stain: 0, recede: 0 });
+  const smooth = useRef({ morph: 0, frost: 0, wash: 0, dye: 0, spin: 0, ceiling: 0, atmospheric: 0, stain: 0, recede: 0 });
   const distanceAnchor = useRef(new THREE.Vector3());
   const distanceDepth = useRef(FIELD_FOCAL);
   /** Screen-down shift of the handled vessel. Null until the first frame, so a
@@ -1035,6 +1040,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     uAscentRadiance: { value: 0 },
     uAscentBloom: { value: 0 },
     uAscentExposure: { value: 0 },
+    uAscentHandoff: { value: 0 },
     uAscentAtmosphere: { value: 0 },
     uAscentRay: { value: 0 },
     uAscentRayFill: { value: 0 },
@@ -1047,6 +1053,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     uWash: { value: 0 },
     uDescentShade: { value: 0 },
     uCeiling: { value: 0 },
+    uAtmosphericLight: { value: 0 },
     uTint: { value: new THREE.Color("#a4b6be") },
     uTintAmount: { value: 0 },
     uClock: { value: 0 },
@@ -1154,6 +1161,8 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
      the water around the hands. The quad copies the frame as it is where
      nothing bends it. */
   const ascentBloom = useMemo(createAscentBloom, []);
+  const silhouetteBlur = useMemo(createSilhouetteBlur, []);
+  useEffect(() => () => silhouetteBlur.dispose(), [silhouetteBlur]);
   useEffect(() => () => ascentBloom.dispose(), [ascentBloom]);
   const touch = useMemo(() => {
     const target = new THREE.WebGLRenderTarget(1, 1, { samples: RT_SAMPLES, type: THREE.HalfFloatType, depthBuffer: true, stencilBuffer: false });
@@ -1164,6 +1173,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         ...illumination,
         tScene: { value: target.texture },
         tAscentBloom: { value: ascentBloom.texture },
+        tSoftScene: { value: silhouetteBlur.texture },
         uHand: { value: [new THREE.Vector2(-10, -10), new THREE.Vector2(-10, -10)] },
         uWake: { value: [new THREE.Vector2(), new THREE.Vector2()] },
         uPress: { value: [0, 0] },
@@ -1191,10 +1201,11 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     const w = Math.max(1, Math.round(size.width * dpr)), h = Math.max(1, Math.round(size.height * dpr));
     touch.target.setSize(w, h);
     ascentBloom.resize(w, h);
+    silhouetteBlur.resize(w, h);
     refract.target.setSize(w, h);
     touch.material.uniforms.uAspect.value = size.width / size.height;
     touch.material.uniforms.uViewport.value.set(size.width, size.height);
-  }, [touch, refract, ascentBloom, gl, size]);
+  }, [touch, refract, ascentBloom, silhouetteBlur, gl, size]);
   /* Three binds a material's uniform holders once, when its program is first
      acquired, and never reads `material.uniforms` again. A Fast Refresh (any
      save while the lab is open) recomputes every memo above, so the materials
@@ -1243,6 +1254,10 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       view.layers.enableAll();
       renderer.setRenderTarget(touch.target);
       renderer.render(scene, view);
+    }
+    if (touch.material.uniforms.uArrivalBlur.value > .05) {
+      silhouetteBlur.render(renderer, touch.target.texture,
+        touch.material.uniforms.uArrivalBlur.value * renderer.getPixelRatio());
     }
     if (illumination.uAscentBloom.value > .001) {
       ascentBloom.render(renderer, touch.target.texture, illumination.uAscentBloom.value);
@@ -1483,6 +1498,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     illumination.uAscentRayFill.value = light.rayFill;
     illumination.uAscentBloom.value = light.bloom;
     illumination.uAscentExposure.value = light.exposure;
+    illumination.uAscentHandoff.value = light.handoff;
     // the orbit: once the wrap has begun, the view can be turned about its look point to watch from another
     // side; it is let go over the rise's crossing to the pond view, so the named memory is seen from the pond
     let yawDeg = knobs.orbitYaw, pitchDeg = knobs.orbitPitch;
@@ -1532,6 +1548,12 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     sm.wash = riseAt.current !== null || s.release ? ease(sm.wash, 0, .55) : WATER_WASH * washIn;
     sm.ceiling = ease(sm.ceiling, s.release ? 1 : 0, 0.7);
     water.uCeiling.value = sm.ceiling;
+    // A faint precursor is already drifting during colour. Continue extends
+    // it through a 2.6-second smooth entrance rather than switching rays on.
+    const atmosphericTarget = s.release ? .08 + .92 * light.shafts
+      : s.step === "color" ? .08 : 0;
+    sm.atmospheric = ease(sm.atmospheric, atmosphericTarget, 2);
+    water.uAtmosphericLight.value = sm.atmospheric;
     water.uWash.value = sm.wash;
     // Both the underside and the full-frame water share this brief darker tone.
     // It is gone by the pale wash's end, before the form finishes climbing.

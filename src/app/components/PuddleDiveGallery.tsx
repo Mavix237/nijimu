@@ -49,8 +49,10 @@ export const CAPTION_TOP_VH = 0.62;
 /** Extra downward sit of the title + year. Shared by the carousel and the
     naming step — both draw this caption from the same seat. */
 export const CAPTION_DOWN_VH = 0.07;
-/** Height of the timescale above the bottom of the viewport. */
+/** Height of the timescale above the bottom of the viewport; a phone's sits
+    lower, nearer its thumb and further from the caption. */
 const TS_BOTTOM_PX = 78;
+const TS_BOTTOM_PX_PHONE = 54;
 
 function useViewport() {
   const [size, setSize] = useState(() => ({
@@ -653,7 +655,10 @@ export function PuddleDiveGallery({
   const arrowStyle = (side: "left" | "right"): CSSProperties => ({
     position: "absolute",
     top: geo.apexY,
-    [side]: "clamp(28px, 6vw, 96px)",
+    // --gallery-arrow-inset (responsive.css): a phone's sit nearer the edge;
+    // the triangle inside scales by --gallery-arrow-scale, the padding (the
+    // part a finger hits) stays as it is
+    [side]: "var(--gallery-arrow-inset)",
     transform: "translateY(-50%)",
     background: "none",
     border: "none",
@@ -1004,7 +1009,7 @@ export function PuddleDiveGallery({
           onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
           onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(0.65)" }}>
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
             <path d="M16 2 L2 12 L16 22 Z" />
           </svg>
         </button>
@@ -1020,7 +1025,7 @@ export function PuddleDiveGallery({
           onMouseEnter={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0")}
           onMouseLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(0.65)" }}>
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
             <path d="M2 2 L16 12 L2 22 Z" />
           </svg>
         </button>
@@ -1298,7 +1303,7 @@ function TimeScale({
 
   const pad = Math.max(TS_SIDE_PAD_MIN, TS_SIDE_PAD_VW * viewport.w);
   const inner = Math.max(1, viewport.w - pad * 2);
-  const y = viewport.h - TS_BOTTOM_PX;
+  const y = viewport.h - (viewport.w <= 600 ? TS_BOTTOM_PX_PHONE : TS_BOTTOM_PX);
   const x = (t: number) => pad + t * inner;
   const markAt = (() => {
     const a = Math.max(0, Math.min(positions.length - 1, activeIdx));

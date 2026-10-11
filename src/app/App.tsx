@@ -175,7 +175,6 @@ function GlobalControls({
   const [muted, setMuted] = useState(true);
   const { pathname } = useLocation();
   const { phase } = useLandingReturn();
-  const onLanding = pathname === "/";
   const leavingScene = phase === "scene-out" || phase === "holding";
 
   useEffect(() => {
@@ -220,7 +219,7 @@ function GlobalControls({
   }, [pathname, onMenuOpenChange]);
   const { list: menuList } = useHeaderMenu();
 
-  const [nameShown, setNameShown] = useState<"profile" | "music" | null>(null);
+  const [nameShown, setNameShown] = useState<"music" | null>(null);
 
   const iconButtonStyle = {
     position: "fixed" as const,
@@ -239,12 +238,6 @@ function GlobalControls({
   };
 
   const iconStroke = CHROME_GRAY;
-  const profileGlyph = (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-      <circle cx="12" cy="7" r="4" />
-    </svg>
-  );
   const musicGlyph = muted ? (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
@@ -264,10 +257,6 @@ function GlobalControls({
       <>
         <HeaderMenu open={menu.open} onOpenChange={menu.onOpenChange} listRef={menu.listRef}
           hidden={leavingScene} />
-        {menuList && !onLanding && (
-          <HeaderMenuRow order={HEADER_MENU_ORDER.profile} icon={profileGlyph} label="profile" expanded={profileOpen}
-            onClick={() => onProfileOpenChange(!profileOpen)} />
-        )}
         {menuList && (
           <HeaderMenuRow order={HEADER_MENU_ORDER.music} icon={musicGlyph} label={muted ? "music off" : "music on"}
             ariaLabel={muted ? "unmute" : "mute"} onClick={() => setMuted((m) => !m)} />
@@ -279,29 +268,6 @@ function GlobalControls({
 
   return (
     <>
-      {!onLanding && (
-        <button
-          onClick={() => onProfileOpenChange(!profileOpen)}
-          aria-label="profile"
-          aria-expanded={profileOpen}
-          onMouseEnter={() => setNameShown("profile")}
-          onMouseLeave={() => setNameShown(null)}
-          onFocus={() => setNameShown("profile")}
-          onBlur={() => setNameShown(null)}
-          style={{
-            ...iconButtonStyle,
-            top: "var(--chrome-top)",
-            right: "var(--chrome-r1)",
-            opacity: leavingScene ? 0 : 1,
-            transition: leavingScene ? `opacity ${LANDING_RETURN.sceneFadeMs}ms ease` : "none",
-            pointerEvents: phase === "idle" ? "auto" : "none",
-          }}
-        >
-          <HeaderIconLabel name="profile" shown={nameShown === "profile"} />
-          {profileGlyph}
-        </button>
-      )}
-
       <button
         onClick={() => setMuted((m) => !m)}
         aria-label={muted ? "unmute" : "mute"}

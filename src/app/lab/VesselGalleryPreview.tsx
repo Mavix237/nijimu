@@ -15,7 +15,8 @@ import {
   DISTANCE_FADE, VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
   type Room, type VesselState, type VesselTune,
 } from "./VesselPreview";
-import { VesselArtifact, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
+import { VesselArtifact, loadSeatPhoto, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
+import { vesselParts } from "./vesselBuilds";
 import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "../components/HeaderMenu";
 import { LabPushButton } from "./LabPushButton";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "../components/HeaderIconLabel";
@@ -350,7 +351,8 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
     )
   );
   // folded into the header menu on a phone
-  if (list) return <HeaderMenuRow order={HEADER_MENU_ORDER.field} icon={glyph} label={title} onClick={onToggle} />;
+  if (list) return <HeaderMenuRow order={HEADER_MENU_ORDER.field} icon={glyph} label={on ? "timeline view" : "constellation view"}
+    ariaLabel={title} onClick={onToggle} />;
   return (
     <button
       type="button"
@@ -361,7 +363,7 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       onFocus={() => setNameShown(true)}
       onBlur={() => setNameShown(false)}
       style={{
-        position: "fixed", top: "var(--chrome-top)", right: "var(--chrome-r3)", zIndex: 99999, boxSizing: "border-box",
+        position: "fixed", top: "var(--chrome-top)", right: "var(--chrome-r2)", zIndex: 99999, boxSizing: "border-box",
         width: "var(--chrome-icon)", height: 36 + HEADER_ICON_LABEL_PAD, padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
         border: "none", background: "transparent", cursor: "pointer",
         display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.85,
@@ -398,6 +400,30 @@ export function galleryStateFor(item: ArchiveArtifact): VesselState {
   if (i >= 0) return overCurated(curatedStates()[i], panel, push?.at ?? 0);
   const base = vesselForArchive(item);
   return panel ? withPanel(base, panel) : base;
+}
+
+/**
+ * Builds every gallery memory's glass and settled cloth into the shared cache
+ * (vesselBuilds.ts) before the gallery is open — one memory per idle moment,
+ * the middle of the archive first, where Enter lands. A phone's Enter then
+ * finds its seats ready instead of settling cloth during the ink.
+ */
+export function warmGalleryVessels() {
+  const items = buildArchive();
+  const middle = (items.length - 1) / 2;
+  const queue = items.slice().sort((a, b) => Math.abs(items.indexOf(a) - middle) - Math.abs(items.indexOf(b) - middle));
+  const later = (run: () => void) => typeof window.requestIdleCallback === "function"
+    ? window.requestIdleCallback(run, { timeout: 2000 })
+    : window.setTimeout(run, 60);
+  const next = () => {
+    const item = queue.shift();
+    if (!item) return;
+    const s = galleryStateFor(item);
+    if (s.url) loadSeatPhoto(s.url).catch(() => undefined);
+    vesselParts({ form: s.form, morph: s.tune.morph, tune: s.tune, sheetMode: s.sheetMode, seed: s.seed, sheetSize: s.tune.sheetSize });
+    later(next);
+  };
+  later(next);
 }
 
 /** A stored tune, filled out with the gallery's where a key is missing. */

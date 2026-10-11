@@ -20,12 +20,16 @@ The colour → naming ascent uses the pond's sun (`lib/pondLight.ts`), refracted
 through the surface onto the vessel. `lib/ascentLight.ts` sequences incident
 light, an interior ray, artifact radiance, bloom and final exposure. The ray
 is integrated only inside the near glass silhouette, following the refracted
-sun; it fills from the crown, broadens, then dissolves into the vessel glow.
-It starts at 52%, fills by 84%, and fades out by 98%. The entire environmental
-`CEILING_GLSL` block is restored exactly from `b44c3bb` by user request:
-original `uwBreath`/`uwFolds`, eight-sample rays, .9 strength, 9-unit reach,
-surface shading and body blend. The regular column pattern and added diffuse
-atmospheric lift are removed. Artifact lighting remains separate.
+sun; it fills from the crown and broadens into the vessel glow.
+It starts at 52%, fills by 84%, and holds its brightness through the surface
+handoff; only the final scene exposure conceals it, avoiding a late light dip.
+The environmental `CEILING_GLSL` retains the `b44c3bb`
+`uwBreath`/`uwFolds` pattern, surface shading and body blend. Its shafts now
+use 16 samples, 1.12 strength and a slow lateral drift, with the same 9-unit reach. The regular column pattern and added diffuse
+atmospheric lift are removed. A faint 8% shaft precursor eases in during
+colour; Continue grows it with a smooth 0–40% ascent envelope (2.6 seconds)
+and a short damping filter, independent of surface texture timing. Artifact
+lighting remains separate.
 The highlight shoulder spans only the top .06 below white, preserving the
 environmental shafts' contrast instead of compressing the whole pale water.
 The glass and photo emit HDR light from their actual
@@ -34,23 +38,30 @@ quarter-resolution passes during ascent only, so the glow follows the rendered
 artifact rather than a painted oval. The final exposure matches the naming
 arrival's `#f4f6f5`; all light resets on rewind. Artifact emission begins after
 52% of the ascent, easing in with a fourth-power curve and accelerating close
-to the surface; full-scene exposure waits until 88%. Naming Back increases
+to the surface; the broad atmospheric wash now begins alongside it at 52%. Naming Back increases
 artifact blur from 0 to 22px as the shared sink passes .74–.90, only after
 entering the water. An interrupted arrival clears its remaining arrival blur
 during the chrome fade before sinking. Check
 both directions with `node scripts/check-ascent-light.mjs`.
 
-The ascent's peak artifact radiance is 2.2 (formerly 5, originally 16), and
-the interior ray's gain is .9 (formerly 2).
-The final exposure uses a fifth-power curve to keep most of the shot readable
-until the handoff. The `atmosphere` timing signal now controls only the post
+The ascent's peak artifact radiance is .7 and the interior ray's gain is .45.
+Light mixes gently toward the surrounding water's grey-green colour, with
+only a small additive emission, so the glass contour survives until handoff.
+The atmospheric wash eases in from 52–100%, capped at 32% opacity until
+the final handoff to preserve the contour, in the water's
+(.888, .902, .897) grey-green palette. Only the final 96–100% blends that tone
+to the naming background. Bloom uses the water tone too; environmental shafts
+lift the local water hue with bounded mixing instead of adding near-white. The `atmosphere` timing signal now controls only the post
 pass's highlight adaptation; it no longer adds a diffuse water wash. Bloom spreads
 more broadly at lower strength; an exponential highlight shoulder replaces the
 hard white clamp so lit faces retain a smooth rolloff before the final wash.
-The localized silhouette blur grows from 0 to 28px over 58–98% of ascent,
+The localized silhouette blur grows from 0 to 12px over 58–98% of ascent,
 leaving the initial interior ray focused before its increasing light softens
 the whole artifact. This reuses the arrival blur pass and never changes the
-saved distance/frost value.
+saved distance/frost value. The blur now uses two dense separable passes at
+half resolution instead of a sparse 7×7 grid. Bloom also keeps its taps close
+and diffuses over four passes, preventing replicated bright edges near the
+surface. Its composite strength is reduced alongside the vessel emission.
 
 `PerspectivePond.tsx` exports `POND_SURFACE_GLSL` alongside `POND_WAVES_GLSL`.
 The pond, descent's top surface, and the overhead surface during the colour →
@@ -117,6 +128,20 @@ is a live canvas.
   portaled into the list when `useHeaderMenu().list` is set, else its own
   corner icon. Rows: icon + name, ordered by `HEADER_MENU_ORDER`; the burger
   turns −90° as it opens. Wider screens keep the separate icons.
+- Phone landing and gallery (2026-10-11): blobs at 0.62 scale, spawned 8–92%
+  across, keeping 0.9 of their desktop blur so overlaps pool (`blobBlur`); dots
+  5 px. On a phone the landing loads the scene chunks at once and
+  `warmGalleryVessels` builds every memory's glass/cloth and decodes its photo
+  in idle moments (`warmGalleryTransition`, landingScenes.ts). Gallery arrows
+  read `--gallery-arrow-inset` (6 px on phones); the ruler sits 54 px up
+  (`TS_BOTTOM_PX_PHONE`); their triangles scale by `--gallery-arrow-scale`
+  (.45 on phones, .65 elsewhere) inside an unchanged button. The field
+  toggle's menu row says "constellation view" / "timeline view".
+- Glass panes (profile, dialogs): `IridescentSheen` draws premultiplied into
+  a premultiplied canvas — the unpremultiplied canvas it used is composited
+  differently by Safari and likely read as a bright white rim there (not
+  seen in Chrome; Safari itself was not checked). On phones `GlassPane` uses
+  blur(26px) and a denser tint, since the pane covers the gallery's vessels.
 
 ## Phone layout (2026-10-10)
 

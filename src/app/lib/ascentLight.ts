@@ -13,13 +13,19 @@ export function ascentLightAt(progress: number) {
   const gathering = Math.max(0, Math.min(1, (p - .52) / .48));
   return {
     incident,
-    radiance: incident * 2.2 * gathering ** 4,
+    shafts: smooth(0, .4, p),
+    radiance: incident * .7 * gathering ** 4,
     atmosphere: .55 * (.18 * smooth(.22, .58, p) + .82 * gathering ** 2),
-    blur: 28 * smooth(.58, .98, p) ** 1.3,
-    ray: smooth(.52, .66, p) * (1 - smooth(.82, .98, p)),
+    blur: 12 * smooth(.58, .98, p) ** 1.3,
+    // Hold the transmitted ray through the surface approach. The final scene
+    // exposure carries it into naming; fading it here caused a visible dip.
+    ray: smooth(.52, .66, p),
     rayFill: smooth(.52, .84, p),
     bloom: smooth(.64, 1, p) ** 2,
-    exposure: smooth(.88, 1, p),
+    // Begin the atmospheric wash alongside the artifact, retaining a gentle
+    // start. The last surface beat alone matches the naming background.
+    exposure: smooth(.52, 1, p),
+    handoff: smooth(.96, 1, p),
   };
 }
 
@@ -72,6 +78,6 @@ export const ASCENT_INTERIOR_GLSL = /* glsl */ `
       float inside = 1.0 - smoothstep(.72, 1.0, length(q));
       gathered += core * filling * inside;
     }
-    return gathered * travel / 16.0 * uAscentRay * .9;
+    return gathered * travel / 16.0 * uAscentRay * .45;
   }
 `;

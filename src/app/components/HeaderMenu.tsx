@@ -25,8 +25,8 @@ export function useHeaderMenu(): HeaderMenuValue {
   return useContext(HeaderMenuContext);
 }
 
-/** Rows top to bottom: what the page offers first, the person and the sound last. */
-export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, profile: 3, music: 4 } as const;
+/** Rows top to bottom: what the page offers first, the sound last. */
+export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, music: 3 } as const;
 
 const ROW_ICON = 16;
 

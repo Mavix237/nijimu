@@ -4,7 +4,8 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import { useLocation, useNavigate } from "react-router";
 import { BlobScene } from "./BlobScene";
 // the 3D scenes are their own chunks: the landing paints without three.js
-import { DescentFlow, LiveVesselGallery, MemoryCarouselPage, MemoryPondPage, preloadLandingScenes, preloadLandingScenesWhenIdle } from "./landingScenes";
+import { DescentFlow, LiveVesselGallery, MemoryCarouselPage, MemoryPondPage, preloadLandingScenes, preloadLandingScenesWhenIdle, warmGalleryTransition } from "./landingScenes";
+import { LIGHT_TIER } from "../lib/deviceTier";
 import { PageHeader } from "./PageHeader";
 import { BackButton } from "./BackButton";
 import { useLandingReturn } from "../lib/landingReturn";
@@ -179,8 +180,12 @@ export function LandingPage() {
     window.addEventListener("keydown", cancel);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("keydown", cancel); };
   }, [pondClock, pondLeaving, reducedMotion, navigate, pondReturnId, pondReplace]);
-  // fetched while the landing is idle, so Enter rarely has to wait for them
-  useEffect(() => preloadLandingScenesWhenIdle(), []);
+  // fetched while the landing is idle, so Enter rarely has to wait for them; a
+  // phone starts at once and warms the gallery itself too (landingScenes.ts)
+  useEffect(() => {
+    if (!LIGHT_TIER) return preloadLandingScenesWhenIdle();
+    warmGalleryTransition();
+  }, []);
   const enter = () => {
     preloadLandingScenes();
     if (startedAt !== null) return;

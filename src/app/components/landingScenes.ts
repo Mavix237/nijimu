@@ -27,6 +27,20 @@ export function preloadLandingScenes() {
   void Promise.all([carousel(), pond(), descent(), vesselGallery()]).catch(() => { preloaded = false; });
 }
 
+let warmed = false;
+/**
+ * A phone, from the moment the site opens: the scenes' code at once, then
+ * the gallery itself warmed in the background — its photos decoded and every
+ * memory's glass and cloth built into the shared cache — so the transition
+ * on Enter has only to draw.
+ */
+export function warmGalleryTransition() {
+  preloadLandingScenes();
+  if (warmed) return;
+  warmed = true;
+  void vesselGallery().then((m) => m.warmGalleryVessels()).catch(() => { warmed = false; });
+}
+
 /** Preload once the landing has painted and the page is idle. */
 export function preloadLandingScenesWhenIdle(): () => void {
   if (typeof window.requestIdleCallback === "function") {

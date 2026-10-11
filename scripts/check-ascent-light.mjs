@@ -19,37 +19,44 @@ let previous = ascentLightAt(0);
 assert.ok(Object.values(previous).every(value => value === 0));
 for (let frame = 1; frame <= 390; frame++) {
   const next = ascentLightAt(frame / 390);
-  for (const key of ['incident', 'radiance', 'atmosphere', 'blur', 'rayFill', 'bloom', 'exposure']) {
+  for (const key of ['incident', 'shafts', 'radiance', 'atmosphere', 'blur', 'ray', 'rayFill', 'bloom', 'exposure', 'handoff']) {
     assert.ok(next[key] >= previous[key], `${key} never flickers backwards during ascent`);
     assert.ok(Number.isFinite(next[key]));
   }
   assert.ok(next.incident - previous.incident < .012 && next.bloom - previous.bloom < .015, 'incident light and diffusion ramp smoothly');
   assert.ok(next.radiance - previous.radiance < .35 && next.exposure - previous.exposure < .035, 'no abrupt emission or exposure changes');
-  assert.ok(next.blur - previous.blur < .32 && next.blur <= 28, 'light diffusion grows smoothly and stays bounded');
+  assert.ok(next.blur - previous.blur < .32 && next.blur <= 12, 'light diffusion grows smoothly and stays bounded');
   previous = next;
 }
+assert.ok(ascentLightAt(.01).shafts < .002, 'atmospheric entrance begins with nearly zero velocity');
+assert.equal(ascentLightAt(.4).shafts, 1, 'atmospheric entrance completes before the artifact lights');
 assert.ok(ascentLightAt(.2).incident > 0, 'the water receives surface light first');
 assert.equal(ascentLightAt(.5).radiance, 0, 'the artifact stays unlit through the first half of the climb');
 assert.ok(ascentLightAt(.6).radiance > 0 && ascentLightAt(.6).radiance < .02, 'artifact light begins gently');
 assert.equal(ascentLightAt(.6).bloom, 0, 'light gathers before it diffuses');
-assert.ok(ascentLightAt(.8).radiance < .3 && ascentLightAt(.95).radiance > 1.4, 'strong emission waits until close to the surface');
-assert.equal(ascentLightAt(1).radiance, 2.2, 'the vessel peak is reduced to avoid an overbright source');
+assert.ok(ascentLightAt(.8).radiance < .3 && ascentLightAt(.95).radiance > .4, 'strong emission waits until close to the surface');
+assert.equal(ascentLightAt(1).radiance, .7, 'the vessel peak is reduced to avoid an overbright source');
 assert.equal(ascentLightAt(.22).atmosphere, 0, 'the opening frame retains its original atmosphere');
 assert.ok(ascentLightAt(.5).atmosphere > .05 && ascentLightAt(.5).atmosphere < .1,
   'a restrained atmospheric lift precedes the artifact light');
 assert.equal(ascentLightAt(.58).blur, 0, 'the initial interior ray stays focused');
-assert.ok(ascentLightAt(.8).blur > 10, 'the artifact softens as its glow grows');
-assert.equal(ascentLightAt(.98).blur, 28, 'the silhouette is fully softened before the handoff');
+assert.ok(ascentLightAt(.8).blur > 4, 'the artifact softens as its glow grows');
+assert.equal(ascentLightAt(.98).blur, 12, 'the silhouette is fully softened before the handoff');
 assert.ok(ascentLightAt(.8).atmosphere > .2, 'surrounding water brightens before the final exposure');
 assert.equal(ascentLightAt(1).atmosphere, .55, 'the atmosphere builds alongside the artifact at reduced intensity');
 assert.equal(ascentLightAt(.52).ray, 0, 'the interior ray respects the delayed start');
 assert.ok(ascentLightAt(.66).ray > .99 && ascentLightAt(.66).radiance < .04,
   'the contained ray establishes itself before the broad vessel glow');
 assert.equal(ascentLightAt(.84).rayFill, 1, 'light fills the interior before the final wash');
-assert.equal(ascentLightAt(.98).ray, 0, 'the narrow ray dissolves into the completed glow');
+for (const progress of [.82, .9, .98, 1]) {
+  assert.equal(ascentLightAt(progress).ray, 1, 'the ray holds its brightness until the surface handoff');
+}
 assert.ok(ascentLightAt(.9).radiance - ascentLightAt(.85).radiance > ascentLightAt(.7).radiance - ascentLightAt(.65).radiance,
   'the glow accelerates late rather than rising at a constant rate');
-assert.equal(ascentLightAt(.87).exposure, 0, 'the full-scene exposure waits until the final approach');
+assert.equal(ascentLightAt(.52).exposure, 0, 'the atmospheric wash starts with the artifact light');
+assert.ok(ascentLightAt(.65).exposure > 0, 'the wash is present during the artifact illumination');
+assert.equal(ascentLightAt(.96).handoff, 0, 'the water hue is retained until the surface handoff');
+assert.equal(ascentLightAt(1).handoff, 1, 'the endpoint matches the naming background');
 assert.equal(ascentLightAt(1).exposure, 1, 'full exposure meets the naming handoff');
 for (const progress of [0, -1, NaN]) {
   assert.ok(Object.values(ascentLightAt(progress)).every(value => value === 0), 'rewind clears all illumination');

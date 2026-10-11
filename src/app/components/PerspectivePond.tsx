@@ -303,6 +303,7 @@ const fragmentShader = /* glsl */ `
 
 const RING_RADIUS = .6055;
 const HALO_REACH = .38;
+const HALO_WIDTH = .6;
 const onPond = (p: THREE.Vector3) => p.z > -100 && p.z < 18;
 const RING_FADE_IN = .72;
 const RING_FADE_FULL = .94;
@@ -366,9 +367,9 @@ const ringFragment = /* glsl */ `
     float d = abs(r - ${RING_RADIUS});
     // A white luminous core with two soft falloffs, all on the same floating
     // surface. The generous geometry leaves room for the light to dissipate.
-    float core = exp(-pow(d / (.012 + aa), 2.0));
-    float glow = exp(-pow(d / .09, 2.0));
-    float aura = exp(-pow(d / .2, 2.0));
+    float core = exp(-pow(d / (.012 * ${HALO_WIDTH} + aa), 2.0));
+    float glow = exp(-pow(d / (.09 * ${HALO_WIDTH}), 2.0));
+    float aura = exp(-pow(d / (.2 * ${HALO_WIDTH}), 2.0));
     float edge = 1.0 - smoothstep(.28, ${HALO_REACH}, d);
     float sweep = mod(1.57079632679 - atan(vLocal.y, vLocal.x), 6.28318530718) / 6.28318530718;
     float holding = step(.001, uProgress);
@@ -414,7 +415,7 @@ const ringShadowFragment = /* glsl */ `
     float r = length(vLocal);
     float d = abs(r - ${RING_RADIUS});
     // the higher the ring, the wider and fainter its shade
-    float spread = mix(.07, .028, uTap);
+    float spread = mix(.07, .028, uTap) * ${HALO_WIDTH};
     float shade = exp(-pow(d / spread, 2.0)) * .8 + exp(-pow(d / (spread * 2.6), 2.0)) * .35;
     float edge = 1.0 - smoothstep(.23, ${HALO_REACH}, d);
     // the shadow of what is drawn: while a hold fills the arc, the rest is faint

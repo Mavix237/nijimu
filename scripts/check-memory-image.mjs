@@ -18,10 +18,16 @@ for (const text of [
   'https://example.com/' + 'a'.repeat(200),
   'a 🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊🌊 memory',
 ]) {
-  const lines = imageTextLines(text, 16, measure);
+  const lines = imageTextLines(text, 16, measure, true);
   assert.ok(lines.every(line => measure(line) <= 16), 'every line fits the image');
   assert.equal(lines.join('').replace(/\s/g, ''), text.replace(/\s/g, ''), 'the full transcript is retained');
 }
 assert.deepEqual(Array.from(imageTextLines('one\n\ntwo', 16, measure)), ['one', '', 'two']);
 assert.deepEqual(Array.from(imageTextLines('', 16, measure)), ['']);
+const widowText = 'one two three four five six seven';
+const balanced = imageTextLines(widowText, 28, measure, true);
+assert.equal(balanced.length, 2, 'balancing does not add a line');
+assert.ok(balanced.every(line => line.split(' ').length >= 2), 'no stranded word at paragraph end');
+assert.ok(balanced.every(line => measure(line) >= 28 * .35), 'the final lines have a substantial measure');
+assert.equal(balanced.join(' '), widowText, 'balancing keeps word boundaries and order');
 console.log('Memory image text checks passed: paragraphs, long transcripts, CJK, emoji and long tokens.');

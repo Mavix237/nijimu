@@ -4,6 +4,22 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Phone layout (2026-10-10)
+
+Breakpoint: `max-width: 600px` (`src/styles/responsive.css`, `useCompact()` in
+`hooks/useCompact.ts`). Header icons and the back arrow read `--chrome-r0…r3`,
+`--chrome-icon`, `--chrome-left` (desktop values are the old fixed seats; phones
+pack them tighter, with safe-area insets); hover names are hidden on touch.
+3D canvases that fill the screen mount `<PortraitFit />` (`lib/portraitView.ts`):
+below aspect .8 the camera's zoom widens the view so a scene keeps its
+landscape side-to-side framing; code sizing things from `fov` uses
+`viewHalfTan(cam)`. `carouselFrame` grows to .42 of the width on upright
+phones (`portraitTall`), and the near seats spread so they leave before
+unmounting; landscape output is unchanged. Landing pans by pointer events,
+transcript highlighting works by finger (sideways drag), the lab dock is hidden,
+naming does not auto-focus on touch, pages use `h-dvh`, and `index.html` has
+`viewport-fit=cover`. Not done: the revisit editors are camera-only.
+
 ## Rhythm continuity (2026-10-10)
 
 `DescentPrototype` retains its glass geometry and settled photo sheet while m2
@@ -1131,7 +1147,7 @@ immersive viewer.
 
 Shape work starts in `ShapeGrowPage.tsx`, `BubbleViewer.tsx`, `SceneViewer.tsx`,
 and `src/app/lib/superformula.ts`. `formDraft.ts` keeps some editor settings in
-sessionStorage; recorded memories stay in memory only. Historical plans under
+sessionStorage; recorded memories also use tab-scoped sessionStorage and survive refresh. Historical plans under
 `docs/superpowers/` describe earlier states. Follow current source and this
 guide when they conflict. `.env.local` is gitignored and stays on this machine.
 
@@ -1276,7 +1292,7 @@ A `location.state` → context/store refactor is noted as future work but not do
 |---|---|
 | `theme.ts` | Font-stack constants (`SERIF`, `SANS`, `SANS_UI`, `SERIF_DISPLAY`, …). **Use these instead of inline font strings.** |
 | `colors.ts` | `COLOR_PALETTE` (the 9 blob tints w/ light variants) + `MEMORY_COLORS`. Single source — was duplicated in 4 files. |
-| `memoryStore.ts` | Session-only user memories. `loadMemories()`, `saveMemory()`, `toMemoryEvent()`. Nothing is written to disk; a reload shows only the curated archive. |
+| `memoryStore.ts` | Session-only user memories. `loadMemories()`, `saveMemory()`, `toMemoryEvent()`. Tab-scoped sessionStorage restores the full memory, including its photo, on reload. |
 | `polish.ts` | Browser-side `requestPolish(transcript)` — POSTs to `/api/polish`, never throws (returns `{polished, error}`). |
 | `transcribe.ts` | Browser-side `requestTranscription(audio)` — POSTs the recording to `/api/transcribe`, never throws. Also holds the **recording→transcript hand-off**: `beginTranscription(audio)` starts the request and returns an id, `getTranscription(id)` picks it up on the next screen. |
 
@@ -1370,9 +1386,11 @@ environment variables for production.
 
 2. **pnpm only.** `npm install` fails on React 19 peer deps.
 
-3. **No persistence.** User-made memories stay in memory for this visit
-   (`lib/memoryStore.ts`) and are gone on reload. The 16 curated memories in
-   `data/memoryData.ts` are the archive the app always opens with.
+3. **Guest-session persistence.** User-made memories use tab-scoped sessionStorage
+   (`lib/memoryStore.ts`) and survive refreshes during this visit. Store the complete
+   artifact and photo; do not claim success when browser storage fails. There is no
+   permanent or public archive. The 16 curated memories in `data/memoryData.ts`
+   remain available alongside the guest’s saved memories.
 
 4. **`GlobalControls` must stay in the layout route**, not per-page — otherwise
    the background music restarts on every navigation.

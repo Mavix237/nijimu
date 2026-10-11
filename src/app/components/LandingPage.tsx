@@ -199,7 +199,7 @@ export function LandingPage() {
       {showGallery && (
         <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>
-          <LiveVesselGallery panels={publishedGallery?.panels} pushedAt={publishedGallery?.at ?? 0} onFocus={setVesselFocus}>
+          <LiveVesselGallery active={inGallery && pondElapsed === null} panels={publishedGallery?.panels} pushedAt={publishedGallery?.at ?? 0} onFocus={setVesselFocus}>
             <MemoryCarouselPage
               inkArrival={arrival ?? undefined}
               galleryFocusId={pondReturnId ?? vesselFocus ?? galleryEntry?.galleryFocusId ?? entryFocus?.id}

@@ -31,6 +31,8 @@ export type SeatDepth = ReturnType<typeof carouselSeat>;
 
 /** A seat's place with what the field adds to it. */
 export interface SeatPlace extends SeatDepth {
+  /** Camera-space distance, when the constellation projects this seat. */
+  depth?: number;
   haze?: number;
   /** A turn of the seat on the page, in degrees. */
   rotate?: number;

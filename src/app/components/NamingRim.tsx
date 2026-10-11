@@ -262,6 +262,7 @@ export function useNamingRim(
   const [fieldsVisible, setFieldsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveDialog, setSaveDialog] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const yearInputRef = useRef<HTMLInputElement>(null);
   const [archive] = useState(() => (session ? buildArchive() : []));
@@ -306,11 +307,14 @@ export function useNamingRim(
     };
   }, [active, draftFormKey, reducedMotion]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // A touch screen opens its keyboard on focus, over the vessel that has just
+  // landed: there the name waits for a tap instead.
+  const focusOnArrival = fieldsVisible && !window.matchMedia("(hover: none) and (pointer: coarse)").matches;
   useEffect(() => {
-    if (!fieldsVisible) return;
+    if (!focusOnArrival) return;
     nameInputRef.current?.focus();
     setFocusedField("name");
-  }, [fieldsVisible]);
+  }, [focusOnArrival]);
 
   const focusName = () => {
     nameInputRef.current?.focus();
@@ -357,30 +361,34 @@ export function useNamingRim(
 
   const persistAndOpenGallery = () => {
     if (!canContinue) return;
+    const shape = state?.shape;
+    const stored = saveMemory({
+      id: draftId,
+      title: memoryName.trim(),
+      year,
+      transcript: state?.transcript ?? "",
+      highlightedWords: state?.highlightedWords ?? [],
+      shape: {
+        form: draftShape.form,
+        matPresetIndex,
+        fluidity: shape?.fluidity ?? draftShape.fluidity,
+        evolve: shape?.evolve ?? draftShape.evolve,
+        bumpAmount: shape?.bumpAmount ?? draftShape.bumpAmount,
+      },
+      colorIndex,
+      ...(state?.assignment ? { assignment: state.assignment } : {}),
+      ...(state?.look ? { look: state.look } : {}),
+      createdAt: new Date().toISOString(),
+    });
+    if (!stored) {
+      setStorageError("Your browser couldn’t save this memory for the session. Storage may be full or disabled. You can still download an image to keep it.");
+      return;
+    }
+    setStorageError(null);
     setSaveDialog(false);
     setSaving(true);
 
     const commit = () => {
-      const shape = state?.shape;
-      saveMemory({
-        id: draftId,
-        title: memoryName.trim(),
-        year,
-        transcript: state?.transcript ?? "",
-        highlightedWords: state?.highlightedWords ?? [],
-        shape: {
-          form: draftShape.form,
-          matPresetIndex,
-          fluidity: shape?.fluidity ?? draftShape.fluidity,
-          evolve: shape?.evolve ?? draftShape.evolve,
-          bumpAmount: shape?.bumpAmount ?? draftShape.bumpAmount,
-        },
-        colorIndex,
-        ...(state?.assignment ? { assignment: state.assignment } : {}),
-        ...(state?.look ? { look: state.look } : {}),
-        createdAt: new Date().toISOString(),
-      });
-
       if (handlersRef.current.onSaved) {
         handlersRef.current.onSaved(draftId);
         return;
@@ -433,7 +441,7 @@ export function useNamingRim(
           }}
         />
         {saveDialog && <SaveMemoryDialog session={session} title={memoryName.trim()} year={year}
-          onClose={() => setSaveDialog(false)} onContinue={persistAndOpenGallery} />}</>
+          storageError={storageError} onClose={() => setSaveDialog(false)} onContinue={persistAndOpenGallery} />}</>
       );
 
   const caption = (
@@ -457,7 +465,7 @@ export function useNamingRim(
           onChange={setMemoryName}
           placeholder="name this memory..."
           ariaLabel="memory name"
-          autoFocus={fieldsVisible}
+          autoFocus={focusOnArrival}
           inputRef={nameInputRef}
           focused={fieldsVisible && focusedField === "name"}
           onFocus={() => setFocusedField("name")}
@@ -492,7 +500,7 @@ export function useNamingRim(
         onKeyDown={(event) => {
           if (event.key === "Enter" && canContinue) {
             event.preventDefault();
-            persistAndOpenGallery();
+            setSaveDialog(true);
             return;
           }
           if (event.key === "ArrowUp" || event.key === "ArrowDown") {

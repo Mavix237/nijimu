@@ -475,7 +475,8 @@ export function BlobScene({
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const isMobile = vw <= 768;
   const canvasWidth = isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
-  const canvasHeight = isMobile ? vh * 0.9 : vh * 1.5 * 0.9;
+  // never shorter than the screen: the pan's bounds assume the field covers it
+  const canvasHeight = isMobile ? vh : vh * 1.5 * 0.9;
   const baseSize = 120 * scale;
   const selSize = 260 * scale;
   const gap = 36 * scale;
@@ -1345,19 +1346,22 @@ export function BlobScene({
       data-ink-stage={!landingArrival ? "field" : entryTime < INK_ENTRY.descEnd ? "desc" : entryTime < INK_ENTRY.headerEnd ? "header" : entryTime < INK_ENTRY.labelsEnd ? "labels"
         : entryTime < INK_ENTRY.shrinkEnd ? "shrink" : entryTime < INK_ENTRY.pathEnd ? "gather" : entryTime < INK_ENTRY.pathHoldEnd ? "curve"
         : entryTime < INK_ENTRY.unfoldEnd ? "unfold" : "artifacts"}
-      className="relative w-full h-screen overflow-hidden cursor-pointer select-none"
+      className="relative w-full h-dvh overflow-hidden cursor-pointer select-none"
       style={{
         background: classicChrome
           ? (landingArrival ? `rgba(228,228,230,${entryPaper})` : LANDING_PAPER)
           : (landingArrival ? `rgba(237,237,238,${entryPaper})` : PAPER),
         isolation: classicChrome ? "isolate" : undefined,
+        // a finger pans the field (it is wider than a phone) rather than the page
+        touchAction: "none",
       }}
       onClick={handleClick}
       onWheel={handleWheel}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onPointerDown={handleMouseDown}
+      onPointerMove={handleMouseMove}
+      onPointerUp={handleMouseUp}
+      onPointerCancel={handleMouseUp}
+      onPointerLeave={handleMouseUp}
     >
       {/* SVG Filters */}
       <svg className="absolute w-0 h-0" aria-hidden="true">

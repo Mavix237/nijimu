@@ -278,8 +278,12 @@ export function PuddleTranscriptPage() {
 
   useEffect(() => {
     if (highlightMode) {
-      window.addEventListener("mouseup", handleMouseUp);
-      return () => window.removeEventListener("mouseup", handleMouseUp);
+      window.addEventListener("pointerup", handleMouseUp);
+      window.addEventListener("pointercancel", handleMouseUp);
+      return () => {
+        window.removeEventListener("pointerup", handleMouseUp);
+        window.removeEventListener("pointercancel", handleMouseUp);
+      };
     }
   }, [highlightMode, isSelecting, currentSelection, highlightedWords]);
 
@@ -456,14 +460,20 @@ export function PuddleTranscriptPage() {
                 return (
                   <span
                     key={index}
-                    onMouseDown={() => handleMouseDown(index)}
-                    onMouseEnter={() => handleMouseEnter(index)}
+                    onPointerDown={(e) => {
+                      // a finger captures the word it lands on; let go so the drag can reach the next one
+                      e.currentTarget.releasePointerCapture(e.pointerId);
+                      handleMouseDown(index);
+                    }}
+                    onPointerEnter={() => handleMouseEnter(index)}
                     style={{
                       position: "relative",
                       display: "inline-block",
                       opacity: isVisible ? 1 : 0,
                       transition: isTyping ? WORD_IN : "none",
                       cursor: highlightMode ? "pointer" : "default",
+                      // a sideways drag highlights; an upright one still scrolls the passage
+                      touchAction: highlightMode ? "pan-y" : undefined,
                       marginRight: index < words.length - 1 ? "0.3em" : 0,
                     }}
                   >

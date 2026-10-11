@@ -21,7 +21,25 @@ function load(path, imports = {}, globals = {}) {
 }
 
 const landing = load("../src/app/lib/landingTransition.ts");
-const { POND_ENTRY, pondTransition, pondRimTravel, pondRimPose, pondRimSeat, pondSurfaceMask } = load("../src/app/lib/pondTransition.ts", { "./landingTransition": landing });
+const { POND_ENTRY, pondTransition, pondRimTravel, pondRimPose, pondRimSeat, pondFieldSeat, pondSurfaceMask } = load("../src/app/lib/pondTransition.ts", { "./landingTransition": landing });
+for (const height of [640, 1000]) {
+  for (const depth of [1, 4, 12, 24]) {
+    const size = 300, y = height * .8;
+    let previousY = y;
+    for (let step = 0; step <= 100; step++) {
+      const pose = pondFieldSeat(200, y, size, depth, height, step / 100, false);
+      assert.equal(pose.x, 200, 'constellation departure preserves horizontal placement');
+      assert.equal(pose.scale, 1, 'departure preserves artifact size');
+      assert.ok(pose.y <= previousY, 'each memory travels upward without a reversal');
+      previousY = pose.y;
+    }
+    assert.ok(previousY + size / 2 < 0, 'every memory fully clears the viewport');
+    assert.equal(pondFieldSeat(200, y, size, depth, height, 0, false).y, y, 'no jump at departure');
+    assert.equal(pondFieldSeat(200, y, size, depth, height, 1, true).y, y, 'reduced motion leaves seats still under the pond fade');
+  }
+  assert.ok(pondFieldSeat(200, 400, 300, 1, height, .5, false).y < pondFieldSeat(200, 400, 300, 12, height, .5, false).y,
+    'near memories travel faster than distant memories');
+}
 assert.equal(pondSurfaceMask(1), undefined, "settled pond retains its original appearance");
 assert.equal(pondSurfaceMask(2), undefined);
 assert.ok(pondSurfaceMask(0).includes("black 480px"), "entry feather spans twice the original height");

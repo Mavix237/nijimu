@@ -26,7 +26,7 @@ export function BackButton({ onClick }: BackButtonProps) {
       style={{
         position: "absolute",
         top: HEADER_CENTER - BACK_SIZE / 2,
-        left: 30,
+        left: "var(--chrome-left)",
         width: BACK_SIZE,
         height: BACK_SIZE,
         display: "flex",

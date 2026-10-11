@@ -3,7 +3,7 @@ import { CHROME_GRAY } from "../lib/colors";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./HeaderIconLabel";
 
 /** Top-right switch between the G-key carousel and the card grid.
- *  Sits left of the profile / music chrome (those are at right 68 and 22).
+ *  Sits left of the profile / music chrome (see --chrome-r* in responsive.css).
  *  The dedicated /memory carousel uses `icon="plus"` to create a memory. */
 export function GalleryViewToggle({
   view,
@@ -46,11 +46,11 @@ export function GalleryViewToggle({
       onBlur={() => setNameShown(false)}
       style={{
         position: "fixed",
-        top: 22,
-        right: 114,
+        top: "var(--chrome-top)",
+        right: "var(--chrome-r2)",
         zIndex: 99999,
         boxSizing: "border-box",
-        width: 36,
+        width: "var(--chrome-icon)",
         height: 36 + HEADER_ICON_LABEL_PAD,
         padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
         border: "none",

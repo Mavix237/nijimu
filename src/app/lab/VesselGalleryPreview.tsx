@@ -4,7 +4,7 @@ import { MemoryCarouselPage } from "../components/MemoryCarouselPage";
 import { LIFE_EVENTS } from "../data/memoryData";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
 import { buildArchive, type ArchiveArtifact } from "../lib/archive";
-import { carouselContainsOffset } from "../lib/carouselLayout";
+import { carouselContainsOffset, portraitTall } from "../lib/carouselLayout";
 import {
   GalleryOverrideContext, type ArtifactSeat, type GalleryOverride, type SeatDepth, type SeatPlace,
 } from "../lib/galleryOverride";
@@ -145,12 +145,15 @@ function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number
   const w2 = smooth01(Math.max(0, offset - 1));
   const shrink = 0.22 * w1 + 0.06 * w2;
   const scale = depth.scale * (1 - shrink);
+  // an upright phone has height to spare and no width: the newer ones step
+  // further down and out, so the one in hand stays clear
+  const tall = portraitTall(viewport.w, viewport.h);
   return {
     ...depth,
     scale,
     size: depth.size * (1 - shrink),
-    x: depth.x + viewport.w * (0.045 * w1 + 0.045 * w2),
-    y: depth.y + viewport.h * (0.025 * w1 + 0.075 * w2),
+    x: depth.x + viewport.w * (0.045 * w1 + 0.045 * w2 + 0.06 * w1 * tall),
+    y: depth.y + viewport.h * (0.025 * w1 + 0.075 * w2 + (0.07 * w1 + 0.05 * w2) * tall),
     blurPx: depth.blurPx * (depth.scale / scale),
     order,
   };
@@ -273,7 +276,7 @@ class FieldDriver {
 function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   const [nameShown, setNameShown] = useState(false);
   const title = on ? "back along the years" : "see them in the air";
-  const name = on ? "years" : "constellation";
+  const name = on ? "timeline" : "constellation";
   return (
     <button
       type="button"
@@ -284,8 +287,8 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       onFocus={() => setNameShown(true)}
       onBlur={() => setNameShown(false)}
       style={{
-        position: "fixed", top: 22, right: 156, zIndex: 99999, boxSizing: "border-box",
-        width: 36, height: 36 + HEADER_ICON_LABEL_PAD, padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
+        position: "fixed", top: "var(--chrome-top)", right: "var(--chrome-r3)", zIndex: 99999, boxSizing: "border-box",
+        width: "var(--chrome-icon)", height: 36 + HEADER_ICON_LABEL_PAD, padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
         border: "none", background: "transparent", cursor: "pointer",
         display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.85,
       }}
@@ -397,6 +400,7 @@ function draftsFromStore() {
  * keeps every memory, and `resolve` says which vessel each one is.
  */
 export function VesselGalleryProvider({
+  active = true,
   items,
   resolve,
   cacheKeyFor,
@@ -405,6 +409,7 @@ export function VesselGalleryProvider({
   onFocus,
   children,
 }: {
+  active?: boolean;
   items?: ArchiveArtifact[];
   resolve: (item: ArchiveArtifact) => VesselState;
   cacheKeyFor: (item: ArchiveArtifact) => string;
@@ -424,9 +429,12 @@ export function VesselGalleryProvider({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [frame, setFrame] = useState(0);
   const rafRef = useRef(0);
+  const activeRef = useRef(active);
+  activeRef.current = active;
   const run = useCallback(() => {
-    if (rafRef.current) return;
+    if (rafRef.current || !activeRef.current) return;
     const tick = (now: number) => {
+      if (!activeRef.current) { rafRef.current = 0; return; }
       const more = field.tick(now);
       setFrame((f) => f + 1);
       rafRef.current = more ? requestAnimationFrame(tick) : 0;
@@ -434,6 +442,10 @@ export function VesselGalleryProvider({
     rafRef.current = requestAnimationFrame(tick);
   }, [field]);
   useEffect(() => () => cancelAnimationFrame(rafRef.current), []);
+  useEffect(() => {
+    if (active) run();
+    else { cancelAnimationFrame(rafRef.current); rafRef.current = 0; }
+  }, [active, run]);
 
   const setField = useCallback((on: boolean, around: number) => {
     field.set(on, around, performance.now());
@@ -443,7 +455,7 @@ export function VesselGalleryProvider({
   }, [field, run]);
 
   useEffect(() => {
-    if (!fieldOn) return;
+    if (!fieldOn || !active) return;
     const move = (e: PointerEvent) => {
       field.camTarget = {
         x: ((e.clientX / window.innerWidth) * 2 - 1) * PARALLAX_X,
@@ -465,7 +477,7 @@ export function VesselGalleryProvider({
       window.removeEventListener("pointermove", move);
       window.removeEventListener("wheel", wheel);
     };
-  }, [fieldOn, field, run]);
+  }, [fieldOn, active, field, run]);
 
   const indexOf = useCallback((item: ArchiveArtifact) => list.findIndex((it) => it.id === item.id), [list]);
   const listRef = useRef(list);
@@ -581,11 +593,13 @@ export function VesselGalleryProvider({
 
 /** /memory — the gallery lab's vessels, with whatever side panel was last pushed. */
 export function LiveVesselGallery({
+  active = true,
   panels,
   pushedAt,
   onFocus,
   children,
 }: {
+  active?: boolean;
   panels?: GalleryPanelPush[];
   pushedAt: number;
   onFocus?: (id: string) => void;
@@ -622,7 +636,7 @@ export function LiveVesselGallery({
     preloadSeatPhotos(urls);
   }, []);
   return (
-    <VesselGalleryProvider resolve={resolve} cacheKeyFor={cacheKeyFor} revision={pushedAt} onFocus={onFocus}>
+    <VesselGalleryProvider active={active} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={pushedAt} onFocus={onFocus}>
       {children}
     </VesselGalleryProvider>
   );

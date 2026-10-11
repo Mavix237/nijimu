@@ -9,13 +9,14 @@ export function HeaderIconLabel({ name, shown }: { name: string; shown: boolean 
   return (
     <span
       aria-hidden
+      className="header-icon-label"
       style={{
         position: "absolute",
         top: 40,
         left: "50%",
         transform: "translateX(-50%)",
         fontFamily: SANS,
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: 400,
         letterSpacing: "0.04em",
         lineHeight: 1,

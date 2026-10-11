@@ -6,11 +6,14 @@ import { SceneViewer } from "./SceneViewer";
 import svgPaths from "../../imports/svg-f02d7wi360";
 import { SANS, SERIF } from "../lib/theme";
 import { PillButton } from "./PillButton";
+import { useCompact } from "../hooks/useCompact";
 
 export function RevisitMemoryPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [fadeIn, setFadeIn] = useState(false);
+  // a phone has the height for this stack only if each part gives a little
+  const compact = useCompact();
 
   // Get memory data from location state
   const memory = location.state?.memory;
@@ -49,7 +52,7 @@ export function RevisitMemoryPage() {
 
   return (
     <div
-      className="relative w-full h-screen flex flex-col overflow-hidden"
+      className="relative w-full h-dvh flex flex-col overflow-hidden"
       style={{ background: "#e0e0e0" }}
     >
       {/* Content wrapper with fade in */}
@@ -62,16 +65,16 @@ export function RevisitMemoryPage() {
         <p
           style={{
             fontFamily: SERIF,
-            fontSize: 28,
+            fontSize: compact ? 24 : 28,
             fontWeight: 400,
-            lineHeight: "39.2px",
-            letterSpacing: "-2px",
+            lineHeight: compact ? "34px" : "39.2px",
+            letterSpacing: compact ? "-1.5px" : "-2px",
             color: "#7b7b87",
             textTransform: "lowercase",
             whiteSpace: "nowrap",
             textAlign: "center",
-            marginTop: "clamp(180px, 23vh, 231px)",
-            marginBottom: "clamp(40px, 8vh, 80px)",
+            marginTop: compact ? "clamp(96px, 14vh, 140px)" : "clamp(180px, 23vh, 231px)",
+            marginBottom: compact ? 24 : "clamp(40px, 8vh, 80px)",
           }}
         >
           how does it feel today?
@@ -82,13 +85,13 @@ export function RevisitMemoryPage() {
           className="relative flex items-center justify-center"
           style={{
             flexGrow: 1,
-            maxHeight: "clamp(300px, 40vh, 451px)",
+            maxHeight: compact ? "min(300px, 38vh)" : "clamp(300px, 40vh, 451px)",
           }}
         >
           <div
             style={{
-              width: "clamp(320px, 35vw, 431px)",
-              height: "clamp(320px, 35vh, 451px)",
+              width: compact ? "min(320px, calc(100vw - 48px))" : "clamp(320px, 35vw, 431px)",
+              height: compact ? "min(300px, 38vh)" : "clamp(320px, 35vh, 451px)",
               position: "relative",
             }}
           >
@@ -120,17 +123,18 @@ export function RevisitMemoryPage() {
         <div
           style={{
             textAlign: "center",
-            marginTop: "clamp(40px, 8vh, 80px)",
-            marginBottom: "clamp(30px, 6vh, 60px)",
+            marginTop: compact ? 24 : "clamp(40px, 8vh, 80px)",
+            marginBottom: compact ? 16 : "clamp(30px, 6vh, 60px)",
+            paddingInline: 24,
           }}
         >
           <p
             style={{
               fontFamily: SERIF,
-              fontSize: 28,
+              fontSize: compact ? 24 : 28,
               fontWeight: 400,
-              lineHeight: "39.2px",
-              letterSpacing: "-2px",
+              lineHeight: compact ? "34px" : "39.2px",
+              letterSpacing: compact ? "-1.5px" : "-2px",
               color: "#7b7b87",
               textTransform: "lowercase",
               whiteSpace: "pre-line",
@@ -144,7 +148,7 @@ export function RevisitMemoryPage() {
               fontFamily: SERIF,
               fontSize: 16,
               fontWeight: 400,
-              lineHeight: "39.2px",
+              lineHeight: compact ? "28px" : "39.2px",
               color: "#7b7b87",
               textTransform: "lowercase",
             }}
@@ -157,8 +161,8 @@ export function RevisitMemoryPage() {
         <PillButton
           label="click to record"
           onClick={handleContinue}
-          icon={<svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 18.75 18.75" > <path d={svgPaths.p12d5cb00} fill="white" /> </svg>}
-          style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: "clamp(80px, 12vh, 120px)", zIndex: 10 }}
+          icon={<span style={{ position: "relative", display: "block", width: 14, height: 14, flexShrink: 0 }}><svg className="absolute block size-full" fill="none" preserveAspectRatio="none" viewBox="0 0 18.75 18.75" > <path d={svgPaths.p12d5cb00} fill="white" /> </svg></span>}
+          style={{ position: "fixed", left: "50%", transform: "translateX(-50%)", bottom: compact ? "max(28px, env(safe-area-inset-bottom))" : "clamp(80px, 12vh, 120px)", zIndex: 10 }}
         />
       </div>
 

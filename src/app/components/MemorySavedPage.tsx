@@ -37,6 +37,7 @@ export function MemorySavedPage() {
   const [showText, setShowText] = useState(false);
   const [showButton, setShowButton] = useState(false);
   const persistedRef = useRef(false);
+  const [saveError, setSaveError] = useState(false);
 
   useEffect(() => {
     // Orchestrate the reveal animation - more subtle fades
@@ -53,7 +54,7 @@ export function MemorySavedPage() {
     persistedRef.current = true; // guards against StrictMode's double effect
 
     const matPresetIndex = state.matPresetIndex ?? 0;
-    saveMemory({
+    const stored = saveMemory({
       id: crypto.randomUUID(),
       title: memoryName,
       year,
@@ -71,6 +72,7 @@ export function MemorySavedPage() {
       colorIndex: Math.round((matPresetIndex / 4) * (COLOR_PALETTE.length - 1)),
       createdAt: new Date().toISOString(),
     });
+    setSaveError(!stored);
   }, [isEditing, memoryName, state, year]);
 
   const displayName = memoryName || "your memory";
@@ -78,7 +80,7 @@ export function MemorySavedPage() {
 
   return (
     <div
-      className="relative w-full h-screen overflow-hidden"
+      className="relative w-full h-dvh overflow-hidden"
       style={{ 
         background: "#e0e0e0",
       }}
@@ -126,7 +128,7 @@ export function MemorySavedPage() {
                 marginBottom: 16,
               }}
             >
-              {isEditing ? "memory updated" : "memory preserved"}
+              {saveError ? "memory couldn’t be saved" : isEditing ? "memory updated" : "memory preserved"}
             </p>
             
 
@@ -143,7 +145,7 @@ export function MemorySavedPage() {
                 margin: 0,
               }}
             >
-              {isEditing 
+              {saveError ? "Your browser’s session storage may be full or disabled. Please go back and try again." : isEditing
                 ? "the shape has been reshaped, reflecting how you feel about it now"
                 : "it will blend with the others, waiting to be rediscovered when the time feels right"}
             </p>

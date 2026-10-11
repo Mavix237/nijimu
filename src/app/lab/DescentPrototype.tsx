@@ -59,6 +59,7 @@ import {
 } from "./VesselPreview";
 import photoA from "../../assets/memory-photo.jpg";
 import photoB from "../../assets/memory-photo-02.png";
+import { PortraitFit, viewHalfTan } from "../lib/portraitView";
 
 /*
  * Lab: the whole shot from the photo to the named memory, in one canvas.
@@ -1590,7 +1591,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       // filling the lab's view; here it is smaller on screen, so they scale with its size
       // or the picture inside would be smeared several times as much
       const cam = camera as THREE.PerspectiveCamera;
-      const onScreen = body.scale.x / (Math.max(0.1, cam.position.distanceTo(body.position)) * Math.tan((cam.fov / 2) * Math.PI / 180));
+      const onScreen = body.scale.x / (Math.max(0.1, cam.position.distanceTo(body.position)) * viewHalfTan(cam));
       const sizeK = Math.min(1.5, Math.max(0.15, onScreen / LAB_ON_SCREEN));
       vesselTune.bend = VESSEL_TUNE.bend * sizeK;
       vesselTune.glassSoft = VESSEL_TUNE.glassSoft * sizeK;
@@ -1687,13 +1688,23 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         left = Math.min(left, x); right = Math.max(right, x);
         top = Math.min(top, y); bottom = Math.max(bottom, y);
       }
-      const gap = 28, w = hint.offsetWidth;
+      const gap = 28;
+      // an upright phone has no room beside the strip: the line goes under it, wider
+      const beside = size.width / size.height >= .8;
+      hint.style.maxWidth = beside ? "min(20em, 40vw)" : "min(20em, calc(100vw - 48px))";
+      const w = hint.offsetWidth;
       // the lab's knobs panel covers the right of the canvas; the line keeps out from under it
       const covered = document.querySelector("[data-covers-right]")?.getBoundingClientRect().left ?? size.width;
       const onRight = right + gap + w <= Math.min(size.width, covered) - 24;
-      const x = onRight ? right + gap : Math.max(24, left - gap - w);
-      hint.style.transform = `translate(${x.toFixed(1)}px, ${((top + bottom) / 2).toFixed(1)}px) translateY(-50%)`;
-      hint.style.textAlign = onRight ? "left" : "right";
+      if (!beside) {
+        const x = Math.min(size.width - 24 - w, Math.max(24, (left + right) / 2 - w / 2));
+        hint.style.transform = `translate(${x.toFixed(1)}px, ${(bottom + gap).toFixed(1)}px)`;
+        hint.style.textAlign = "center";
+      } else {
+        const x = onRight ? right + gap : Math.max(24, left - gap - w);
+        hint.style.transform = `translate(${x.toFixed(1)}px, ${((top + bottom) / 2).toFixed(1)}px) translateY(-50%)`;
+        hint.style.textAlign = onRight ? "left" : "right";
+      }
     }
   });
 
@@ -2469,17 +2480,17 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const yearSettled = year.length === 4 && Number(year) <= currentYear;
   const canSave = phase === "naming" && memoryName.trim() !== "" && yearSettled;
   const savedThisRun = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   /* The lab's save path keeps the same complete artifact as the naming rim. */
   const save = () => {
     if (!canSave || savedThisRun.current) return;
-    savedThisRun.current = true;
     const oklch = stage.current.oklch;
     const matPresetIndex = Math.min(
       Math.round((((oklch.h % 360) + 360) % 360) / 360 * (MATERIAL_PRESETS.length - 1)),
       MATERIAL_PRESETS.length - 1,
     );
-    saveMemory({
+    const stored = saveMemory({
       id: memoryId,
       title: memoryName.trim(),
       year,
@@ -2491,6 +2502,12 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       look: { ...(lifted ? { photoUrl: lifted } : {}), oklch, vividness: 1 - stage.current.frost },
       createdAt: new Date().toISOString(),
     });
+    if (!stored) {
+      setSaveError("Your browser couldn’t save this memory for the session. Storage may be full or disabled.");
+      return;
+    }
+    savedThisRun.current = true;
+    setSaveError(null);
     setPhase("saved");
   };
 
@@ -2543,6 +2560,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         renderScene={pond => ready ? (<Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
         onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
         dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
+        <PortraitFit />
         <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef}
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
@@ -2708,11 +2726,11 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {step && <>
         <FlowPageGrid style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
           heading={<div key={step} style={{ animation: "descentStepIn 900ms ease backwards" }}>
-            <p style={{ ...TITLE, margin: 0, color: UNDER_INK }}>
-              <span style={{ fontFamily: SERIF_CJK }}>{STEP_COPY[step].mark}</span>
-              {" "}{STEP_COPY[step].name}
+            <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
+            <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
+              {STEP_COPY[step].name}
             </p>
-            <p style={{ margin: "14px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
+            <p style={{ margin: "28px 0 0", fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].lines[0]}<br />{STEP_COPY[step].lines[1]}
             </p>
             {STEP_COPY[step].drag && (
@@ -2751,6 +2769,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             onKeyDown={(e) => { if (e.key === "Enter") save(); }}
             style={{ ...CAPTION_YEAR_STYLE, width: "6em" }} />
         )}
+        {saveError && <p role="alert" style={{ ...CAPTION_YEAR_STYLE, maxWidth: 300 }}>{saveError}</p>}
         <TextButton label="save memory" onClick={save} disabled={!canSave}
           style={{ position: "absolute", top: "100%", marginTop: 48, opacity: canSave ? 1 : 0, transition: "opacity 400ms ease" }} />
       </div>

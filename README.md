@@ -35,6 +35,11 @@ Run `npm run dev` to start the development server.
 The profile has no page of its own: the profile button opens a glass popup over
 whatever page you are on.
 
+Both the timeline and constellation have a **create** button in the header.
+From the constellation, memories rise at different speeds according to their
+depth to reveal the pond; returning reverses that motion. Reduced motion uses
+the pond fade without moving the constellation.
+
 The create flow gives each underwater step its own browser-history entry.
 Back from distance returns to rhythm, then shape, then the photo/film step;
 Forward retraces those entries. Revisiting the photo/film step reopens the empty
@@ -44,6 +49,17 @@ routes keep the same canvas, water clock and current edits mounted. Returning fr
 memory at colour. Direct underwater URLs open that step using a carried draft,
 or the sample form when no draft is available. `/lab/descent` keeps its separate
 animation controls; `/record/shape/:step` remains an older-bookmark redirect.
+
+On naming, **save memory** opens a guest notice: memories remain in the
+gallery for the current browser-tab session, including after a refresh. The complete
+memory (photo, transcript and edited appearance) is kept in `sessionStorage`, not
+a permanent or public archive. **continue without download** opens the
+gallery; **download memory** first saves a PNG with the nijimu wordmark, the
+chosen artifact and photo, its name/year, and the full transcript beneath it.
+The image uses the gallery water shader without neighbouring artifacts. Export
+layout grows for long transcripts. Download errors leave the dialog open to retry.
+Run `node scripts/check-memory-image.mjs` for text-wrapping regression checks and
+`node scripts/check-memory-store.mjs` for session restoration and storage-failure checks.
 
 
 ## Fonts

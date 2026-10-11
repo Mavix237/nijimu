@@ -5,6 +5,7 @@ import { POND_THOUGHTS, type PondPromptCue } from "../lib/pondPrompts";
 import { POND_TRAIL_SLOTS, POND_TRAIL_LIFETIME, samplePondTrail, type TrailPoint, type TrailAnchor } from "../lib/pondTrail";
 import { POND_DROP_SLOTS } from "../lib/voicePeaks";
 import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamera";
+import { PortraitFit } from "../lib/portraitView";
 
 export interface PondTouch { x: number; y: number; serial: number; strength?: number }
 
@@ -641,6 +642,7 @@ export function PerspectivePond(props: PondProps) {
     <Canvas camera={{ ...POND_LENS, position: [0, 2.2, 10] }}
       dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }} fallback={fallback}
       style={{ position: "absolute", inset: 0 }}>
+      <PortraitFit />
       <PondWater {...props} />
     </Canvas>
   </PondBoundary>;

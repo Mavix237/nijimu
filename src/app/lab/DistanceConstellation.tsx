@@ -6,6 +6,7 @@ import { carouselFrame } from "../lib/carouselLayout";
 import { galleryStateFor } from "./VesselGalleryPreview";
 import { FIELD_FOCAL, distancePreviewSeat, memoryFieldPlace } from "./vesselField";
 import { loadSeatPhoto } from "./VesselArtifact";
+import { viewHalfTan } from "../lib/portraitView";
 import {
   BLANK_PHOTO, FRONT_LAYER, buildGlass, buildDrapedSheet, buildSheet,
   createGlassUniformSet, createSheetUniformSet, glassVertex, glassRefractFragment,
@@ -86,13 +87,13 @@ function Neighbor({ index, state, place, stage, anchor, depth: chosenDepth, scen
     root.current.visible = seat.opacity > .001;
     if (!root.current.visible) return;
     const depth = distance * seat.depth / FIELD_FOCAL;
-    const halfH = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * depth;
+    const halfH = viewHalfTan(cam) * depth;
     vector.set((seat.x / size.width - .5) * 2 * halfH * cam.aspect, (.5 - seat.y / size.height) * 2 * halfH, -depth);
     root.current.position.copy(vector.applyQuaternion(cam.quaternion).add(cam.position));
     root.current.quaternion.copy(cam.quaternion);
     root.current.rotateY(-state.tune.anchorAngle * Math.PI / 180);
     const frame = carouselFrame(size.width, size.height);
-    const scale = frame.size / size.height * 2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * distance / built.height;
+    const scale = frame.size / size.height * 2 * viewHalfTan(cam) * distance / built.height;
     root.current.scale.setScalar(scale);
     root.current.traverse(child => {
       if (child instanceof THREE.Mesh && child.layers.isEnabled(FRONT_LAYER)) child.renderOrder = 100 - seat.depth * 2;

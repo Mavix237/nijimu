@@ -11,9 +11,10 @@ import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { VesselArtifact } from "../lab/VesselArtifact";
 import { copyArtifactFrame, downloadMemoryImage, memoryImage } from "../lib/memoryImage";
 
-export function SaveMemoryDialog({ session, title, year, onClose, onContinue }: {
+export function SaveMemoryDialog({ session, title, year, onClose, onContinue, storageError }: {
   session: NamingSession; title: string; year: string;
   onClose: () => void; onContinue: () => void;
+  storageError?: string | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +22,17 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue }: 
   const captured = useRef(false);
   const vessel = useMemo(() => galleryStateFor(draftArtifactOf(session)), [session]);
   useEffect(() => () => { attempt.current++; }, []);
+  useEffect(() => {
+    // Escape belongs to this dialog, not the pond's underlying Back shortcut.
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (!busy) onClose();
+    };
+    window.addEventListener("keydown", escape, true);
+    return () => window.removeEventListener("keydown", escape, true);
+  }, [busy, onClose]);
   useEffect(() => {
     if (!busy) return;
     const timer = window.setTimeout(() => {
@@ -40,6 +52,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue }: 
       const blob = await memoryImage(frame, title, year, session.state.transcript ?? "");
       if (attempt.current !== current) return;
       downloadMemoryImage(blob, title);
+      setBusy(false);
       onContinue();
     } catch {
       if (attempt.current !== current) return;
@@ -49,6 +62,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue }: 
   };
 
   return createPortal(<div style={{ pointerEvents: "auto" }} onKeyDown={event => {
+    event.stopPropagation();
     // Keep keyboard navigation inside the modal while its backdrop is open.
     if (event.key !== "Tab") return;
     const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
@@ -59,15 +73,15 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue }: 
   }}>
     <GlassPane open onClose={onClose} closeLabel="return to naming" closeDisabled={busy} labelledBy="save-memory-title">
       <h2 id="save-memory-title" style={{ ...TITLE, color: CHROME_GRAY, margin: 0, textAlign: "center" }}>Keep a copy of your memory</h2>
-      <p style={{ fontFamily: SERIF, fontSize: BODY_SIZE, lineHeight: 1.65, color: CHROME_GRAY, margin: 0 }}>
-        You’re using a test account. Your memory will appear in the gallery for this visit, but won’t be saved permanently. Download an image to keep it with you.
-      </p>
-      {error && <p role="alert" style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: CHROME_GRAY, margin: 0 }}>{error}</p>}
+      <div style={{ fontFamily: SERIF, fontSize: BODY_SIZE, lineHeight: 1.65, color: CHROME_GRAY }}>
+        <p style={{ margin: 0 }}>You are exploring <em>nijimu</em> as a guest. Your memory will remain in the gallery during this visit, but won't be saved or shared publicly.</p>
+        <p style={{ margin: "1.65em 0 0" }}>Download an image to keep it with you.</p>
+      </div>
+      {(error || storageError) && <p role="alert" style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: CHROME_GRAY, margin: 0 }}>{error || storageError}</p>}
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, width: "100%" }}>
         <PillButton label={busy ? "preparing your memory…" : "download memory"} disabled={busy} style={{ width: "100%" }}
           onClick={() => { if (busy) return; attempt.current++; captured.current = false; setError(null); setBusy(true); }} />
         <TextButton label="continue without download" disabled={busy} onClick={onContinue} />
-        {busy && <span role="status" style={{ fontFamily: SERIF, fontSize: BODY_SIZE, color: CHROME_GRAY }}>Preparing your image…</span>}
       </div>
     </GlassPane>
     {busy && <div aria-hidden style={{ position: "fixed", left: -20000, top: 0, width: 960, height: 960, pointerEvents: "none" }}>

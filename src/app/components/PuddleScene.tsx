@@ -1218,7 +1218,7 @@ export function PuddleScene({
 
   return (
     <div
-      className="relative w-full h-screen overflow-hidden select-none"
+      className="relative w-full h-dvh overflow-hidden select-none"
       style={{ background: PAGE_BG }}
     >
       {/* The water. Under the naming step it is there but unseen — at depth,

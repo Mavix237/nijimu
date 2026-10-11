@@ -11,7 +11,7 @@ import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
 import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
-import { pondRimPose, pondRimSeat } from "../lib/pondTransition";
+import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
 import { carouselFrame, carouselSeat, carouselContainsOffset, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
 
 /*
@@ -291,6 +291,10 @@ export function PuddleDiveGallery({
 
   const openPondFromPlus = () => {
     if (pondDeparture > 0 || pendingPondRef.current) return;
+    if (inField) {
+      onOverscrollExit?.();
+      return;
+    }
     const target = Math.max(0, items.length - 1);
     if (target === activeIdx) {
       onOverscrollExit?.();
@@ -780,7 +784,9 @@ export function PuddleDiveGallery({
           const focused = Math.abs(offset) < 0.5 && !field?.on;
           const curveDepth = carouselSeat(viewport.w, viewport.h, offset);
           const depth: SeatPlace = override?.adjustSeat ? override.adjustSeat(curveDepth, offset, viewport, slotItem) : curveDepth;
-          const seat = pondRimSeat(depth.x, depth.y, geo.cx, geo.apexY, viewport.h, pondDeparture, !!reducedMotion);
+          const seat = inField
+            ? pondFieldSeat(depth.x, depth.y, geo.size * depth.scale, depth.depth ?? 4 / Math.max(.01, depth.scale), viewport.h, pondDeparture, !!reducedMotion)
+            : pondRimSeat(depth.x, depth.y, geo.cx, geo.apexY, viewport.h, pondDeparture, !!reducedMotion);
           const slotPalette =
             COLOR_PALETTE[slotItem.colorIndex % COLOR_PALETTE.length];
           /* handed over rather than arriving: it is already exactly here */
@@ -1040,7 +1046,7 @@ export function PuddleDiveGallery({
         view="carousel"
         icon={toggleIcon}
         onToggle={toggleIcon === "plus" ? openPondFromPlus : (onToggleGrid ?? (() => {}))}
-        visible={!hideHeader && yearsVisible && (toggleIcon === "plus" ? !!onOverscrollExit : !!onToggleGrid)}
+        visible={!hideHeader && (toggleIcon === "plus" ? chromeVisible && !!onOverscrollExit : yearsVisible && !!onToggleGrid)}
         enterAnimation={carriedChrome}
       />
 

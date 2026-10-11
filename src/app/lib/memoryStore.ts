@@ -1,10 +1,10 @@
 import { MemoryEvent } from "../data/memoryData";
 import type { MemoryAssignment } from "./memoryShape";
-import type { ArtifactForm } from "./superformula";
+import { isArtifactForm, type ArtifactForm } from "./superformula";
 
 const KEY = "nijimu.memories.v1";
 
-/** A memory the user recorded in this visit. Never written to disk. */
+/** A guest memory kept in this tab's session, including across refreshes. */
 export interface SavedMemory {
   id: string;
   title: string;
@@ -40,8 +40,32 @@ export interface MemoryLook {
   vividness?: number;
 }
 
-/** This tab only. A reload starts from the curated archive again. */
-let session: SavedMemory[] = [];
+function isSavedMemory(value: unknown): value is SavedMemory {
+  if (!value || typeof value !== "object") return false;
+  const m = value as SavedMemory;
+  const finite = (n: unknown) => typeof n === "number" && Number.isFinite(n);
+  return typeof m.id === "string" && !!m.id && typeof m.title === "string"
+    && typeof m.year === "string" && typeof m.transcript === "string" && typeof m.createdAt === "string"
+    && Array.isArray(m.highlightedWords) && m.highlightedWords.every(word => typeof word === "string")
+    && !!m.shape && isArtifactForm(m.shape.form)
+    && [m.shape.matPresetIndex, m.shape.fluidity, m.shape.evolve, m.shape.bumpAmount, m.colorIndex].every(finite)
+    && (m.look === undefined || (!!m.look && typeof m.look === "object"
+      && (m.look.photoUrl === undefined || typeof m.look.photoUrl === "string")
+      && (m.look.vividness === undefined || finite(m.look.vividness))
+      && (m.look.oklch === undefined || (!!m.look.oklch && [m.look.oklch.l, m.look.oklch.c, m.look.oklch.h].every(finite)))));
+}
+
+function restoreSession(): SavedMemory[] {
+  try {
+    const stored: unknown = JSON.parse(sessionStorage.getItem(KEY) ?? "[]");
+    return Array.isArray(stored) ? stored.filter(isSavedMemory) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** sessionStorage survives reloads, but isn't a permanent or public archive. */
+let session = restoreSession();
 
 function forgetPersisted(): void {
   try {
@@ -54,13 +78,22 @@ function forgetPersisted(): void {
 forgetPersisted();
 
 export function loadMemories(): SavedMemory[] {
-  forgetPersisted();
-  return session;
+  return [...session];
 }
 
-export function saveMemory(memory: SavedMemory): void {
-  forgetPersisted();
-  session = [...session, memory];
+/** False means browser storage was blocked/full; callers must not claim a save. */
+export function saveMemory(memory: SavedMemory): boolean {
+  // Re-saving the same draft updates it rather than duplicating its gallery seat.
+  const next = session.some(item => item.id === memory.id)
+    ? session.map(item => item.id === memory.id ? memory : item)
+    : [...session, memory];
+  try {
+    sessionStorage.setItem(KEY, JSON.stringify(next));
+  } catch {
+    return false;
+  }
+  session = next;
+  return true;
 }
 
 /** Presents a saved memory in the same shape as the curated LIFE_EVENTS. */

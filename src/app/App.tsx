@@ -207,7 +207,7 @@ function GlobalControls({
     position: "fixed" as const,
     zIndex: 99999,
     boxSizing: "border-box" as const,
-    width: 36,
+    width: "var(--chrome-icon)",
     height: 36 + HEADER_ICON_LABEL_PAD,
     padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
     borderRadius: 0,
@@ -234,8 +234,8 @@ function GlobalControls({
           onBlur={() => setNameShown(null)}
           style={{
             ...iconButtonStyle,
-            top: 22,
-            right: 68,
+            top: "var(--chrome-top)",
+            right: "var(--chrome-r1)",
             opacity: leavingScene ? 0 : 1,
             transition: leavingScene ? `opacity ${LANDING_RETURN.sceneFadeMs}ms ease` : "none",
             pointerEvents: phase === "idle" ? "auto" : "none",
@@ -265,7 +265,7 @@ function GlobalControls({
         onMouseLeave={() => setNameShown(null)}
         onFocus={() => setNameShown("music")}
         onBlur={() => setNameShown(null)}
-        style={{ ...iconButtonStyle, top: 22, right: 22 }}
+        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)" }}
       >
         <HeaderIconLabel name="music" shown={nameShown === "music"} />
         {muted ? (

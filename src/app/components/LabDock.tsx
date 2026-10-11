@@ -88,12 +88,14 @@ function Icon({ name }: { name: IconName }) {
   );
 }
 
-/** A quiet column in the landing's top-left, one button per editor. */
+/** A quiet column in the landing's top-left, one button per editor.
+    Hidden on phones (responsive.css): the labs are desk tools. */
 export function LabDock() {
   const navigate = useNavigate();
   return (
     <nav
       aria-label="editors"
+      className="lab-dock"
       style={{
         position: "absolute",
         top: 18,

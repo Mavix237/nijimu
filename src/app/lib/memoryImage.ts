@@ -4,7 +4,7 @@ import { createPuddleSimulation } from "./puddle/simulation";
 import { DIVE_TUNING } from "./puddle/dive";
 
 /** Wrap the complete passage, including paragraph breaks and unspaced text. */
-export function imageTextLines(text: string, width: number, measure: (text: string) => number): string[] {
+export function imageTextLines(text: string, width: number, measure: (text: string) => number, balanceEnd = false): string[] {
   return text.split(/\r?\n/).flatMap(paragraph => {
     const lines: string[] = [];
     let line = "";
@@ -18,6 +18,27 @@ export function imageTextLines(text: string, width: number, measure: (text: stri
       }
     }
     lines.push(line);
+    if (balanceEnd && lines.length > 1) {
+      const last = lines.at(-1)!;
+      // There are no page breaks in this image. Avoid a stranded word or a
+      // very short final line by rebalancing the last two lines per paragraph.
+      if (measure(last) < width * .35 || last.trim().split(/\s+/).length === 1) {
+        const previous = lines.at(-2)!;
+        const spaced = /\s/.test(previous + last);
+        const units = spaced ? `${previous} ${last}`.split(/\s+/) : Array.from(previous + last);
+        const join = spaced ? " " : "";
+        let best: [string, string] | null = null;
+        let difference = Infinity;
+        for (let split = 2; split <= units.length - 2; split++) {
+          const a = units.slice(0, split).join(join), b = units.slice(split).join(join);
+          const aw = measure(a), bw = measure(b);
+          if (aw <= width && bw <= width && Math.abs(aw - bw) < difference) {
+            best = [a, b]; difference = Math.abs(aw - bw);
+          }
+        }
+        if (best) lines.splice(-2, 2, ...best);
+      }
+    }
     return lines;
   });
 }
@@ -44,11 +65,14 @@ export async function memoryImage(artifact: HTMLCanvasElement, title: string, ye
   ctx.font = `36px ${SERIF}`;
   const titles = imageTextLines(title, 960, text => ctx.measureText(text).width);
   ctx.font = `28px ${SERIF}`;
-  const lines = imageTextLines(transcript, 900, text => ctx.measureText(text).width);
+  const lines = imageTextLines(transcript, 900, text => ctx.measureText(text).width, true);
+  const transcriptLineHeight = 40;
+  const headerY = 80;
+  const headerHeight = 32;
   const titleY = 1190;
   const yearY = titleY + titles.length * 48 + 12;
-  const textY = yearY + 84;
-  canvas.height = Math.max(1600, textY + lines.length * 44 + 120);
+  const textY = yearY + 100;
+  canvas.height = Math.max(1600, textY + lines.length * transcriptLineHeight + 120);
 
   // Render only the gallery's water pass: artifacts and gallery chrome are
   // separate DOM layers, so none can appear in this background.
@@ -76,16 +100,20 @@ export async function memoryImage(artifact: HTMLCanvasElement, title: string, ye
   const jp = ctx.measureText("滲む").width, en = ctx.measureText("nijimu").width, gap = 32;
   ctx.textAlign = "left";
   const logoX = (canvas.width - jp - en - gap) / 2;
-  ctx.fillText("滲む", logoX, 80);
-  ctx.fillText("nijimu", logoX + jp + gap, 80);
-  ctx.drawImage(artifact, 120, 180, 960, 960);
+  ctx.fillText("滲む", logoX, headerY);
+  ctx.fillText("nijimu", logoX + jp + gap, headerY);
+  // Keep the smaller artifact midway between the header and first title line.
+  const artifactSize = 864;
+  const artifactY = (headerY + headerHeight + titleY - artifactSize) / 2;
+  ctx.drawImage(artifact, (canvas.width - artifactSize) / 2, artifactY, artifactSize, artifactSize);
   ctx.textAlign = "center";
   ctx.font = `36px ${SERIF}`;
   titles.forEach((line, i) => ctx.fillText(line, 600, titleY + i * 48));
   ctx.font = `24px ${SERIF}`;
   ctx.fillText(year, 600, yearY);
   ctx.font = `28px ${SERIF}`;
-  lines.forEach((line, i) => ctx.fillText(line, 600, textY + i * 44));
+  ctx.textAlign = "left";
+  lines.forEach((line, i) => ctx.fillText(line, 150, textY + i * transcriptLineHeight));
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Image export failed")), "image/png"));
 }
 

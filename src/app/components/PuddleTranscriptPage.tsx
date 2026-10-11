@@ -20,7 +20,7 @@ const POND_FADE = "rgba(226, 230, 226, 0.88)";
 
 
 
-const TRANSCRIBING_SPOT = { x: .5, y: .7, strength: .7 };
+const TRANSCRIBING_SPOT = { x: .5, y: .87, strength: .7 };
 
 interface PuddleTranscriptState {
   transcript?: string;
@@ -127,13 +127,16 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
   const typingFinishRef = useRef<number | null>(null);
   const pulseRef = useRef(onTranscribingPulse);
   pulseRef.current = onTranscribingPulse;
+  // The visible transcription includes its printout, even for the sample or
+  // a response that arrives before this screen mounts.
+  const transcribing = !transcribeError && !highlightMode && (awaitingTranscript || isTyping);
   useEffect(() => {
-    if (!awaitingTranscript || transcribeError || reducedMotion) return;
+    if (!transcribing || reducedMotion) return;
     const pulse = () => pulseRef.current?.(TRANSCRIBING_SPOT);
     pulse();
     const timer = window.setInterval(pulse, 950);
     return () => window.clearInterval(timer);
-  }, [awaitingTranscript, transcribeError, reducedMotion]);
+  }, [transcribing, reducedMotion]);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const [showBottomFade, setShowBottomFade] = useState(false);
 
@@ -345,7 +348,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
         pointerEvents: "none",
       }}
     >
-        {awaitingTranscript && !transcribeError && <p role="status" style={{
+        {transcribing && <p role="status" style={{
           position: "absolute", left: `${TRANSCRIBING_SPOT.x * 100}%`, top: `${TRANSCRIBING_SPOT.y * 100}%`,
           transform: "translate(-50%, -100%)", margin: "-24px 0 0", fontFamily: SERIF,
           fontSize: NOTE_SIZE, lineHeight: 1.45, color: CHROME_GRAY, textAlign: "center",
@@ -420,7 +423,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             left: "50%",
             transform: "translateX(-50%)",
             top: `calc(${FLOW_PAGE.headingTop} + 96px)`,
-            bottom: "clamp(120px, 18vh, 160px)",
+            bottom: transcribing ? "max(160px, calc(13vh + 92px))" : "clamp(120px, 18vh, 160px)",
             width: "100%",
             display: "flex",
             flexDirection: "column",

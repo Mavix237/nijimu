@@ -2739,7 +2739,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           filter: "blur(0.6px)" }} />
 
       <FlowPageGrid heading={
-        <p style={{ ...TITLE, margin: 0, color: CHROME_GRAY }}>imprint a photo with this memory</p>
+        <p style={{ margin: 0, fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
+          click the film frame to upload a photo for this memory
+        </p>
       } headingStyle={{ opacity: choosing ? 1 : 0, transition: "opacity 700ms ease",
         animation: from ? "none" : "descentFadeIn 1400ms ease 900ms backwards" }} />
 

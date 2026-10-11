@@ -6,13 +6,12 @@ import { TextButton } from "./TextButton";
 
 /** Intentionally shown on every recording attempt, regardless of past visits
  * or whether the browser already remembers microphone permission. */
-export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onClose, onResume }: {
+export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onClose }: {
   busy: boolean;
   error: string | null;
   onStart: () => void;
   onSkip: () => void;
   onClose: () => void;
-  onResume?: () => void;
 }) {
   const [open, setOpen] = useState(true);
 
@@ -80,7 +79,6 @@ export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onCl
       )}
 
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, width: "100%" }}>
-        {onResume && <TextButton label="return to your transcript" onClick={onResume} disabled={busy} />}
         <PillButton
           label={busy ? "Opening microphone…" : "Allow microphone & record"}
           onClick={onStart}

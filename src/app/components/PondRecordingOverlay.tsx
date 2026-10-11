@@ -174,8 +174,6 @@ export function PondRecordingOverlay({
     style={{ opacity: leaving ? 0 : 1, transition: `opacity ${CHROME_OUT_MS}ms ease`, pointerEvents: leaving ? "none" : undefined }}>
     <RecordingInstructionsDialog
     busy={openingMicrophone} error={troubleMessage} onStart={startRecording}
-    onResume={arrival?.transcript || arrival?.transcriptionId
-      ? () => navigate(TRANSCRIPT_PATH + location.search, { state: arrival }) : undefined}
     onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH, { state: arrival })} />
   </div>;
 

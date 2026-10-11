@@ -4,17 +4,53 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Transcript highlight archived (2026-10-11)
+
+The spoken-word highlight step is out of the create flow. Recording and the
+sample go from `/record/start` to `/record/descent`; the descent waits for a
+real transcription before it will read the memory or allow the hold. A failure
+offers “record again” and does not substitute the sample. `/record/transcript`
+redirects to the descent with its carried draft. The screen is
+`archive/highlight-transcript/PuddleTranscriptPage.tsx`. The gallery trail still
+lets words fall behind the pointer; it no longer inks highlighted phrases.
+
 ## Water surface continuity (2026-10-11)
 
 The colour → naming ascent uses the pond's sun (`lib/pondLight.ts`), refracted
 through the surface onto the vessel. `lib/ascentLight.ts` sequences incident
-light, artifact radiance, bloom and final exposure; there is no separate ray,
-cone or projected shaft. The glass and photo emit HDR light from their actual
+light, an interior ray, artifact radiance, bloom and final exposure. The ray
+is integrated only inside the near glass silhouette, following the refracted
+sun; it fills from the crown, broadens, then dissolves into the vessel glow.
+It starts at 52%, fills by 84%, and fades out by 98%. The entire environmental
+`CEILING_GLSL` block is restored exactly from `b44c3bb` by user request:
+original `uwBreath`/`uwFolds`, eight-sample rays, .9 strength, 9-unit reach,
+surface shading and body blend. The regular column pattern and added diffuse
+atmospheric lift are removed. Artifact lighting remains separate.
+The highlight shoulder spans only the top .06 below white, preserving the
+environmental shafts' contrast instead of compressing the whole pale water.
+The glass and photo emit HDR light from their actual
 lit faces. `lib/ascentBloom.ts` extracts those highlights and diffuses them in
 quarter-resolution passes during ascent only, so the glow follows the rendered
 artifact rather than a painted oval. The final exposure matches the naming
-arrival's `#f4f6f5`; all light resets on rewind. Check timing with
-`node scripts/check-ascent-light.mjs`.
+arrival's `#f4f6f5`; all light resets on rewind. Artifact emission begins after
+52% of the ascent, easing in with a fourth-power curve and accelerating close
+to the surface; full-scene exposure waits until 88%. Naming Back increases
+artifact blur from 0 to 22px as the shared sink passes .74–.90, only after
+entering the water. An interrupted arrival clears its remaining arrival blur
+during the chrome fade before sinking. Check
+both directions with `node scripts/check-ascent-light.mjs`.
+
+The ascent's peak artifact radiance is 2.2 (formerly 5, originally 16), and
+the interior ray's gain is .9 (formerly 2).
+The final exposure uses a fifth-power curve to keep most of the shot readable
+until the handoff. The `atmosphere` timing signal now controls only the post
+pass's highlight adaptation; it no longer adds a diffuse water wash. Bloom spreads
+more broadly at lower strength; an exponential highlight shoulder replaces the
+hard white clamp so lit faces retain a smooth rolloff before the final wash.
+The localized silhouette blur grows from 0 to 28px over 58–98% of ascent,
+leaving the initial interior ray focused before its increasing light softens
+the whole artifact. This reuses the arrival blur pass and never changes the
+saved distance/frost value.
 
 `PerspectivePond.tsx` exports `POND_SURFACE_GLSL` alongside `POND_WAVES_GLSL`.
 The pond, descent's top surface, and the overhead surface during the colour →
@@ -25,6 +61,11 @@ Its former independent `ceilingHeight` and extra surface caustic pattern are
 removed. `underwaterBodyColor` supplies the same near-surface colour gradient
 to the surface plane and full-frame volume. The overhead texture feathers into the same background over grazing views,
 preventing a separate coloured band beneath the surface during the naming ascent.
+During that ascent, the body stays opaque and the surface keeps its underwater
+shading through the white handoff. The normal near-surface alpha/submerge blend
+previously exposed the page background below while mixing in above-water colour
+on the plane, creating two blocks in the last frames. The surface texture also
+feathers into the body over a wider 0–.38 upward view-ray range.
 
 ## Gallery shape library (2026-10-11)
 
@@ -63,13 +104,19 @@ is a live canvas.
   and queues builds one per task, nearest seat first (`priority`, the gallery
   passes `ArtifactSeat.offset`). The canvas mounts only when its build is
   ready. Shared geometries are never disposed by callers.
-- `lib/deviceTier.ts` (`?tier=light|full`, `?detail=`): phones get DPR ≤ 1.5,
-  2× MSAA render targets and vessel glass at 0.6 of the superformula grid
-  (gallery glass 449k → 168k triangles); the puddle sim stays at 2× for its
+- `lib/deviceTier.ts` (`?tier=light|full`, `?detail=`): phones get DPR ≤ 1.75,
+  2× MSAA render targets and vessel glass at 0.8 of the superformula grid
+  (raised from 0.6 / 1.5 on request for a little more resolution); the puddle sim stays at 2× for its
   grain. Photos: uploads are scaled to 1600 px (`lib/photoSize.ts`), seat
   textures to 1024 px, the gallery stills preload when idle.
 - Grain: the landing's is one grain per device pixel from a 512 px tile; the
   glass pane's tile is 256 px.
+- Header menu (phones, ≤600px): the corner icons fold into a burger
+  (`components/HeaderMenu.tsx`). Each control (App's profile/music, the
+  gallery's plus/view toggle, the field toggle) renders a `HeaderMenuRow`
+  portaled into the list when `useHeaderMenu().list` is set, else its own
+  corner icon. Rows: icon + name, ordered by `HEADER_MENU_ORDER`; the burger
+  turns −90° as it opens. Wider screens keep the separate icons.
 
 ## Phone layout (2026-10-10)
 
@@ -119,7 +166,7 @@ Pulses arrive 1.25–1.7s apart with slight strength variation; stopping transcr
 stops new pulses while existing waves decay. Other touch/voice ripples retain
 their immediate response.
 
-`LandingPage` now hosts `/memory/pond`, `/record/start`, `/record/transcript`,
+`LandingPage` now hosts `/memory/pond`, `/record/start`,
 and `/record/descent` under the same route parent and retains one `DescentFlow`
 through them. Opening or closing “Before you begin” only changes its chrome;
 there is no canvas replacement or water-clock reset. `MemoryPondPage.renderScene`
@@ -146,8 +193,9 @@ so editing the fields never shifts the vessel. The photo heading is “imprint a
 and has no subtitle. Keep entrance transforms relative to the grid cell, with
 no old absolute-centering translateX offsets.
 
-The current create flow is `DescentFlow` (`/record/start`, `/record/transcript`,
-`/record/descent`) followed by `PondNamingOverlay` (`/record/name`). Older
+The current create flow is `DescentFlow` (`/record/start`,
+`/record/descent`) followed by `PondNamingOverlay` (`/record/name`). The
+highlight transcript screen is archived. Older
 standalone ShapeGrowPage, ShapeColorPage, ShapeTexturePage, and NameMemoryPage
 live in `src/app/archive/shape-flow/`. Home no longer links to those shape steps;
 `/record/shape/:step` redirects to the current descent with carried state.
@@ -199,9 +247,9 @@ camera is lower (2.2 world units), looking farther ahead (z −32), while distan
 water and reflected light extend into a slower haze for an open-ocean horizon.
 These settings live in `pondCamera.ts` and the pond surface shader.
 
-Recording → sample/highlight → photo continuity: `/record/start`,
-`/record/transcript` and `/record/descent` share `LandingPage` with the pond
-invitation; that layout keeps one `DescentFlow` mounted. Recording and transcript/highlight chrome render over its live
+Recording → photo continuity: `/record/start`
+and `/record/descent` share `LandingPage` with the pond
+invitation; that layout keeps one `DescentFlow` mounted. Recording chrome renders over its live
 pond; changing the route keeps the same Canvas, Stage, camera,
 water clock and wave uniforms. The film's emergence clock starts only when the
 photo step opens. Assessment reads the final transcript on that handoff (never
@@ -1350,9 +1398,8 @@ that renders `GlobalControls` (background music + profile button) once, so
  └ /memory            MemoryCarouselPage — dive gallery
    └ /memory/pond     MemoryPondPage — hold to record
      └ /record/start      PondRecordingOverlay on MemoryPondPage — records and transcribes
-       └ /record/transcript  PuddleTranscriptPage — words + highlight
-         └ /record/descent     the descent shot — photo, film, shape, distance, color, rise, name
-           └ /memory           same gallery, now including the new memory
+       └ /record/descent     the descent shot — photo, film, shape, distance, color, rise, name
+         └ /memory           same gallery, now including the new memory
 ```
 
 **B. Revisit memories:**
@@ -1439,8 +1486,9 @@ Browser: PondRecordingOverlay (mounted by MemoryPondPage)
 ### 8b. Polish — the words become prose
 
 **Current UI status:** the backend and browser helper remain implemented, but
-`requestPolish()` is only called by the archived gray `TranscriptPage`. The live
-`PuddleTranscriptPage` transcribes and highlights words without invoking polish.
+`requestPolish()` is only called by the archived gray `TranscriptPage`. The
+highlight screen is archived too; the live flow transcribes during the descent
+and does not highlight words.
 The following describes the retained polish implementation, not an active step
 in the current create journey.
 
@@ -1533,16 +1581,11 @@ cast from .4 to .06; naming/gallery use their neutral room plus this same stain.
 Standalone vessel studies default to zero stain. Rhythm now uses the thumb–index
 aperture interaction described above, superseding the earlier gesture proposals.
 
-**Highlighted phrases (2026-10-10).** A highlight can be a run of words.
-`PuddleTranscriptPage` caps a drag at two words (`MAX_HIGHLIGHT`), saves each
-run of neighbouring highlighted words as phrases of at most two in
-`highlightedWords` and draws a run as one continuous band; the curated
-`HIGHLIGHTS` in `memoryData.ts` mix single words with short phrases.
-`TranscriptTrail` matches each phrase in order in the transcript. The trail no
-longer uses a grid: the pointer lets the transcript's words fall in order
-wherever it is, one each time it has moved clear of the last (`GAP_X_EM`,
+**Highlighted phrases (2026-10-10, archived 2026-10-11).** The drag-to-highlight
+screen lives in `archive/highlight-transcript/`. The gallery trail no longer
+inks those phrases. The trail still lets the transcript's words fall in order
+wherever the pointer is, one each time it has moved clear of the last (`GAP_X_EM`,
 `STEP_Y_EM`), each showing `DELAY_MS` after it is set down. The last `TRAIL`
 stay; the oldest comes apart into grains on the trail's canvas (`grainsOf`
 reads the word back from a 2D canvas; `SWEEP_S`, `GRAIN_SPEED`, `GRAIN_LIFE`),
-drifting away from the line. A highlighted phrase is set down whole and keeps
-the ink hold and wash (italic, no underline) rather than coming apart.
+drifting away from the line.

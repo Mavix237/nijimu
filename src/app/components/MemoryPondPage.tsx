@@ -7,16 +7,15 @@ import { INSTRUCTION_SIZE, SANS, SERIF, SERIF_EXPOSURE } from "../lib/theme";
 import { POND_THOUGHTS, hasSeenPondInstruction, markPondInstructionSeen, pondPromptCue } from "../lib/pondPrompts";
 import { PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
 import { PondRecordingOverlay } from "./PondRecordingOverlay";
-import { PuddleTranscriptPage } from "./PuddleTranscriptPage";
 import { PondNamingOverlay } from "./PondNamingOverlay";
 import type { NamingSession } from "./NamingRim";
 
-export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, transcript = false, naming = null, onReady, onLeave, onNamingSaved, namingBackRef, covered = false, renderScene }: {
+export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, naming = null, onReady, onLeave, onNamingSaved, namingBackRef, covered = false, renderScene }: {
   /** Another step owns the controls while the pond stays mounted underneath. */
   covered?: boolean;
   /** Reuse a host scene, including its camera, wave clock, and ripple uniforms. */
   renderScene?: (props: PondProps) => ReactNode;
-  arrival?: number; active?: boolean; reducedMotion?: boolean; recording?: boolean; transcript?: boolean;
+  arrival?: number; active?: boolean; reducedMotion?: boolean; recording?: boolean;
   /** The naming step: the memory just made hangs over this same water. */
   naming?: NamingSession | null;
   onReady?: () => void; onLeave?: () => void;
@@ -27,7 +26,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const overlaid = covered || recording || transcript || !!naming;
+  const overlaid = covered || recording || !!naming;
   const sinkRef = useRef(0);
   const [touch, setTouch] = useState<PondTouch | null>(null);
   const promptRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -136,13 +135,12 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     const keys = (e: KeyboardEvent) => {
       if (e.key !== "Escape" && e.key !== "ArrowUp") return;
       if (naming) namingBackRef?.current?.();
-      else if (transcript) navigate(RECORD_START_PATH, { state: location.state });
       else if (recording) navigate(MEMORY_POND_PATH);
       else back();
     };
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
-  }, [active, recording, transcript, naming, namingBackRef, back, navigate, location.state]);
+  }, [active, recording, naming, namingBackRef, back, navigate]);
   useEffect(() => {
     if (!enabled) return;
     buttonRef.current?.focus({ preventScroll: true });
@@ -175,7 +173,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     hintRef, hintRevealRef: hintReveal, promptRefs, cueRef, onReady: ready, lifeReady,
     promptRipples: !overlaid && active, sinkRef };
 
-  return <section aria-label={naming ? "name your memory" : transcript ? "your spoken memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-ready={enabled}
+  return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-ready={enabled}
     style={{ position: "absolute", inset: 0, overflow: "hidden", background: "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}>
     {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
     {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
@@ -247,7 +245,6 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       Hold to begin
     </div>
     {recording && <PondRecordingOverlay reducedMotion={reducedMotion} onVoicePulse={pulseWater} />}
-    {transcript && <PuddleTranscriptPage reducedMotion={reducedMotion} onTranscribingPulse={pulseWater} />}
     {naming && onNamingSaved && <PondNamingOverlay key={naming.draftId} session={naming} reducedMotion={reducedMotion} sinkRef={sinkRef} onSaved={onNamingSaved} backRef={namingBackRef} />}
     <span className="sr-only" role="status">{recording ? "ready to record" : ""}</span>
   </section>;

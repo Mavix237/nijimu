@@ -16,6 +16,7 @@ import {
   type Room, type VesselState, type VesselTune,
 } from "./VesselPreview";
 import { VesselArtifact, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
+import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "../components/HeaderMenu";
 import { LabPushButton } from "./LabPushButton";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "../components/HeaderIconLabel";
 import {
@@ -325,6 +326,30 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   const [nameShown, setNameShown] = useState(false);
   const title = on ? "back along the years" : "see them in the air";
   const name = on ? "timeline" : "constellation";
+  const { list } = useHeaderMenu();
+  const glyph = (
+    on ? (
+      // the years: the curve with its seats along it
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <path d="M1.5 12.5 C 5 12.5, 6 3.5, 9.5 3.5 S 13 8, 14.5 8" stroke={CHROME_GRAY} strokeWidth="1.1" />
+        <circle cx="3.2" cy="12.2" r="1.1" fill={CHROME_GRAY} />
+        <circle cx="8" cy="6" r="1.5" fill={CHROME_GRAY} />
+        <circle cx="13" cy="7.6" r="1.1" fill={CHROME_GRAY} />
+      </svg>
+    ) : (
+      // the field: near and far
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <circle cx="3.6" cy="4.2" r="2.1" stroke={CHROME_GRAY} strokeWidth="1.1" />
+        <circle cx="12" cy="11.2" r="2.6" stroke={CHROME_GRAY} strokeWidth="1.1" />
+        <circle cx="11.4" cy="3.6" r="1" fill={CHROME_GRAY} opacity="0.75" />
+        <circle cx="6.8" cy="9.4" r="0.8" fill={CHROME_GRAY} opacity="0.6" />
+        <circle cx="3.4" cy="12.6" r="1.2" fill={CHROME_GRAY} opacity="0.8" />
+        <circle cx="8.6" cy="6.6" r="0.55" fill={CHROME_GRAY} opacity="0.5" />
+      </svg>
+    )
+  );
+  // folded into the header menu on a phone
+  if (list) return <HeaderMenuRow order={HEADER_MENU_ORDER.field} icon={glyph} label={title} onClick={onToggle} />;
   return (
     <button
       type="button"
@@ -342,25 +367,7 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       }}
     >
       <HeaderIconLabel name={name} shown={nameShown} />
-      {on ? (
-        // the years: the curve with its seats along it
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <path d="M1.5 12.5 C 5 12.5, 6 3.5, 9.5 3.5 S 13 8, 14.5 8" stroke={CHROME_GRAY} strokeWidth="1.1" />
-          <circle cx="3.2" cy="12.2" r="1.1" fill={CHROME_GRAY} />
-          <circle cx="8" cy="6" r="1.5" fill={CHROME_GRAY} />
-          <circle cx="13" cy="7.6" r="1.1" fill={CHROME_GRAY} />
-        </svg>
-      ) : (
-        // the field: near and far
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <circle cx="3.6" cy="4.2" r="2.1" stroke={CHROME_GRAY} strokeWidth="1.1" />
-          <circle cx="12" cy="11.2" r="2.6" stroke={CHROME_GRAY} strokeWidth="1.1" />
-          <circle cx="11.4" cy="3.6" r="1" fill={CHROME_GRAY} opacity="0.75" />
-          <circle cx="6.8" cy="9.4" r="0.8" fill={CHROME_GRAY} opacity="0.6" />
-          <circle cx="3.4" cy="12.6" r="1.2" fill={CHROME_GRAY} opacity="0.8" />
-          <circle cx="8.6" cy="6.6" r="0.55" fill={CHROME_GRAY} opacity="0.5" />
-        </svg>
-      )}
+      {glyph}
     </button>
   );
 }

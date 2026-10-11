@@ -10,10 +10,10 @@ export const MEMORY_POND_PATH = "/memory/pond";
 /** Speak a memory — chrome over the same pond, not a separate water screen. */
 export const RECORD_START_PATH = "/record/start";
 
-/** Spoken words and highlights — same pond overlay as recording. */
+/** Archived spoken-word highlight screen. Live bookmarks redirect to the descent. */
 export const TRANSCRIPT_PATH = "/record/transcript";
 
-/** Photo, film, and the descent — the create shot after the transcript.
+/** Photo, film, and the descent — the create shot after recording.
     The same scene as /lab/descent, without the lab's knobs. */
 export const DESCENT_PATH = "/record/descent";
 

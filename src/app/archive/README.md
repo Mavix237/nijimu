@@ -3,10 +3,12 @@
 The current create flow shares one canvas in `DescentFlow`:
 
 ```
-/record/start → /record/transcript (read, highlight)
-  → /record/descent (photo, hold, shape, rhythm, distance, feeling)
+/record/start → /record/descent (photo, hold, shape, rhythm, distance, feeling)
   → /record/name (PondNamingOverlay in LandingPage) → /memory
 ```
+
+`/record/transcript` redirects into `/record/descent`. The highlight screen is
+in `highlight-transcript/`.
 
 Current headings and naming fields use `FlowPageGrid`, with row positions in
 `FLOW_PAGE` in `src/app/lib/theme.ts`. Navigation is a separate row above them.
@@ -25,6 +27,12 @@ Previous standalone shape, color, texture, and naming screens. The old
 carried state. Their home-screen shortcuts have been removed. `NameMemoryPage`
 is retained only as the existing WebGL-failure fallback for the older
 `PuddleScene` host; the live naming route uses `PondNamingOverlay`.
+
+## `highlight-transcript/`
+
+The spoken-word screen (`PuddleTranscriptPage`): the transcript types in, then
+a drag highlights up to two words at a time. It is not routed. Curated
+`highlightedWords` remain on each memory; the gallery trail does not ink them.
 
 ## `record-loop/`
 

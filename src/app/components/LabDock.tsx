@@ -7,8 +7,8 @@ import { SANS } from "../lib/theme";
  * Shortcuts to the editors that open on their own, without walking the
  * create flow. Not mounted on the homepage; the URLs are listed in README.
  * The labs carry their own controls; the gallery lab is the dive gallery
- * seated with vessels. The create flow continues from the transcript into
- * /record/descent. Older standalone shape screens are archived.
+ * seated with vessels. The create flow continues from recording into
+ * /record/descent. The highlight transcript screen is archived.
  */
 const ENTRIES: { to: string; label: string; hint: string; icon: IconName }[] = [
   { to: "/lab/meaning", label: "sorting algo", hint: "how a memory becomes a form", icon: "shape" },

@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { carouselFrame } from "../lib/carouselLayout";
+import { surfaceReturnBlurAt } from "../lib/ascentLight";
 import { POND_SINK, SINK_WASH, SURFACE_LIGHT, SURFACE_LIGHT_OUT_MS, pondSinkWash } from "../lib/pondCamera";
 import { DESCENT_STEP_PATHS } from "../lib/routes";
 import { VesselArtifact, vesselCanvasScale } from "../lab/VesselArtifact";
@@ -130,6 +131,7 @@ export function PondNamingOverlay({
   /** Where the memory is (1 = below its seat, in the water; 0 = in its seat) and how far it has appeared. */
   const liftRef = useRef(0);
   const appearRef = useRef(rising ? 0 : 1);
+  const blurRef = useRef(0);
 
   /** The water and the words, at a depth of the eye: under the wash below the surface, settled above it. */
   const pose = (sink: number) => {
@@ -143,6 +145,7 @@ export function PondNamingOverlay({
   const placeArtifact = (lift: number, appear: number, blurPx = 0) => {
     liftRef.current = lift;
     appearRef.current = appear;
+    blurRef.current = blurPx;
     const el = artifactRef.current;
     if (!el) return;
     el.style.transform = `translateY(calc(${lift * LIFT_VH}vh - ${ARTIFACT_LIFT}))`;
@@ -228,6 +231,7 @@ export function PondNamingOverlay({
     const sinkFrom = sinkRef.current;
     const liftFrom = liftRef.current;
     const appearFrom = appearRef.current;
+    const blurFrom = blurRef.current;
     light(0);
     let last = performance.now();
     let elapsed = 0;
@@ -240,7 +244,8 @@ export function PondNamingOverlay({
       // it goes back into the water as the eye does, and is lost in the wash
       const down = smooth(sink);
       const chrome = 1 - clamp01(elapsed / CHROME_OUT_MS);
-      placeArtifact(Math.max(liftFrom, down), appearFrom * (1 - pondSinkWash(sink)), down * 4);
+      placeArtifact(Math.max(liftFrom, down), appearFrom * (1 - pondSinkWash(sink)),
+        Math.max(blurFrom * (1 - smooth(elapsed / CHROME_OUT_MS)), surfaceReturnBlurAt(sink)));
       if (chromeRef.current) chromeRef.current.style.opacity = String(chrome);
       showPassage(chrome);
       if (sink >= 1) { raf.current = null; go(); return; }

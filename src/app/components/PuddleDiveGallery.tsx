@@ -13,6 +13,7 @@ import type { ArchiveArtifact } from "../lib/archive";
 import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
 import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
 import { carouselFrame, carouselSeat, carouselContainsOffset, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
+import { useHeaderMenu } from "./HeaderMenu";
 
 /*
  * PuddleDiveGallery — the gallery presentation of the "dive" variant.
@@ -547,6 +548,8 @@ export function PuddleDiveGallery({
     return () => clearTimeout(t);
   }, [phase, reducedMotion, !!inkArrival, growth < 1]);
 
+  // read before the early return: hooks run on every render
+  const headerMenu = useHeaderMenu();
   if (!item) return null;
 
   /* Reveal choreography: an artifact begins resolving the moment it exists on
@@ -724,7 +727,6 @@ export function PuddleDiveGallery({
         <TranscriptTrail
           memoryId={items[activeIdx].id}
           transcript={items[activeIdx].transcript}
-          highlightedWords={items[activeIdx].highlightedWords ?? []}
           visible={yearsVisible && !field?.on}
           avoid={trailAvoid}
         />
@@ -1051,8 +1053,9 @@ export function PuddleDiveGallery({
         enterAnimation={carriedChrome}
       />
 
-      {/* the preview's own chrome, arriving and leaving with the gallery's */}
-      {override?.chrome && !hideHeader && (
+      {/* the preview's own chrome, arriving and leaving with the gallery's;
+          folded into the phone's header menu it cannot fade, so it is there or not */}
+      {override?.chrome && !hideHeader && (!headerMenu.list || chromeVisible) && (
         <div style={{ opacity: chromeVisible ? 1 : 0, transition: "opacity 0.8s ease", pointerEvents: chromeVisible ? "auto" : "none" }}>
           {override.chrome}
         </div>

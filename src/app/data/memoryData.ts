@@ -25,8 +25,7 @@ const TRANSCRIPTS: Record<string, string> = Object.fromEntries(
 
 // What the curated memories' speaker would have highlighted, by id — the
 // words that carry what the memory is about, each as it appears in that
-// memory's transcript. A run of words is lifted out (and inked in the gallery's
-// trail) as one phrase — never more than two words — and should read on its own.
+// memory's transcript. Kept with the memory; the gallery no longer inks them.
 const HIGHLIGHTS: Record<string, string[]> = {
   "0": ["my memory", "orange peels", "different stories", "only exists"],
   "1": ["underwater", "a corner", "worth keeping", "it's empty"],

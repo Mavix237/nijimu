@@ -1,5 +1,5 @@
 import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useNavigate } from "react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CHROME_GRAY } from "./lib/colors";
 import { LandingPage } from "./components/LandingPage";
 import {
@@ -21,6 +21,8 @@ import {
 } from "./lib/landingReturn";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
 import { ProfilePanel } from "./components/ProfilePanel";
+import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
+import { useCompact } from "./hooks/useCompact";
 
 const SOUNDTRACK_URL =
   "https://cdn.jsdelivr.net/gh/Noyok1vas/figbuildAssets/prodarmaan%20-%20somber%20springtime.mp3";
@@ -36,6 +38,12 @@ function RootLayout() {
   const { pathname } = useLocation();
   const [phase, setPhase] = useState<LandingReturnPhase>("idle");
   const [profileOpen, setProfileOpen] = useState(false);
+  // on a phone the header's corner icons fold into one menu (HeaderMenu.tsx)
+  const compact = useCompact();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuList, setMenuList] = useState<HTMLElement | null>(null);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const headerMenu = useMemo(() => ({ list: compact ? menuList : null, close: closeMenu }), [compact, menuList, closeMenu]);
   const timersRef = useRef<number[]>([]);
 
   const clearTimers = useCallback(() => {
@@ -73,7 +81,9 @@ function RootLayout() {
 
   return (
     <LandingReturnContext.Provider value={{ phase, beginReturn }}>
-      <GlobalControls profileOpen={profileOpen} onProfileOpenChange={setProfileOpen} />
+    <HeaderMenuContext.Provider value={headerMenu}>
+      <GlobalControls profileOpen={profileOpen} onProfileOpenChange={setProfileOpen}
+        menu={compact ? { open: menuOpen, onOpenChange: setMenuOpen, listRef: setMenuList } : null} />
       <div
         aria-hidden
         style={{
@@ -89,12 +99,18 @@ function RootLayout() {
         }}
       />
       <Outlet />
+    </HeaderMenuContext.Provider>
     </LandingReturnContext.Provider>
   );
 }
 
 // Old bookmarks enter the current, single-canvas flow with their carried draft.
 function ArchivedShapeRedirect() {
+  const { state } = useLocation();
+  return <Navigate to={DESCENT_PATH} state={state} replace />;
+}
+
+function ArchivedTranscriptRedirect() {
   const { state } = useLocation();
   return <Navigate to={DESCENT_PATH} state={state} replace />;
 }
@@ -110,7 +126,7 @@ const router = createBrowserRouter([
     HydrateFallback: () => null,
     children: [
       {
-        /* Landing, gallery, pond, recording, transcript, descent and
+        /* Landing, gallery, pond, recording, descent and
            naming share one layout: Enter preloads the gallery behind the ink,
            saving a memory
            turns the naming rim into that same gallery in place. The children
@@ -121,7 +137,6 @@ const router = createBrowserRouter([
           { path: CAROUSEL_PATH, element: null },
           { path: MEMORY_POND_PATH, element: null },
           { path: RECORD_START_PATH, element: null },
-          { path: TRANSCRIPT_PATH, element: null },
           { path: DESCENT_PATH, element: null },
           ...Object.values(DESCENT_STEP_PATHS).map(path => ({ path, element: null })),
           { path: NAMING_PATH, element: null },
@@ -135,6 +150,7 @@ const router = createBrowserRouter([
       { path: "/lab/meaning", lazy: () => import("./lab/MemoryMeaningLab").then((m) => ({ Component: m.MemoryMeaningLab })) },
       { path: "/lab/shapes", lazy: () => import("./lab/ShapeLibraryLab").then((m) => ({ Component: m.ShapeLibraryLab })) },
       { path: "/record/shape/:step", Component: ArchivedShapeRedirect },
+      { path: TRANSCRIPT_PATH, Component: ArchivedTranscriptRedirect },
       { path: "/record/saved", lazy: () => import("./components/MemorySavedPage").then((m) => ({ Component: m.MemorySavedPage })) },
       { path: "/memory/scroll", lazy: () => import("./components/MemoryScrollPage").then((m) => ({ Component: m.MemoryScrollPage })) },
       { path: "/memory/revisit", lazy: () => import("./components/RevisitMemoryPage").then((m) => ({ Component: m.RevisitMemoryPage })) },
@@ -148,9 +164,12 @@ const router = createBrowserRouter([
 function GlobalControls({
   profileOpen,
   onProfileOpenChange,
+  menu,
 }: {
   profileOpen: boolean;
   onProfileOpenChange: (open: boolean) => void;
+  /** The folded header on a phone; null draws the corner icons. */
+  menu: { open: boolean; onOpenChange: (open: boolean) => void; listRef: (el: HTMLDivElement | null) => void } | null;
 }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [muted, setMuted] = useState(true);
@@ -194,6 +213,13 @@ function GlobalControls({
     onProfileOpenChange(false);
   }, [pathname, onProfileOpenChange]);
 
+  const onMenuOpenChange = menu?.onOpenChange;
+  /** So does the folded menu. */
+  useEffect(() => {
+    onMenuOpenChange?.(false);
+  }, [pathname, onMenuOpenChange]);
+  const { list: menuList } = useHeaderMenu();
+
   const [nameShown, setNameShown] = useState<"profile" | "music" | null>(null);
 
   const iconButtonStyle = {
@@ -213,6 +239,43 @@ function GlobalControls({
   };
 
   const iconStroke = CHROME_GRAY;
+  const profileGlyph = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </svg>
+  );
+  const musicGlyph = muted ? (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <line x1="23" y1="9" x2="17" y2="15" />
+      <line x1="17" y1="9" x2="23" y2="15" />
+    </svg>
+  ) : (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  );
+
+  if (menu) {
+    return (
+      <>
+        <HeaderMenu open={menu.open} onOpenChange={menu.onOpenChange} listRef={menu.listRef}
+          hidden={leavingScene} />
+        {menuList && !onLanding && (
+          <HeaderMenuRow order={HEADER_MENU_ORDER.profile} icon={profileGlyph} label="profile" expanded={profileOpen}
+            onClick={() => onProfileOpenChange(!profileOpen)} />
+        )}
+        {menuList && (
+          <HeaderMenuRow order={HEADER_MENU_ORDER.music} icon={musicGlyph} label={muted ? "music off" : "music on"}
+            ariaLabel={muted ? "unmute" : "mute"} onClick={() => setMuted((m) => !m)} />
+        )}
+        <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />
+      </>
+    );
+  }
 
   return (
     <>
@@ -235,19 +298,7 @@ function GlobalControls({
           }}
         >
           <HeaderIconLabel name="profile" shown={nameShown === "profile"} />
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={iconStroke}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
+          {profileGlyph}
         </button>
       )}
 
@@ -261,19 +312,7 @@ function GlobalControls({
         style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)" }}
       >
         <HeaderIconLabel name="music" shown={nameShown === "music"} />
-        {muted ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <line x1="23" y1="9" x2="17" y2="15" />
-            <line x1="17" y1="9" x2="23" y2="15" />
-          </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-          </svg>
-        )}
+        {musicGlyph}
       </button>
 
       <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />

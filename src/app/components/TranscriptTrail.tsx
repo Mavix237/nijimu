@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { CHROME_GRAY } from "../lib/colors";
 import { SANS } from "../lib/theme";
 
 /*
@@ -12,13 +11,6 @@ import { SANS } from "../lib/theme";
  * line of what was said, following the hand. Only the last few stay, the
  * older the fainter; the oldest, when a new one comes, comes apart into grains
  * that drift away from the line and go out. The words are a light grey.
- *
- * The words the memory's highlight step lifted out are italic,
- * in the darker ink of the memory's name in the caption, and are not part of
- * the trail's fading: once set down, one holds at full ink for a while after
- * the trail has moved on, then washes out — it bleeds and spreads like ink let
- * go in water. A highlight can be a run of words ("orange peels"): it is set
- * down whole, on one line.
  *
  * The memory's name and year, and the timeline, are blocks the words keep out
  * of: no word is set down on one, or within AVOID_PAD of it.
@@ -38,11 +30,7 @@ const STEP_Y_EM = 3.6;
 /** A word shows this long after the pointer has set it down: the stagger. */
 const DELAY_MS = 140;
 const IN_MS = 380;
-/** The trail's own words; a highlighted one is CHROME_GRAY, the caption title's. */
 const LIGHT_GRAY = "#ababb2";
-/** A highlighted word: how long it holds after it is set down, then how long it washes out. */
-const INK_HOLD_MS = 2400;
-const INK_WASH_MS = 1800;
 /** Air kept around what the words avoid, px. */
 const AVOID_PAD = { x: 24, y: 14 };
 
@@ -79,22 +67,15 @@ function avoidRect(el: Element | null): Rect | null {
 }
 
 const fontPx = () => Math.min(SIZE_MAX, Math.max(SIZE_MIN, (window.innerHeight * SIZE_VH) / 100));
-const fontOf = (px: number, italic = false) => `${italic ? "italic " : ""}${px}px ${SANS}`;
+const fontOf = (px: number) => `${px}px ${SANS}`;
 
 let measure: CanvasRenderingContext2D | null = null;
 /** A word's width on screen, px, as the span sets it. */
-function textWidth(text: string, px: number, italic: boolean): number {
+function textWidth(text: string, px: number): number {
   measure ??= document.createElement("canvas").getContext("2d");
-  if (measure) measure.font = fontOf(px, italic);
+  if (measure) measure.font = fontOf(px);
   return (measure?.measureText(text).width ?? text.length * px * 0.55) + text.length * LETTER_SPACING * px;
 }
-
-/** A word as the highlight step and the trail both see it: no case, no
-    punctuation, so "Summer." in a saved highlight finds "summer" here. */
-const bare = (word: string) => word.toLowerCase().replace(/[^\p{L}\p{N}']/gu, "");
-
-/** Where a highlighted word's phrase begins in the transcript, and how many words it runs. */
-type PhraseAt = { start: number; length: number } | null;
 
 interface Fallen {
   /** Bumped every word, so the same words set down again draw afresh. */
@@ -136,7 +117,7 @@ function grainsOf(el: HTMLElement, box: DOMRect, text: string, alpha: number, aw
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) return [];
   ctx.scale(dpr, dpr);
-  ctx.font = fontOf(px, false);
+  ctx.font = fontOf(px);
   if ("letterSpacing" in ctx) (ctx as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${LETTER_SPACING * px}px`;
   // the span's line box is one em; its baseline sits where CSS puts it, the content area centred on that box
   const m = ctx.measureText(text);
@@ -193,10 +174,9 @@ const placeStyle = (x: number, y: number): CSSProperties => ({
   whiteSpace: "nowrap",
 });
 
-export function TranscriptTrail({ memoryId, transcript, highlightedWords, visible, avoid }: {
+export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
   memoryId: string;
   transcript: string;
-  highlightedWords: string[];
   visible: boolean;
   /** The caption, the timeline: what is drawn in them stays clear of the words. */
   avoid?: RefObject<Element | null>[];
@@ -204,8 +184,6 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
   const box = useRef<HTMLDivElement>(null);
   const sky = useRef<HTMLCanvasElement>(null);
   const [trail, setTrail] = useState<Fallen[]>([]);
-  /** Highlighted phrases set down, each on its own clock until it has washed out. */
-  const [inked, setInked] = useState<Fallen[]>([]);
   const trailNow = useRef<Fallen[]>([]);
   const spans = useRef(new Map<number, HTMLSpanElement>());
   const last = useRef<{ x: number; y: number; width: number } | null>(null);
@@ -216,23 +194,6 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
   const frame = useRef(0);
 
   const words = useMemo(() => transcript.split(/[\s.,!?]+/).filter(Boolean), [transcript]);
-  /** Each word's highlighted phrase, found wherever its words run in order;
-      where two overlap ("light", "color of the light") the longer holds. */
-  const phrases = useMemo(() => {
-    const at: PhraseAt[] = words.map(() => null);
-    const plain = words.map(bare);
-    for (const highlight of highlightedWords) {
-      const parts = highlight.split(/[\s.,!?]+/).map(bare).filter(Boolean);
-      if (parts.length === 0) continue;
-      for (let start = 0; start + parts.length <= words.length; start++) {
-        if (!parts.every((part, k) => plain[start + k] === part)) continue;
-        for (let k = 0; k < parts.length; k++) {
-          if ((at[start + k]?.length ?? 0) < parts.length) at[start + k] = { start, length: parts.length };
-        }
-      }
-    }
-    return at;
-  }, [words, highlightedWords]);
 
   /** Draw the loose grains until the last has gone out. */
   const drift = () => {
@@ -287,7 +248,6 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
   useEffect(() => {
     trailNow.current = [];
     setTrail([]);
-    setInked([]);
     last.current = null;
     next.current = 0;
     grains.current = [];
@@ -305,10 +265,9 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
       if (x < vw * 0.1 || x > vw * 0.9 || y < vh * 0.1 || y > vh * 0.95) return;
 
       const index = next.current % words.length;
-      const phrase = phrases[index];
-      const text = phrase ? words.slice(phrase.start, phrase.start + phrase.length).join(" ") : words[index];
+      const text = words[index];
       const px = fontPx();
-      const width = textWidth(text, px, !!phrase);
+      const width = textWidth(text, px);
 
       // set down only once the pointer is clear of the last word
       const prev = last.current;
@@ -323,13 +282,9 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
         return keepOut && overlaps(at, keepOut);
       })) return;
 
-      next.current = phrase ? phrase.start + phrase.length : index + 1;
+      next.current = index + 1;
       last.current = { x, y, width };
       const word: Fallen = { key: count.current++, text, x, y, width };
-      if (phrase) {
-        setInked((k) => [...k, word]);
-        return;
-      }
       const all = [...trailNow.current, word];
       const gone = all.slice(0, Math.max(0, all.length - TRAIL));
       trailNow.current = all.slice(-TRAIL);
@@ -352,7 +307,7 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
     window.addEventListener("pointermove", onMove);
     return () => window.removeEventListener("pointermove", onMove);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, words, phrases, avoid]);
+  }, [visible, words, avoid]);
 
   return (
     <div
@@ -369,15 +324,6 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
         @keyframes trailIn {
           from { opacity: 0; filter: blur(2px); }
           to { opacity: 1; filter: blur(0); }
-        }
-        @keyframes trailInkWash {
-          0% { opacity: 1; filter: blur(0); letter-spacing: 0.02em; transform: scale(1); text-shadow: 0 0 0 rgba(126, 126, 134, 0); }
-          35% { opacity: 0.8; filter: blur(0.8px); text-shadow: 0 0 6px rgba(126, 126, 134, 0.55); }
-          100% { opacity: 0; filter: blur(7px); letter-spacing: 0.14em; transform: scale(1.12); text-shadow: 0 0 20px rgba(126, 126, 134, 0); }
-        }
-        @keyframes trailInkFade { to { opacity: 0; } }
-        @media (prefers-reduced-motion: reduce) {
-          .trail-ink { animation-name: trailIn, trailInkFade !important; }
         }
       `}</style>
       <canvas ref={sky} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
@@ -397,28 +343,6 @@ export function TranscriptTrail({ memoryId, transcript, highlightedWords, visibl
           }}
         >
           <span style={{ display: "block", animation: `trailIn ${IN_MS}ms ease-out ${DELAY_MS}ms both` }}>{text}</span>
-        </span>
-      ))}
-      {inked.map(({ key, text, x, y }) => (
-        <span key={key} style={{ ...placeStyle(x, y), color: CHROME_GRAY }}>
-          <span
-            className="trail-ink"
-            style={{
-              display: "block",
-              fontStyle: "italic",
-              transformOrigin: "center",
-              animation:
-                `trailIn ${IN_MS}ms ease-out ${DELAY_MS}ms both, ` +
-                `trailInkWash ${INK_WASH_MS}ms ease-in ${DELAY_MS + INK_HOLD_MS}ms forwards`,
-            }}
-            onAnimationEnd={(e) => {
-              if (e.animationName === "trailInkWash" || e.animationName === "trailInkFade") {
-                setInked((k) => k.filter((v) => v.key !== key));
-              }
-            }}
-          >
-            {text}
-          </span>
         </span>
       ))}
     </div>

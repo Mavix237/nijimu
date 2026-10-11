@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CHROME_GRAY } from "../lib/colors";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./HeaderIconLabel";
+import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "./HeaderMenu";
 
 /** Top-right switch between the G-key carousel and the card grid.
  *  Sits left of the profile / music chrome (see --chrome-r* in responsive.css).
@@ -24,6 +25,7 @@ export function GalleryViewToggle({
   label?: string;
 }) {
   const [nameShown, setNameShown] = useState(false);
+  const { list } = useHeaderMenu();
   if (!visible) return null;
 
   const toGrid = view === "carousel";
@@ -31,6 +33,35 @@ export function GalleryViewToggle({
     ? "create a new memory"
     : toGrid ? "grid view" : "gallery view");
   const name = icon === "plus" ? "create" : title.split(" ")[0]?.toLowerCase() || "gallery";
+  const glyph = (
+    icon === "plus" ? (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect x="1.5" y="1.5" width="13" height="13" stroke={CHROME_GRAY} strokeWidth="1.2" />
+        <path d="M8 4.75V11.25M4.75 8H11.25" stroke={CHROME_GRAY} strokeWidth="1.2" />
+      </svg>
+    ) : toGrid ? (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <rect x="1.5" y="1.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
+        <rect x="9.5" y="1.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
+        <rect x="1.5" y="9.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
+        <rect x="9.5" y="9.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
+      </svg>
+    ) : (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+        <circle cx="8" cy="8" r="3.2" stroke={CHROME_GRAY} strokeWidth="1.2" />
+        <circle cx="2.6" cy="8" r="1.6" stroke={CHROME_GRAY} strokeWidth="1.2" />
+        <circle cx="13.4" cy="8" r="1.6" stroke={CHROME_GRAY} strokeWidth="1.2" />
+      </svg>
+    )
+  );
+
+  // folded into the header menu on a phone: the same control as a row, icon and name
+  if (list) {
+    return (
+      <HeaderMenuRow order={icon === "plus" ? HEADER_MENU_ORDER.create : HEADER_MENU_ORDER.view}
+        icon={glyph} label={icon === "plus" ? "new memory" : title} ariaLabel={title} onClick={onToggle} />
+    );
+  }
 
   return (
     <button
@@ -65,25 +96,7 @@ export function GalleryViewToggle({
       }}
     >
       <HeaderIconLabel name={name} shown={nameShown} />
-      {icon === "plus" ? (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <rect x="1.5" y="1.5" width="13" height="13" stroke={CHROME_GRAY} strokeWidth="1.2" />
-          <path d="M8 4.75V11.25M4.75 8H11.25" stroke={CHROME_GRAY} strokeWidth="1.2" />
-        </svg>
-      ) : toGrid ? (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <rect x="1.5" y="1.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
-          <rect x="9.5" y="1.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
-          <rect x="1.5" y="9.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
-          <rect x="9.5" y="9.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
-        </svg>
-      ) : (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-          <circle cx="8" cy="8" r="3.2" stroke={CHROME_GRAY} strokeWidth="1.2" />
-          <circle cx="2.6" cy="8" r="1.6" stroke={CHROME_GRAY} strokeWidth="1.2" />
-          <circle cx="13.4" cy="8" r="1.6" stroke={CHROME_GRAY} strokeWidth="1.2" />
-        </svg>
-      )}
+      {glyph}
     </button>
   );
 }

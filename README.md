@@ -15,7 +15,7 @@ Run `npm run dev` to start the development server.
 - `/memory/pond`: hold to record a memory
 - `/ripple`: home canvas where memories sit as a watercolor puddle, blob field, or ripple field
 - `/record/start`: speak a memory aloud — the recording step of the create flow
-- `/record/transcript`: shows the spoken words and word highlights
+- `/record/transcript`: archived highlight screen; redirects to the descent
 - `/record/descent`: choose a photo, let the film settle, then hold to descend
 - `/record/descent/shape`: shape the memory underwater
 - `/record/descent/rhythm`: adjust the form's folds and rhythm
@@ -66,7 +66,7 @@ the pond fade without moving the constellation.
 The create flow gives each underwater step its own browser-history entry.
 Back from distance returns to rhythm, then shape, then the photo/film step;
 Forward retraces those entries. Revisiting the photo/film step reopens the empty
-template so a photo can be chosen again, including after returning to the transcript.
+template so a photo can be chosen again, including after returning to recording.
 Forward into an existing underwater entry restores that entry's photo. These
 routes keep the same canvas, water clock and current edits mounted. Returning from naming restores the handled
 memory at colour. Direct underwater URLs open that step using a carried draft,

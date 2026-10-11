@@ -11,7 +11,7 @@ import { useLandingReturn } from "../lib/landingReturn";
 import { INK_ENTRY, pickLandingGalleryIndex, type InkArrival } from "../lib/landingTransition";
 import { buildArchive } from "../lib/archive";
 import { useGalleryPush } from "../lib/labPush";
-import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, DESCENT_STEP_PATHS, isDescentPath, TRANSCRIPT_PATH } from "../lib/routes";
+import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, DESCENT_STEP_PATHS, isDescentPath } from "../lib/routes";
 import { POND_ENTRY, pondTransition, pondSurfaceMask } from "../lib/pondTransition";
 import type { NameFlowState, NamingSession } from "./NamingRim";
 
@@ -24,11 +24,11 @@ interface GalleryEntry {
 }
 
 /**
- * One layout owns /, /memory, /memory/pond, /record/start, /record/transcript,
+ * One layout owns /, /memory, /memory/pond, /record/start,
  * /record/descent, and /record/name. The gallery starts loading behind the ink when Enter is
  * pressed. Naming happens on the pond: the memory rises out of the water, and
  * saving takes that water away onto the gallery that already holds it.
- * The invitation, recording, transcript and descent retain one DescentFlow;
+ * The invitation, recording and descent retain one DescentFlow;
  * naming uses its existing above-water host and surface-frame handoff.
  * The pond also mounts before the rim leaves, so its perspective canvas is
  * ready before it rises into view; scrolling back keeps the gallery mounted
@@ -59,9 +59,8 @@ export function LandingPage() {
   const inGallery = pathname === CAROUSEL_PATH;
   const inNaming = pathname === NAMING_PATH;
   const inRecording = pathname === RECORD_START_PATH;
-  const inTranscript = pathname === TRANSCRIPT_PATH;
   const inDescent = isDescentPath(pathname);
-  const inCreate = inRecording || inTranscript || inDescent;
+  const inCreate = inRecording || inDescent;
   const inPond = pathname === MEMORY_POND_PATH || inCreate || inNaming;
   if (seenPath !== pathname) {
     setSeenPath(pathname);
@@ -235,7 +234,6 @@ export function LandingPage() {
           }} />
           <BackButton onClick={() => {
             if (inNaming) (namingBackRef.current ?? (() => navigate(DESCENT_STEP_PATHS.color, { state: resumeColorState(location.state ?? {}) })))();
-            else if (inTranscript) navigate(RECORD_START_PATH, { state: location.state });
             else if (inRecording) navigate(MEMORY_POND_PATH);
             else if (openingPond && !pondLeaving) { setPondElapsed(null); setPondReady(false); }
             else closePond();

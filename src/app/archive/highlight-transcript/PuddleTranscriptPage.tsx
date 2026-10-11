@@ -1,17 +1,17 @@
-import { FlowPageGrid } from "./FlowPageGrid";
-import { FLOW_PAGE } from "../lib/theme";
-import { SAMPLE_TRANSCRIPT } from "../data/sampleMemory";
+import { FlowPageGrid } from "../../components/FlowPageGrid";
+import { FLOW_PAGE } from "../../lib/theme";
+import { SAMPLE_TRANSCRIPT } from "../../data/sampleMemory";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { CHROME_GRAY } from "../lib/colors";
-import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
-import { BODY_SIZE, NOTE_SIZE, SERIF, TRANSCRIPT, TRANSCRIPT_HIGHLIGHT } from "../lib/theme";
-import { getTranscription } from "../lib/transcribe";
-import type { ArtifactForm } from "../lib/superformula";
-import { PillButton } from "./PillButton";
-import { TextButton } from "./TextButton";
-import { transcriptCharacters, transcriptTypingDelay } from "../lib/transcriptTyping";
-import type { VoiceRippleSpot } from "../lib/voicePeaks";
+import { CHROME_GRAY } from "../../lib/colors";
+import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../../lib/routes";
+import { BODY_SIZE, NOTE_SIZE, SERIF, TRANSCRIPT, TRANSCRIPT_HIGHLIGHT } from "../../lib/theme";
+import { getTranscription } from "../../lib/transcribe";
+import type { ArtifactForm } from "../../lib/superformula";
+import { PillButton } from "../../components/PillButton";
+import { TextButton } from "../../components/TextButton";
+import { transcriptCharacters, transcriptTypingDelay } from "../../lib/transcriptTyping";
+import type { VoiceRippleSpot } from "../../lib/voicePeaks";
 
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
 const POND_FADE = "rgba(226, 230, 226, 0.88)";

@@ -58,7 +58,7 @@ export function createAscentBloom() {
       // The spill grows continuously with emitted energy. Repeated convolution
       // diffuses the silhouette without introducing concentric outlines.
       for (const scale of [1, 2, 4]) {
-        const radius = scale * (1 + spread * spread * a.height * .028);
+        const radius = scale * (1 + spread * spread * a.height * .042);
         uniforms.uImage.value = a.texture;
         uniforms.uStep.value.set(radius / a.width, 0);
         renderer.setRenderTarget(b);

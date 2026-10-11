@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CHROME_GRAY } from "../lib/colors";
 import { SERIF } from "../lib/theme";
 import { INK_ENTRY, flowProgress } from "../lib/landingTransition";
@@ -13,6 +13,12 @@ const INTRO_TO = INK_ENTRY.growEnd - 270;
 const INTRO_FADE = 520;
 
 const HINT_DELAY_MS = 3500;
+/** How far round the tip a pointer, or a word of the transcript trail, makes
+    it step aside: its padding, as a trigger zone that blocks nothing (the
+    vessels under it stay reachable). */
+const HINT_NEAR_PX = 32;
+/** How often, while the tip is up, the trail's words are looked for in its zone. */
+const HINT_CHECK_MS = 150;
 
 const LINE_STYLE: CSSProperties = {
   position: "absolute",
@@ -84,12 +90,54 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
     : touch ? "swipe-mid" : "scroll-mid";
   const ready = visible && settled && !leaving;
   const [rested, setRested] = useState(false);
+  // the tip steps aside while the pointer (or a finger) or any of the trail's
+  // words are in its zone, and comes back once the zone is clear
+  const [occupied, setOccupied] = useState(false);
+  const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
-    if (!ready) { setRested(false); return; }
+    if (!ready) { setRested(false); setOccupied(false); return; }
     const t = window.setTimeout(() => setRested(true), HINT_DELAY_MS);
     return () => window.clearTimeout(t);
   }, [ready]);
-  const on = rested;
+  const on = rested && !occupied;
+  useEffect(() => {
+    if (!rested) return;
+    let pointer: { x: number; y: number } | null = null;
+    const check = () => {
+      const words = ref.current?.querySelector(".gallery-hint-breathe")?.getBoundingClientRect();
+      if (!words || !words.width) return;
+      const left = words.left - HINT_NEAR_PX, right = words.right + HINT_NEAR_PX;
+      const top = words.top - HINT_NEAR_PX, bottom = words.bottom + HINT_NEAR_PX;
+      const inZone = (r: { left: number; right: number; top: number; bottom: number }) =>
+        r.left < right && r.right > left && r.top < bottom && r.bottom > top;
+      let near = !!pointer && inZone({ left: pointer.x, right: pointer.x, top: pointer.y, bottom: pointer.y });
+      if (!near) {
+        for (const word of document.querySelectorAll("[data-transcript-trail] [data-face]")) {
+          if (inZone(word.getBoundingClientRect())) { near = true; break; }
+        }
+      }
+      setOccupied(near);
+    };
+    const move = (e: PointerEvent) => { pointer = { x: e.clientX, y: e.clientY }; check(); };
+    // a finger lifted, or the mouse gone from the window, is no longer there
+    const up = (e: PointerEvent) => { if (e.pointerType !== "mouse") { pointer = null; check(); } };
+    const out = (e: MouseEvent) => { if (!e.relatedTarget) { pointer = null; check(); } };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerdown", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    document.addEventListener("mouseout", out);
+    // the trail's words come and go on their own clock
+    const timer = window.setInterval(check, HINT_CHECK_MS);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerdown", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+      document.removeEventListener("mouseout", out);
+      window.clearInterval(timer);
+    };
+  }, [rested]);
   const [shown, setShown] = useState(kind);
   if (on && kind !== shown) setShown(kind);
   const copy = shown === "swipe-end" ? "swipe once more to begin yours"
@@ -98,7 +146,7 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
     : <>keep scrolling or click <PlusMark /> to leave a memory of your own</>;
 
   return (
-    <p className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE, zIndex: 31, opacity: on ? 1 : 0,
+    <p ref={ref} className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE, zIndex: 31, opacity: on ? 1 : 0,
       filter: on ? "none" : "blur(4px)", transition: "opacity 700ms ease, filter 700ms ease" }}>
       <style>{`
         @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .566; } }

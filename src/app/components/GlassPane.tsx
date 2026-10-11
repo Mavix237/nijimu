@@ -12,6 +12,8 @@ const PANEL_RADIUS = 12;
 const PANEL_SMOOTHING = 0.6;
 const PANEL_WIDTH = 480;
 const PANEL_MAX_HEIGHT = "min(82dvh, 620px)";
+/** A pane for reading: most of a phone's height, still short of its edges. */
+const PANEL_MAX_HEIGHT_TALL = "min(86dvh, 760px)";
 
 export function GlassPane({
   open,
@@ -21,6 +23,7 @@ export function GlassPane({
   labelledBy,
   closeDisabled = false,
   align = "center",
+  tall = false,
   children,
 }: {
   open: boolean;
@@ -33,8 +36,11 @@ export function GlassPane({
   closeDisabled?: boolean;
   /** Dialogs read from the left edge; the profile stays centred. */
   align?: "center" | "start";
+  /** Taller, for reading a memory's whole text; it scrolls inside the pane. */
+  tall?: boolean;
   children: ReactNode;
 }) {
+  const maxHeight = tall ? PANEL_MAX_HEIGHT_TALL : PANEL_MAX_HEIGHT;
   // a phone's pane covers most of the screen, the gallery's vessels included:
   // a deeper blur and a denser tint keep it reading as quiet frosted glass
   const compact = useCompact();
@@ -152,7 +158,9 @@ export function GlassPane({
             position: "relative",
             outline: "none",
             width: "100%",
-            maxHeight: PANEL_MAX_HEIGHT,
+            maxHeight,
+            // a reading pane keeps its size whatever the length of the words
+            height: tall ? maxHeight : undefined,
             borderRadius: PANEL_RADIUS,
             overflow: "hidden",
             background: compact
@@ -185,8 +193,11 @@ export function GlassPane({
               position: "relative",
               zIndex: 2,
               boxSizing: "border-box",
-              maxHeight: PANEL_MAX_HEIGHT,
+              maxHeight,
+              height: tall ? "100%" : undefined,
               overflowY: "auto",
+              // a scroll that reaches the end stays in the pane, not the page behind
+              overscrollBehavior: "contain",
               display: "flex",
               flexDirection: "column",
               alignItems: align === "start" ? "stretch" : "center",

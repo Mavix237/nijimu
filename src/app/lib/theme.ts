@@ -41,6 +41,16 @@ export const TRANSCRIPT = {
   fontFeatureSettings: '"kern" 1',
   fontKerning: "normal",
 } as const;
+/** A memory's words in the gallery — the cursor's trail and the full transcript
+    under the year set alike. The size is 0.9vw between 12 and 14px; the trail
+    measures its words with these numbers. */
+export const GALLERY_TRANSCRIPT_SIZE = { vw: 0.9, min: 12, max: 14 } as const;
+export const GALLERY_TRANSCRIPT = {
+  color: "#a4a4ab",
+  fontFamily: SERIF,
+  fontWeight: 400,
+  fontSize: `clamp(${GALLERY_TRANSCRIPT_SIZE.min}px, ${GALLERY_TRANSCRIPT_SIZE.vw}vw, ${GALLERY_TRANSCRIPT_SIZE.max}px)`,
+} as const;
 /** Pill and text-button labels. Primary and secondary share this size. */
 export const BUTTON_SIZE_SM = "clamp(13px, 2.6vw, 14px)";
 /** Exposure title — glass panes and pond overlay headings. */

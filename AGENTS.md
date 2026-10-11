@@ -139,6 +139,24 @@ is a live canvas.
   (.5 on phones, .65 elsewhere) inside an unchanged button; they darken on
   hover for a mouse only (a tap used to leave them dark). The field
   toggle's menu row says "constellation view" / "timeline view".
+- Phone gallery text (2026-10-11): ≤600px the gallery shows only name and
+  year — no transcript under the year, no pointer trail. Pressing the vessel
+  at the apex opens `MemoryReadingPane` (GlassPane `tall`: fixed
+  min(86dvh, 760px), scrolling inside; name in the caption's serif italic at
+  TITLE_SIZE, year in SERIF_CJK, the words centred, an outline "close" at
+  the foot). Wired in `LiveVesselGallery` via
+  `onPick` on phones only; desktop's apex press is unchanged. The gallery's
+  wheel/swipe/key handlers ignore events from an open `[role=dialog]`.
+- Transcript trail spacing (`TranscriptTrail`): the gap before the next word
+  is GAP_X_EM / STEP_Y_EM × a per-word draw in `JITTER` (.72–1.32) × a pace
+  factor from the pointer's eased speed (SLOW_GAP .6 below 120 px/s, full
+  above 900 px/s), floored so words never touch. Measured: slow ≈ 9–16 px of
+  clear space between words, fast ≈ 15–24 px.
+- Gallery scroll tip (`GalleryScrollHint`): while the pointer, a finger, or a
+  word of the transcript trail (`[data-transcript-trail] [data-face]`) is within
+  32 px of its words (`HINT_NEAR_PX`, a trigger zone that blocks nothing), it
+  fades; it returns once that zone is clear (checked on pointer events and
+  every 150 ms).
 - Glass panes (profile, dialogs): `IridescentSheen` draws premultiplied into
   a premultiplied canvas — the unpremultiplied canvas it used is composited
   differently by Safari and likely read as a bright white rim there (not

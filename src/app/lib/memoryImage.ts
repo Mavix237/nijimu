@@ -112,8 +112,8 @@ export async function memoryImage(artifact: HTMLCanvasElement, title: string, ye
   ctx.font = `24px ${SERIF}`;
   ctx.fillText(year, 600, yearY);
   ctx.font = `28px ${SERIF}`;
-  ctx.textAlign = "left";
-  lines.forEach((line, i) => ctx.fillText(line, 150, textY + i * transcriptLineHeight));
+  ctx.textAlign = "center";
+  lines.forEach((line, i) => ctx.fillText(line, 600, textY + i * transcriptLineHeight));
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Image export failed")), "image/png"));
 }
 

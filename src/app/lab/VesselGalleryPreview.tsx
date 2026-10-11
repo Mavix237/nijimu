@@ -18,6 +18,8 @@ import {
 import { VesselArtifact, loadSeatPhoto, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
 import { vesselParts } from "./vesselBuilds";
 import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "../components/HeaderMenu";
+import { MemoryReadingPane, type ReadableMemory } from "../components/MemoryReadingPane";
+import { useCompact } from "../hooks/useCompact";
 import { LabPushButton } from "./LabPushButton";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "../components/HeaderIconLabel";
 import {
@@ -727,9 +729,18 @@ export function LiveVesselGallery({
     const urls = [...curatedStates().map((state) => state.url), ...buildArchive().map((item) => item.look?.photoUrl ?? "")].filter(Boolean);
     preloadSeatPhotos(urls);
   }, []);
+  // on a phone the gallery shows only name and year under the vessel: pressing
+  // the vessel in hand opens its whole text (MemoryReadingPane)
+  const compact = useCompact();
+  const [reading, setReading] = useState<ReadableMemory | null>(null);
+  const read = useCallback((item: ArchiveArtifact) => {
+    setReading({ id: item.id, event: item.event, year: item.year, transcript: item.transcript ?? "" });
+  }, []);
   return (
-    <VesselGalleryProvider active={active} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={`${pushedAt}|${library.version}`} onFocus={onFocus}>
+    <VesselGalleryProvider active={active} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={`${pushedAt}|${library.version}`} onFocus={onFocus}
+      onPick={compact ? read : undefined}>
       {children}
+      <MemoryReadingPane memory={reading} onClose={() => setReading(null)} />
     </VesselGalleryProvider>
   );
 }

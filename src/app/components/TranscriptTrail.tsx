@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
-import { SERIF } from "../lib/theme";
+import { GALLERY_TRANSCRIPT, GALLERY_TRANSCRIPT_SIZE, SERIF } from "../lib/theme";
 
 /*
  * The selected memory's words, let fall behind the pointer.
@@ -7,30 +7,57 @@ import { SERIF } from "../lib/theme";
  * As the pointer moves across the screen (inside a margin: 10vw at the sides,
  * 10vh above, 5vh below) it lets fall the transcript's words in order, one at
  * a time: a word is set down where the pointer is once it has moved clear of
- * the last one, and shows a beat after the pointer has passed — a staggered
- * line of what was said, following the hand. Only the last few stay, the
- * older the fainter; the oldest, when a new one comes, comes apart into grains
- * that drift away from the line and go out. The words are a light grey.
+ * the last one — by a gap that varies from word to word and closes up when the
+ * pointer is slow — and shows a beat after the pointer has passed — a staggered
+ * line of what was said, following the hand. Only the last few stay; the
+ * oldest, when a new one comes, comes apart into grains that drift away from
+ * the line and go out. The words are set as the full transcript under the
+ * year is (GALLERY_TRANSCRIPT), at its full strength.
  *
  * The memory's name and year, and the timeline, are blocks the words keep out
  * of: no word is set down on one, or within AVOID_PAD of it.
+ *
+ * Once the pointer has travelled REVEAL_PX across the screen with this memory
+ * selected, the words that are down leave — each slides down out of its own
+ * mask, one after another — and REVEAL_DELAY_MS after the last has gone the
+ * gallery is told (`onReveal`), so the whole transcript slides in under the
+ * year. Nothing more is let fall until another memory is selected, which
+ * starts the count over.
  */
 
 /** How many of the last words set down stay on the screen. */
-const TRAIL = 5;
-/** Same face and size as the memory's full transcript under the year. */
-const SIZE_VW = 0.9;
-const SIZE_MIN = 12;
-const SIZE_MAX = 14;
+const TRAIL = 12;
+/** How far the pointer travels with a memory selected before its whole transcript is given, px. */
+const REVEAL_PX = 2000;
+/** One move counts at most this far, so a pointer coming back into the window is not a journey. */
+const MOVE_CAP_PX = 200;
+/** The words' leaving: each slides down out of its mask over OUT_MS, the next OUT_STAGGER_MS after. */
+const OUT_MS = 520;
+const OUT_STAGGER_MS = 45;
+/** The pause between the last word gone and the full transcript coming in. */
+const REVEAL_DELAY_MS = 500;
+/** Same face, size and ink as the memory's full transcript under the year (GALLERY_TRANSCRIPT). */
+const { vw: SIZE_VW, min: SIZE_MIN, max: SIZE_MAX } = GALLERY_TRANSCRIPT_SIZE;
 const LETTER_SPACING = 0;
 /** Clear space between a word and the next, side by side (em), and their
     least distance one above the other (em, centre to centre). */
 const GAP_X_EM = 1.4;
 const STEP_Y_EM = 3.6;
+/** The spacing is never stamped: each word draws its own share of it, and a
+    slow hand lets the words fall closer — the gap shrinks to SLOW_GAP of
+    itself below SLOW_PX_S of pointer speed, full again above FAST_PX_S. The
+    product is held to a floor so words never touch. */
+const JITTER = [0.72, 1.32] as const;
+const SLOW_GAP = 0.6;
+const SLOW_PX_S = 120;
+const FAST_PX_S = 900;
+/** The pointer's speed is eased over about this long, so one quick flick does not decide it. */
+const SPEED_EASE_MS = 140;
+const GAP_FLOOR = { x: 0.4, y: 0.55 };
 /** A word shows this long after the pointer has set it down: the stagger. */
 const DELAY_MS = 140;
 const IN_MS = 380;
-const LIGHT_GRAY = "#c4c4c9";
+const INK = GALLERY_TRANSCRIPT.color;
 /** Air kept around what the words avoid, px. */
 const AVOID_PAD = { x: 24, y: 14 };
 
@@ -52,6 +79,8 @@ function avoidRect(el: Element | null): Rect | null {
   if (!el) return null;
   let u: Rect | null = null;
   for (const part of el.querySelectorAll("span, text, line, circle")) {
+    // the caption's full transcript is not a block: it is only there once the trail has gone
+    if (part.closest("[data-trail-ignore]")) continue;
     const r = part.getBoundingClientRect();
     if (!r.width || !r.height) continue;
     u = u
@@ -167,18 +196,20 @@ const placeStyle = (x: number, y: number): CSSProperties => ({
   left: x,
   top: y,
   transform: "translate(-50%, -50%)",
-  fontFamily: SERIF,
-  fontSize: `clamp(${SIZE_MIN}px, ${SIZE_VW}vw, ${SIZE_MAX}px)`,
-  fontWeight: 400,
+  ...GALLERY_TRANSCRIPT,
   letterSpacing: LETTER_SPACING ? `${LETTER_SPACING}em` : undefined,
   lineHeight: 1,
   whiteSpace: "nowrap",
 });
 
-export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
+export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed, onReveal }: {
   memoryId: string;
   transcript: string;
   visible: boolean;
+  /** The whole transcript is showing: the trail's words leave and no more fall. */
+  revealed: boolean;
+  /** The pointer has travelled far enough with this memory selected. */
+  onReveal: () => void;
   /** The caption, the timeline: what is drawn in them stays clear of the words. */
   avoid?: RefObject<Element | null>[];
 }) {
@@ -187,12 +218,24 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
   const [trail, setTrail] = useState<Fallen[]>([]);
   const trailNow = useRef<Fallen[]>([]);
   const spans = useRef(new Map<number, HTMLSpanElement>());
-  const last = useRef<{ x: number; y: number; width: number } | null>(null);
+  /** The last word set down, and the share of the gap the next one waits for. */
+  const last = useRef<{ x: number; y: number; width: number; jitter: number } | null>(null);
+  /** The pointer's eased speed (px/s) and the time of its last move. */
+  const speed = useRef({ v: 0, t: 0 });
   /** The next word of the transcript to set down. */
   const next = useRef(0);
   const count = useRef(0);
   const grains = useRef<Grain[]>([]);
   const frame = useRef(0);
+  /** How far the pointer has travelled with this memory selected, px, and where it was. */
+  const travel = useRef(0);
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const reveal = useRef(onReveal);
+  reveal.current = onReveal;
+  const [leaving, setLeaving] = useState(false);
+  /** The journey is done for this memory: the words are leaving, or have gone. */
+  const done = useRef(false);
+  const revealTimer = useRef(0);
 
   const words = useMemo(() => transcript.split(/[\s.,!?]+/).filter(Boolean), [transcript]);
 
@@ -216,7 +259,7 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
       prev = now;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
-      ctx.fillStyle = LIGHT_GRAY;
+      ctx.fillStyle = INK;
       const alive: Grain[] = [];
       for (const g of grains.current) {
         const age = now - g.at;
@@ -245,18 +288,57 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
 
   useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
-  // another memory, another set of words: the trail starts over
+  // another memory, another set of words: the trail and the count start over
   useEffect(() => {
     trailNow.current = [];
     setTrail([]);
+    setLeaving(false);
     last.current = null;
     next.current = 0;
     grains.current = [];
+    travel.current = 0;
+    lastPointer.current = null;
+    speed.current = { v: 0, t: 0 };
+    done.current = false;
+    window.clearTimeout(revealTimer.current);
   }, [memoryId]);
+  useEffect(() => () => window.clearTimeout(revealTimer.current), []);
+
+  /** The journey's end: the words go, one after another, the trail empties, and a
+      beat later the gallery gives the whole transcript. */
+  const finish = () => {
+    done.current = true;
+    const n = trailNow.current.length;
+    if (n > 0) setLeaving(true);
+    const gone = n > 0 ? OUT_MS + (n - 1) * OUT_STAGGER_MS : 0;
+    revealTimer.current = window.setTimeout(() => {
+      trailNow.current = [];
+      setTrail([]);
+      setLeaving(false);
+      revealTimer.current = window.setTimeout(() => reveal.current(), REVEAL_DELAY_MS);
+    }, gone);
+  };
 
   useEffect(() => {
     if (!visible || words.length === 0) return;
     const onMove = (e: PointerEvent) => {
+      if (revealed || done.current) return;
+      // the journey: every move counts, wherever it is on the screen
+      const was = lastPointer.current;
+      lastPointer.current = { x: e.clientX, y: e.clientY };
+      const dt = e.timeStamp - speed.current.t;
+      if (was && dt > 0 && dt < 500) {
+        const v = (Math.hypot(e.clientX - was.x, e.clientY - was.y) / dt) * 1000;
+        speed.current.v += (v - speed.current.v) * Math.min(1, dt / SPEED_EASE_MS);
+      } else speed.current.v = 0;
+      speed.current.t = e.timeStamp;
+      if (was) {
+        travel.current += Math.min(MOVE_CAP_PX, Math.hypot(e.clientX - was.x, e.clientY - was.y));
+        if (travel.current >= REVEAL_PX) {
+          finish();
+          return;
+        }
+      }
       const r = box.current?.getBoundingClientRect();
       if (!r) return;
       const vw = r.width;
@@ -270,12 +352,16 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
       const px = fontPx();
       const width = textWidth(text, px);
 
-      // set down only once the pointer is clear of the last word
+      // set down only once the pointer is clear of the last word, by a gap that
+      // varies word to word and closes up when the hand is slow
       const prev = last.current;
       if (prev) {
         const dx = Math.abs(x - prev.x);
         const dy = Math.abs(y - prev.y);
-        if (dx < (prev.width + width) / 2 + GAP_X_EM * px && dy < STEP_Y_EM * px) return;
+        const pace = Math.min(1, Math.max(0, (speed.current.v - SLOW_PX_S) / (FAST_PX_S - SLOW_PX_S)));
+        const k = prev.jitter * (SLOW_GAP + (1 - SLOW_GAP) * pace * pace * (3 - 2 * pace));
+        const kx = Math.max(GAP_FLOOR.x, k), ky = Math.max(GAP_FLOOR.y, k);
+        if (dx < (prev.width + width) / 2 + GAP_X_EM * px * kx && dy < STEP_Y_EM * px * ky) return;
       }
       const at: Rect = { left: e.clientX - width / 2, top: e.clientY - px, right: e.clientX + width / 2, bottom: e.clientY + px };
       if (avoid?.some((el) => {
@@ -284,7 +370,7 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
       })) return;
 
       next.current = index + 1;
-      last.current = { x, y, width };
+      last.current = { x, y, width, jitter: JITTER[0] + Math.random() * (JITTER[1] - JITTER[0]) };
       const word: Fallen = { key: count.current++, text, x, y, width };
       const all = [...trailNow.current, word];
       const gone = all.slice(0, Math.max(0, all.length - TRAIL));
@@ -298,7 +384,7 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
         const dx = old.x - toward.x;
         const dy = old.y - toward.y - 0.5 * Math.hypot(old.x - toward.x, old.y - toward.y);
         const n = Math.hypot(dx, dy) || 1;
-        const face = (el.firstElementChild as HTMLElement | null) ?? el;
+        const face = el.querySelector<HTMLElement>("[data-face]") ?? el;
         const alpha = parseFloat(getComputedStyle(el).opacity) * parseFloat(getComputedStyle(face).opacity);
         grains.current.push(...grainsOf(face, r, old.text, alpha, { x: dx / n, y: dy / n }));
       });
@@ -308,16 +394,17 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
     window.addEventListener("pointermove", onMove);
     return () => window.removeEventListener("pointermove", onMove);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, words, avoid]);
+  }, [visible, words, avoid, revealed]);
 
   return (
     <div
       ref={box}
       aria-hidden
+      data-transcript-trail
       className="absolute pointer-events-none"
       style={{
         inset: 0,
-        opacity: visible ? 0.8 : 0,
+        opacity: visible ? 1 : 0,
         transition: "opacity 0.8s ease",
       }}
     >
@@ -326,6 +413,11 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
           from { opacity: 0; filter: blur(2px); }
           to { opacity: 1; filter: blur(0); }
         }
+        @keyframes trailSlideOut {
+          from { transform: translateY(0); }
+          to { transform: translateY(115%); }
+        }
+        @keyframes trailFadeOut { to { opacity: 0; } }
       `}</style>
       <canvas ref={sky} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
       {trail.map(({ key, text, x, y }, i) => (
@@ -335,15 +427,17 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid }: {
             if (el) spans.current.set(key, el);
             else spans.current.delete(key);
           }}
-          // the older a word in the trail, the fainter
-          style={{
-            ...placeStyle(x, y),
-            color: LIGHT_GRAY,
-            opacity: 0.25 + (0.75 * (i + 1)) / trail.length,
-            transition: "opacity 0.5s ease",
-          }}
+          style={placeStyle(x, y)}
         >
-          <span style={{ display: "block", animation: `trailIn ${IN_MS}ms ease-out ${DELAY_MS}ms both` }}>{text}</span>
+          {/* the mask: a word leaves by sliding down out of it */}
+          <span style={{ display: "block", overflow: "hidden", padding: "0.2em 0" }}>
+            <span data-face style={{
+              display: "block",
+              animation: leaving
+                ? `${reducedMotion() ? "trailFadeOut" : "trailSlideOut"} ${OUT_MS}ms cubic-bezier(.55, 0, .75, .2) ${i * OUT_STAGGER_MS}ms both`
+                : `trailIn ${IN_MS}ms ease-out ${DELAY_MS}ms both`,
+            }}>{text}</span>
+          </span>
         </span>
       ))}
     </div>

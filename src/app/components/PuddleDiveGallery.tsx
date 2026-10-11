@@ -5,17 +5,18 @@ import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
 import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
 import { BackButton } from "./BackButton";
 import { GalleryScrollHint, useTouchFirst } from "./GalleryOnboarding";
-import { setApexHover, useApexHover } from "../lib/apexHover";
+import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { TranscriptTrail } from "./TranscriptTrail";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
+import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
 import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
 import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
 import { carouselFrame, carouselSeat, carouselContainsOffset, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
 import { useHeaderMenu } from "./HeaderMenu";
+import { useCompact } from "../hooks/useCompact";
 
 /*
  * PuddleDiveGallery — the gallery presentation of the "dive" variant.
@@ -139,38 +140,90 @@ const TRANSCRIPT_CLEARANCE = 24;
 
 /** The memory's own words, under its year. */
 const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
-  color: "#a4a4ab",
+  ...GALLERY_TRANSCRIPT,
   margin: "1.6em auto 0",
   maxWidth: "60ch",
-  fontFamily: SERIF,
-  fontWeight: 400,
-  fontSize: "clamp(12px, 0.9vw, 14px)",
-  lineHeight: 1.6,
+  lineHeight: 1.45,
   textAlign: "center",
   textWrap: "pretty",
   transition: "opacity 0.6s ease",
 };
 
-/** The words stop above `floorY`; when they would run past it, the last lines fade out. */
+/** A transcript line slides down into place over LINE_IN_MS, the next LINE_STAGGER_MS after. */
+const LINE_IN_MS = 720;
+const LINE_STAGGER_MS = 80;
+
+/** The words stop above `floorY`; when they would run past it, the last lines fade out.
+    They come in line by line, each sliding down out of its own mask; the lines are
+    found by setting the words once, unseen, at the same width and reading where
+    each one wraps. */
 function CaptionTranscript({ text, visible, floorY }: { text: string; visible: boolean; floorY: number }) {
   const ref = useRef<HTMLParagraphElement>(null);
+  const measure = useRef<HTMLParagraphElement>(null);
   const [room, setRoom] = useState<number | null>(null);
+  const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
+  const [lines, setLines] = useState<string[]>([text]);
+  useLayoutEffect(() => {
+    const el = measure.current;
+    if (!el) return;
+    const read = () => {
+      const next: string[] = [];
+      let top: number | null = null;
+      for (const span of el.children as HTMLCollectionOf<HTMLElement>) {
+        const word = span.textContent?.trim() ?? "";
+        if (top === null || Math.abs(span.offsetTop - top) > 2) {
+          next.push(word);
+          top = span.offsetTop;
+        } else next[next.length - 1] += ` ${word}`;
+      }
+      setLines((was) => (was.length === next.length && was.every((l, i) => l === next[i]) ? was : next));
+    };
+    read();
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [words]);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
     const top = el.getBoundingClientRect().top;
     const space = Math.max(0, floorY - top);
     setRoom(el.scrollHeight > space + 1 ? space : null);
-  }, [text, floorY, visible]);
+  }, [lines, floorY, visible]);
   const fade = "linear-gradient(to bottom, #000 calc(100% - 3.2em), transparent)";
+  const still = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   return (
-    <p ref={ref} style={{
-      ...CAPTION_TRANSCRIPT_STYLE,
-      opacity: visible ? 1 : 0,
-      ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
-    }}>
-      {text}
-    </p>
+    <div data-trail-ignore style={{ position: "relative" }}>
+      <style>{`
+        @keyframes transcriptLineIn {
+          from { transform: translateY(-105%); }
+          to { transform: translateY(0); }
+        }
+        @keyframes transcriptLineFade { from { opacity: 0; } }
+      `}</style>
+      {/* the same words, unseen, to find where the lines break */}
+      <p ref={measure} aria-hidden style={{ ...CAPTION_TRANSCRIPT_STYLE, position: "absolute", left: 0, right: 0, top: 0, visibility: "hidden", pointerEvents: "none" }}>
+        {words.map((word, i) => <span key={i}>{word}{i < words.length - 1 ? " " : ""}</span>)}
+      </p>
+      <p ref={ref} style={{
+        ...CAPTION_TRANSCRIPT_STYLE,
+        opacity: visible ? 1 : 0,
+        ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
+      }}>
+        {lines.map((line, i) => (
+          <span key={i} style={{ display: "block", overflow: "hidden" }}>
+            <span style={{
+              display: "block",
+              textAlign: "center",
+              // shown afresh each time: the lines come in again
+              animation: visible
+                ? `${still ? "transcriptLineFade" : "transcriptLineIn"} ${LINE_IN_MS}ms cubic-bezier(.2, .7, .2, 1) ${i * LINE_STAGGER_MS}ms both`
+                : "none",
+            }}>{line}</span>
+          </span>
+        ))}
+      </p>
+    </div>
   );
 }
 
@@ -329,8 +382,13 @@ export function PuddleDiveGallery({
   if (captionItem) lastCaptionRef.current = captionItem;
   const shownCaption = captionItem ?? lastCaptionRef.current;
   const rimSettled = Math.abs(rimAt - activeIdx) < 0.04;
-  const apexHover = useApexHover();
+  /** The memory whose whole transcript the pointer's journey has opened (TranscriptTrail). */
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+  // selecting another memory closes it; that memory's count starts from nothing
+  useEffect(() => setRevealedId(null), [focusId]);
   const touchFirst = useTouchFirst();
+  // a phone shows only the name and year; the vessel opens the words (MemoryReadingPane)
+  const compact = useCompact();
   useEffect(() => () => setApexHover(false), []);
   const rimSettledRef = useRef(rimSettled);
   rimSettledRef.current = rimSettled;
@@ -373,6 +431,8 @@ export function PuddleDiveGallery({
       if (phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // an open pane (the memory's words, the profile) has the keys; its Escape closes it
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (e.key === "Escape") { onExit?.(); return; }
       if (inField) return;
       if (e.key === "ArrowLeft") { if (hasOlder) onNavigate(-1); }
@@ -411,6 +471,8 @@ export function PuddleDiveGallery({
       if (phase !== "gallery" || growth < 1 || pondDeparture > 0 || inField) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // scrolling a pane's text is not turning the rim
+      if (t?.closest('[role="dialog"]')) return;
       e.preventDefault();
       const now = performance.now();
       if (now < lockedUntil) return;
@@ -439,7 +501,8 @@ export function PuddleDiveGallery({
     let start: { x: number; y: number } | null = null;
     const down = (e: TouchEvent) => {
       const target = e.target as HTMLElement;
-      if (e.touches.length !== 1 || target.closest("button, input, textarea, canvas")) { start = null; return; }
+      // nor is a swipe through a pane's text
+      if (e.touches.length !== 1 || target.closest('button, input, textarea, canvas, [role="dialog"]')) { start = null; return; }
       start = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     };
     const end = (e: TouchEvent) => {
@@ -773,12 +836,14 @@ export function PuddleDiveGallery({
              Over the wash and under the dome. Not on the naming step, whose
              memory is still being made, nor in the field, where no memory is
              selected. ═══ */}
-      {!caption && items[activeIdx] && (
+      {!caption && !compact && items[activeIdx] && (
         <TranscriptTrail
           memoryId={items[activeIdx].id}
           transcript={items[activeIdx].transcript}
           visible={yearsVisible && !field?.on}
           avoid={trailAvoid}
+          revealed={revealedId === items[activeIdx].id}
+          onReveal={() => setRevealedId(items[activeIdx].id)}
         />
       )}
 
@@ -1039,8 +1104,8 @@ export function PuddleDiveGallery({
           }}
         >
           {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
-          {!caption && !field?.on && shownCaption.transcript && (
-            <CaptionTranscript text={shownCaption.transcript} visible={rimSettled && (touchFirst || apexHover)}
+          {!caption && !field?.on && !compact && shownCaption.transcript && (
+            <CaptionTranscript text={shownCaption.transcript} visible={rimSettled && (touchFirst || revealedId === shownCaption.id)}
               floorY={viewport.h - (showTimeScale ? TS_BOTTOM_PX + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
           )}
         </div>}

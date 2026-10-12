@@ -9,7 +9,7 @@ import {
   GalleryOverrideContext, type ArtifactSeat, type GalleryOverride, type SeatDepth, type SeatPlace,
 } from "../lib/galleryOverride";
 import { pushGalleryPanel, readGalleryPush, useGalleryPush, type GalleryPanel, type GalleryPanelPush } from "../lib/labPush";
-import { entrySignature, galleryLibrary, librarySavedAt, libraryVersion, useGalleryLibrary, type LibraryEntry } from "../lib/galleryLibrary";
+import { entrySignature, galleryLibrary, librarySavedAt, libraryVersion, setLibraryMode, useGalleryLibrary, type LibraryEntry } from "../lib/galleryLibrary";
 import { formKey } from "../lib/superformula";
 import {
   DISTANCE_FADE, VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
@@ -377,6 +377,48 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   );
 }
 
+/** Shuffle between the tuned forms (the default) and the original ones, beside the field switch. */
+function LibraryToggle() {
+  const [nameShown, setNameShown] = useState(false);
+  const { mode } = useGalleryLibrary();
+  const { list } = useHeaderMenu();
+  const tuned = mode === "tuned";
+  const title = tuned ? "switch to the original forms" : "switch to the tuned forms";
+  const flip = () => setLibraryMode(tuned ? "original" : "tuned");
+  const glyph = (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke={CHROME_GRAY} strokeWidth="1.1"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M1.5 4.5h2.2c2.6 0 3.9 7 6.6 7h4.2" />
+      <path d="M1.5 11.5h2.2c1.1 0 1.9-1.2 2.6-2.6M9 7.1c.6-1.4 1.4-2.6 2.6-2.6h2.9" />
+      <path d="M12.8 2.6l1.7 1.9-1.7 1.9M12.8 9.6l1.7 1.9-1.7 1.9" />
+      {!tuned && <circle cx="8" cy="14.6" r="0.9" fill={CHROME_GRAY} stroke="none" />}
+    </svg>
+  );
+  if (list) return <HeaderMenuRow order={HEADER_MENU_ORDER.library} icon={glyph}
+    label={tuned ? "original forms" : "tuned forms"} ariaLabel={title} onClick={flip} />;
+  return (
+    <button
+      type="button"
+      aria-label={title}
+      aria-pressed={!tuned}
+      onClick={(e) => { e.stopPropagation(); flip(); }}
+      onMouseEnter={() => setNameShown(true)}
+      onMouseLeave={() => setNameShown(false)}
+      onFocus={() => setNameShown(true)}
+      onBlur={() => setNameShown(false)}
+      style={{
+        position: "fixed", top: "var(--chrome-top)", right: "var(--chrome-r3)", zIndex: 99999, boxSizing: "border-box",
+        width: "var(--chrome-icon)", height: 36 + HEADER_ICON_LABEL_PAD, padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
+        border: "none", background: "transparent", cursor: "pointer",
+        display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.85,
+      }}
+    >
+      <HeaderIconLabel name={tuned ? "tuned" : "original"} shown={nameShown} />
+      {glyph}
+    </button>
+  );
+}
+
 /** The seat's vessel, skipped when nothing about it changed — the field re-renders the gallery every frame. */
 const SeatVessel = memo(VesselArtifact);
 
@@ -667,7 +709,7 @@ export function VesselGalleryProvider({
   }, [indexOf, field]);
 
   const toggle = useCallback(() => setField(!field.on, field.apex), [setField, field]);
-  const chrome = useMemo(() => <FieldToggle on={fieldOn} onToggle={toggle} />, [fieldOn, toggle]);
+  const chrome = useMemo(() => <><FieldToggle on={fieldOn} onToggle={toggle} /><LibraryToggle /></>, [fieldOn, toggle]);
   // The curve only has ten seats in view. The lab's ten can all stay mounted.
   // A longer archive — the memories page — leaves the rest unmounted until the
   // field is open, so their canvases don't crowd out the pond's.

@@ -26,7 +26,7 @@ export function useHeaderMenu(): HeaderMenuValue {
 }
 
 /** Rows top to bottom: what the page offers first, the sound last. */
-export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, music: 3 } as const;
+export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, library: 3, music: 4 } as const;
 
 const ROW_ICON = 16;
 

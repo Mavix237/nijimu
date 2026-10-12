@@ -1,4 +1,4 @@
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type Ref } from "react";
+import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type Ref } from "react";
 import { Link } from "react-router";
 import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
@@ -149,9 +149,12 @@ const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
   transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
 };
 
-/** A transcript line slides down into place over LINE_IN_MS, the next LINE_STAGGER_MS after. */
+/** A transcript line slides down into place over LINE_IN_MS, the next LINE_STAGGER_MS after.
+    The first line comes in a word at a time, WORD_STAGGER_MS apart; the second follows
+    the first line's last word by one more step. */
 const LINE_IN_MS = 720;
 const LINE_STAGGER_MS = 80;
+const WORD_STAGGER_MS = 70;
 
 /** The words stop above `floorY`; when they would run past it, the last lines fade out.
     They come in line by line, each sliding down out of its own mask; the lines are
@@ -210,18 +213,34 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
         opacity: visible ? 1 : 0,
         ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
       }}>
-        {lines.map((line, i) => (
-          <span key={i} style={{ display: "block", overflow: "hidden" }}>
-            <span style={{
-              display: "block",
-              textAlign: "center",
-              // shown afresh each time: the lines come in again
-              animation: visible
-                ? `${still ? "transcriptLineFade" : "transcriptLineIn"} ${LINE_IN_MS}ms cubic-bezier(.2, .7, .2, 1) ${i * LINE_STAGGER_MS}ms both`
-                : "none",
-            }}>{line}</span>
-          </span>
-        ))}
+        {lines.map((line, i) => {
+          // shown afresh each time: the lines come in again
+          const enter = (delay: number) => visible
+            ? `${still ? "transcriptLineFade" : "transcriptLineIn"} ${LINE_IN_MS}ms cubic-bezier(.2, .7, .2, 1) ${delay}ms both`
+            : "none";
+          if (i === 0) {
+            const first = line.split(" ");
+            return (
+              <span key={i} style={{ display: "block", textAlign: "center" }}>
+                {first.map((word, j) => (
+                  <Fragment key={j}>
+                    {/* each word slides down out of its own mask */}
+                    <span style={{ display: "inline-block", overflow: "hidden", verticalAlign: "top" }}>
+                      <span style={{ display: "inline-block", animation: enter(j * WORD_STAGGER_MS) }}>{word}</span>
+                    </span>
+                    {j < first.length - 1 ? " " : ""}
+                  </Fragment>
+                ))}
+              </span>
+            );
+          }
+          const after = lines[0].split(" ").length * WORD_STAGGER_MS;
+          return (
+            <span key={i} style={{ display: "block", overflow: "hidden" }}>
+              <span style={{ display: "block", textAlign: "center", animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
+            </span>
+          );
+        })}
       </p>
     </div>
   );

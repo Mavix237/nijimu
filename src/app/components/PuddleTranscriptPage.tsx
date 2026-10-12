@@ -7,6 +7,7 @@ import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes"
 import { NOTE_SIZE, SERIF, TRANSCRIPT, TRANSCRIPT_WIDTH } from "../lib/theme";
 import { getTranscription } from "../lib/transcribe";
 import type { ArtifactForm } from "../lib/superformula";
+import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
 import { transcriptCharacters, transcriptTypingDelay } from "../lib/transcriptTyping";
 import type { VoiceRippleSpot } from "../lib/voicePeaks";
@@ -384,20 +385,11 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                   onClick={goToRecord}
                   style={{ width: "9em", justifyContent: "center" }}
                 />
-                <span
-                  aria-hidden
-                  style={{
-                    width: 1,
-                    height: "1em",
-                    background: "rgba(123, 123, 135, 0.45)",
-                    flexShrink: 0,
-                  }}
-                />
-                <TextButton
+                <PillButton
                   label="continue"
+                  trailing="›"
                   onClick={handleContinue}
                   disabled={fadeOutContent}
-                  style={{ width: "9em", justifyContent: "center" }}
                 />
               </>
             )}

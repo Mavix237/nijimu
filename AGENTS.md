@@ -22,6 +22,10 @@ continue" (a fixed row, no longer under the last line) and naming's save
 While recording, "recording · m:ss" is centred on the screen; the
 instructions are one paragraph at the transcript's width (`TRANSCRIPT_WIDTH`). The
 gallery trail still lets words fall behind the pointer without highlighted ink.
+When the trail opens a memory's whole transcript under its year
+(`CaptionTranscript`), the first line comes in word by word (`WORD_STAGGER_MS`
+70), each word sliding down out of its own mask; the rest follow line by line
+(`LINE_STAGGER_MS` 80), starting one step after the first line's last word.
 
 ## Water surface continuity (2026-10-11)
 

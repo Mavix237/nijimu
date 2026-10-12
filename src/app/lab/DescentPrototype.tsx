@@ -3188,7 +3188,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
                 : <>{stepLines(step, transcript)[0]}<br />{stepLines(step, transcript)[1]}</>}
             </p>
           </div>}
-          actions={compact ? undefined : <PillButton label="continue" trailing="›" onClick={continueStep} />} />
+          actions={compact ? undefined : <PillButton label="continue" trailing="›" variant={step === "color" ? "dark" : "light"} onClick={continueStep} />} />
         {!compact && <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
           opacity: (step === "distance" || tracking.isTracking) && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
           <GestureHint kind={step} active={gestureLive} style={{

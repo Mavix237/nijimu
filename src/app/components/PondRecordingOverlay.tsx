@@ -1,11 +1,14 @@
 import { FlowPageGrid } from "./FlowPageGrid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { useCompact } from "../hooks/useCompact";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { CHROME_GRAY } from "../lib/colors";
-import { FLOW_PAGE, SERIF, TITLE, NOTE_SIZE, INSTRUCTION_SIZE, TRANSCRIPT, TRANSCRIPT_WIDTH } from "../lib/theme";
+import { FLOW_PAGE, SERIF, NOTE_SIZE, INSTRUCTION_SIZE, TRANSCRIPT, TRANSCRIPT_WIDTH, UNDERWATER_PHONE } from "../lib/theme";
+import { PAGE_HEADER_MARK } from "./PageHeader";
 import { beginTranscription } from "../lib/transcribe";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
+import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
 import { RecordingInstructionsDialog } from "./RecordingInstructionsDialog";
 import { TRANSCRIPT_PATH, MEMORY_POND_PATH } from "../lib/routes";
@@ -47,6 +50,7 @@ export function PondRecordingOverlay({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const compact = useCompact();
   const arrival = (location.state as RecordingArrival | null) ?? null;
   const focus = arrival?.focus;
 
@@ -187,7 +191,8 @@ export function PondRecordingOverlay({
 
       <FlowPageGrid headingStyle={{ maxWidth: "none" }} heading={
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28, ...leaveStyle }}>
-          <div style={{ ...TITLE, margin: 0, color: CHROME_GRAY, width: "100%", textAlign: "center" }}>
+          <div style={{ margin: 0, width: "100%", textAlign: "center", color: CHROME_GRAY, fontFamily: SERIF,
+            fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45 }}>
             <ParticleText
               text="Speak about a memory."
               seed={41}
@@ -200,8 +205,7 @@ export function PondRecordingOverlay({
           </div>
           {/* as wide as the transcript that follows: measured in its font */}
           <div style={{ fontFamily: TRANSCRIPT.fontFamily, fontSize: TRANSCRIPT.fontSize, width: TRANSCRIPT_WIDTH }}>
-            <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6, textAlign: "center",
-              display: "flex", flexDirection: "column", gap: 14 }}>
+            <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6, textAlign: "center" }}>
               <ParticleText
                 text="Think of a memory in your mind, and talk about it freely."
                 seed={53}
@@ -226,7 +230,9 @@ export function PondRecordingOverlay({
       }
       actionBottom={FLOW_PAGE.surfaceActionBottom}
       actionsStyle={{ pointerEvents: buttonIn && !leaving ? "auto" : "none", ...fadeStyle(buttonIn) }} actions={
-        !recorder.isRecording ? (
+        // Hold the stop pill through the fade. Swapping to record / sample
+        // the moment recording ends flashes those two buttons on the way out.
+        !recorder.isRecording && !leaving ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 22 }}>
             <TextButton
               label={captureFailed ? "record again" : "record"}
@@ -241,10 +247,10 @@ export function PondRecordingOverlay({
             />
           </div>
         ) : (
-          <TextButton
+          <PillButton
             label="stop"
+            icon={<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden><rect x="4" y="4" width="12" height="12" rx="2" fill={CHROME_GRAY} /></svg>}
             onClick={() => { cancelRipples(); recorder.stop(); }}
-            style={{ width: "9em", justifyContent: "center" }}
           />
         )
       } />
@@ -253,7 +259,7 @@ export function PondRecordingOverlay({
         <p role={troubleMessage ? "alert" : "timer"} aria-label={troubleMessage ? undefined : "recording duration"}
           style={{ ...noteStyle, position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
             width: "min(28em, calc(100% - 40px))", textAlign: "center", fontVariantNumeric: "tabular-nums",
-            opacity: !buttonIn || leaving ? 0 : troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
+            opacity: !buttonIn || leaving ? 0 : 1,
             transition: "opacity 0.4s ease", pointerEvents: "none",
             animation: reducedMotion ? "none" : "puddleRecIn 700ms ease backwards" }}>
           {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`}

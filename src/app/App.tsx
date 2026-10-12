@@ -23,9 +23,7 @@ import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconL
 import { ProfilePanel } from "./components/ProfilePanel";
 import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
 import { useCompact } from "./hooks/useCompact";
-
-const SOUNDTRACK_URL =
-  "https://cdn.jsdelivr.net/gh/Noyok1vas/figbuildAssets/prodarmaan%20-%20somber%20springtime.mp3";
+import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
 
 /** GitHub Pages subpath: Vite sets BASE_URL from vite.config base (e.g. /repo/). */
 const routerBasename =
@@ -166,41 +164,11 @@ function GlobalControls({
   /** The folded header on a phone; null draws the corner icons. */
   menu: { open: boolean; onOpenChange: (open: boolean) => void; listRef: (el: HTMLDivElement | null) => void } | null;
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [muted, setMuted] = useState(true);
+  // one player for the visit (lib/soundtrack.ts): no page change restarts it
+  const muted = useSoundtrack();
   const { pathname } = useLocation();
   const { phase } = useLandingReturn();
   const leavingScene = phase === "scene-out" || phase === "holding";
-
-  useEffect(() => {
-    const audio = new Audio(SOUNDTRACK_URL);
-    audio.loop = true;
-    audio.volume = 0.35;
-    audio.muted = true;
-    audioRef.current = audio;
-
-    const attempt = audio.play();
-    if (attempt !== undefined) {
-      attempt.catch(() => {
-        const resume = () => {
-          audio.play().catch(() => {});
-          window.removeEventListener("pointerdown", resume);
-          window.removeEventListener("keydown", resume);
-        };
-        window.addEventListener("pointerdown", resume, { once: true });
-        window.addEventListener("keydown", resume, { once: true });
-      });
-    }
-
-    return () => {
-      audio.pause();
-      audio.src = "";
-    };
-  }, []);
-
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.muted = muted;
-  }, [muted]);
 
   /** The pane belongs to the page it opened over — leaving that page closes it. */
   useEffect(() => {
@@ -254,7 +222,7 @@ function GlobalControls({
           hidden={leavingScene} />
         {menuList && (
           <HeaderMenuRow order={HEADER_MENU_ORDER.music} icon={musicGlyph} label={muted ? "music off" : "music on"}
-            ariaLabel={muted ? "unmute" : "mute"} onClick={() => setMuted((m) => !m)} />
+            ariaLabel={muted ? "unmute" : "mute"} onClick={() => setSoundtrackMuted(!muted)} />
         )}
         <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />
       </>
@@ -264,7 +232,7 @@ function GlobalControls({
   return (
     <>
       <button
-        onClick={() => setMuted((m) => !m)}
+        onClick={() => setSoundtrackMuted(!muted)}
         aria-label={muted ? "unmute" : "mute"}
         onMouseEnter={() => setNameShown("music")}
         onMouseLeave={() => setNameShown(null)}

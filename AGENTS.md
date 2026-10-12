@@ -1543,8 +1543,9 @@ nijimu/
 ## 5. Application flow (the two journeys)
 
 Everything is a route in `src/app/App.tsx`, wrapped in a single `RootLayout`
-that renders `GlobalControls` (background music + profile button) once, so
-**navigating does not remount or restart the music**.
+that renders `GlobalControls` (background music + profile button) once; the
+music itself is a single player in `lib/soundtrack.ts`, so **navigating, and
+even reloading, carries it on**.
 
 **A. Create a memory** (the main flow):
 ```
@@ -1690,8 +1691,14 @@ environment variables for production.
    permanent or public archive. The 16 curated memories in `data/memoryData.ts`
    remain available alongside the guest’s saved memories.
 
-4. **`GlobalControls` must stay in the layout route**, not per-page — otherwise
-   the background music restarts on every navigation.
+4. **The soundtrack is one player outside React** (`lib/soundtrack.ts`):
+   `GlobalControls` only reads and toggles it (`useSoundtrack`,
+   `setSoundtrackMuted`), so no route change — including the labs and `/style`
+   outside the layout — stops or restarts it. Music on/off and its position are
+   kept in sessionStorage (`nijimu.soundtrack`, saved on `pagehide`), so a reload
+   carries on; where the browser refuses sound before a gesture it plays
+   silently and takes up its sound at the first press. Don't create another
+   `Audio` for it per page. `GlobalControls` stays in the layout route.
 
 5. **`src/imports/`** is Figma-export residue. Only 9 files there are still
    referenced (some SVG path modules + `NewMomoryIdle`/`PlusSign`). Don't build

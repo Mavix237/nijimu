@@ -218,7 +218,7 @@ export function StyleGuidePage() {
             <span style={{ ...TITLE, color: PANE_INK.title }}>before you begin</span>
           </Specimen>
 
-          <Specimen name="pane title" note="PANE_TITLE, Switzer 20 / 600">
+          <Specimen name="pane title" note="PANE_TITLE, Helvetica Neue 20 / 600">
             <span style={PANE_TITLE}>To hear your voice</span>
           </Specimen>
 
@@ -295,7 +295,7 @@ export function StyleGuidePage() {
             </span>
           </Specimen>
 
-          <Specimen name="aside" note="NOTE_SIZE, Switzer">
+          <Specimen name="aside" note="NOTE_SIZE, Helvetica Neue">
             <span style={{ fontFamily: SANS, fontSize: NOTE_SIZE, color: CHROME_GRAY, opacity: 0.7 }}>
               drag across to grow it
             </span>

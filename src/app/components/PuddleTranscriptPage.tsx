@@ -1,10 +1,9 @@
-import { FLOW_PAGE } from "../lib/theme";
 import { SAMPLE_TRANSCRIPT } from "../data/sampleMemory";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { CHROME_GRAY } from "../lib/colors";
 import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
-import { NOTE_SIZE, SERIF, TRANSCRIPT, TRANSCRIPT_WIDTH } from "../lib/theme";
+import { FLOW_PAGE, NOTE_SIZE, SERIF, TEXT_ENTER_MS, TRANSCRIPT, TRANSCRIPT_WIDTH, textEnter } from "../lib/theme";
 import { getTranscription } from "../lib/transcribe";
 import type { ArtifactForm } from "../lib/superformula";
 import { PillButton } from "./PillButton";
@@ -14,6 +13,8 @@ import type { VoiceRippleSpot } from "../lib/voicePeaks";
 
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
 const POND_FADE = "rgba(226, 230, 226, 0.88)";
+/** After the words are ready, the actions wait, then fade in. */
+const ACTION_DELAY_MS = 3000;
 const TRANSCRIBING_SPOT = { x: .5, y: .81, strength: .7, soft: true };
 
 interface PuddleTranscriptState {
@@ -75,19 +76,22 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     return { parts, characters: transcriptCharacters(transcript.split(/\s+/).join(" ")) };
   }, [transcript]);
   const restored = !!state?.transcriptReady && !!transcript.trim();
+  /** Returning to finished words should not wait out the entrance again.
+   * `restored` becomes true as soon as this visit is written into history. */
+  const skipActionDelay = useRef(restored);
   /** The stand-in memory, not a recording still being heard. */
   const isSample = !transcriptionId && transcript === SAMPLE_TRANSCRIPT;
 
   const [visibleCharacterCount, setVisibleCharacterCount] = useState(() => (restored ? printing.characters.length : 0));
   const [isTyping, setIsTyping] = useState(!restored);
   const [showContinue, setShowContinue] = useState(restored);
+  const [actionsIn, setActionsIn] = useState(restored);
   const [fadeOutContent, setFadeOutContent] = useState(false);
   const continueTimer = useRef<number | null>(null);
   useEffect(() => () => {
     if (continueTimer.current !== null) window.clearTimeout(continueTimer.current);
   }, []);
   const typingTimerRef = useRef<number | null>(null);
-  const typingFinishRef = useRef<number | null>(null);
   const pulseRef = useRef(onTranscribingPulse);
   pulseRef.current = onTranscribingPulse;
   // The visible transcription includes its printout, even for the sample or
@@ -159,7 +163,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
       if (count >= printing.characters.length) {
         typingDoneRef.current = true;
         setIsTyping(false);
-        typingFinishRef.current = window.setTimeout(() => setShowContinue(true), 300);
+        setShowContinue(true);
         return;
       }
       typingTimerRef.current = window.setTimeout(typeNext, transcriptTypingDelay(printing.characters[count - 1], count - 1));
@@ -168,7 +172,6 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
 
     return () => {
       if (typingTimerRef.current !== null) window.clearTimeout(typingTimerRef.current);
-      if (typingFinishRef.current !== null) window.clearTimeout(typingFinishRef.current);
     };
   }, [printing, awaitingTranscript, transcribeError, transcript, reducedMotion]);
 
@@ -213,6 +216,16 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
   };
 
   const pairReady = showContinue && !transcribeError;
+  const actionsShown = !!transcribeError || actionsIn;
+  useEffect(() => {
+    if (transcribeError) {
+      setActionsIn(true);
+      return;
+    }
+    if (!showContinue || skipActionDelay.current) return;
+    const timer = window.setTimeout(() => setActionsIn(true), ACTION_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [showContinue, transcribeError]);
 
   useEffect(() => {
     const container = transcriptRef.current;
@@ -361,6 +374,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
         </div>
         {(pairReady || transcribeError) && (
           <div
+            data-transcript-actions={actionsShown ? "in" : "wait"}
             style={{
               /* the actions' row, as on the recording screen */
               position: "absolute",
@@ -372,8 +386,9 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
               alignItems: "center",
               justifyContent: "center",
               gap: 22,
-              pointerEvents: "auto",
-              visibility: transcribeError || showContinue ? "visible" : "hidden",
+              pointerEvents: actionsShown ? "auto" : "none",
+              visibility: actionsShown ? "visible" : "hidden",
+              animation: actionsShown ? textEnter(reducedMotion ? 200 : TEXT_ENTER_MS) : undefined,
             }}
           >
             {transcribeError ? (

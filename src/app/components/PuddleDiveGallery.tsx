@@ -4,7 +4,7 @@ import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
 import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
 import { BackButton } from "./BackButton";
-import { GalleryScrollHint, useTouchFirst } from "./GalleryOnboarding";
+import { useTouchFirst } from "./GalleryOnboarding";
 import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { TranscriptTrail } from "./TranscriptTrail";
@@ -137,6 +137,11 @@ export const CAPTION_YEAR_STYLE: CSSProperties = {
 
 /** Space kept between the memory's words and the timescale. */
 const TRANSCRIPT_CLEARANCE = 24;
+/** While the transcript is open the apex vessel and its caption rise this far, px; the neighbours go. */
+const READING_LIFT_PX = 100;
+const READING_MS = 900;
+/** The caption's extra clearance below the apex vessel, px. */
+const CAPTION_DROP_PX = 50;
 
 /** The memory's own words, under its year. */
 const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
@@ -189,7 +194,10 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const top = el.getBoundingClientRect().top;
+    // the room is taken at the caption's resting place, whatever part of its lift has run
+    const lifter = el.closest<HTMLElement>("[data-caption-lift]");
+    const moved = lifter ? new DOMMatrix(getComputedStyle(lifter).transform).m42 : 0;
+    const top = el.getBoundingClientRect().top - moved - (visible ? READING_LIFT_PX : 0);
     const space = Math.max(0, floorY - top);
     setRoom(el.scrollHeight > space + 1 ? space : null);
   }, [lines, floorY, visible]);
@@ -408,6 +416,10 @@ export function PuddleDiveGallery({
   const touchFirst = useTouchFirst();
   // a phone shows only the name and year; the vessel opens the words (MemoryReadingPane)
   const compact = useCompact();
+  const apexItem = items[activeIdx];
+  /** The apex memory's words are open under its year: it rises and stands alone. */
+  const reading = !caption && !field?.on && !compact && rimSettled && !!apexItem?.transcript
+    && (touchFirst || revealedId === apexItem.id);
   useEffect(() => () => setApexHover(false), []);
   const rimSettledRef = useRef(rimSettled);
   rimSettledRef.current = rimSettled;
@@ -452,14 +464,19 @@ export function PuddleDiveGallery({
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       // an open pane (the memory's words, the profile) has the keys; its Escape closes it
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
-      if (e.key === "Escape") { onExit?.(); return; }
+      if (e.key === "Escape") {
+        // the open transcript closes first, back to the trail
+        if (revealedId) setRevealedId(null);
+        else onExit?.();
+        return;
+      }
       if (inField) return;
       if (e.key === "ArrowLeft") { if (hasOlder) onNavigate(-1); }
       else if (e.key === "ArrowRight") hasNewer ? onNavigate(1) : onOverscrollExit?.();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit]);
+  }, [phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit, revealedId]);
 
   /* A sideways gesture over the carousel is for the artifacts, never for the
      browser's swipe-to-go-back — which unwound the entry and dropped the
@@ -940,6 +957,8 @@ export function PuddleDiveGallery({
             ? (ARC_NEIGHBOURS - gatherDist) * NEIGHBOR_OUT_STAGGER_MS
             : gatherDist * NEIGHBOR_IN_STAGGER_MS;
           const gatherMs = neighborsLeaving ? NEIGHBOR_OUT_MS : NEIGHBOR_IN_MS;
+          const readingAway = reading && !focused;
+          const seatScale = Math.max(0.01, depth.scale * seat.scale);
           return (
             <div
               key={slotItem.id}
@@ -969,9 +988,17 @@ export function PuddleDiveGallery({
                 transform: `translate(-50%, -50%) translate(${seat.x.toFixed(2)}px, ${seat.y.toFixed(2)}px) scale(${depth.scale * seat.scale})${depth.rotate ? ` rotate(${depth.rotate.toFixed(2)}deg)` : ""}`,
                 zIndex: 100000 + Math.round((depth.order ?? offset * 100) + seat.z),
                 cursor: focused ? "default" : "pointer",
-                pointerEvents: chromeVisible && depth.opacity > 0.02 ? "auto" : "none",
+                pointerEvents: chromeVisible && depth.opacity > 0.02 && !readingAway ? "auto" : "none",
               }}
             >
+              {/* reading: the neighbours fade, the apex rises with its words */}
+              <div style={{
+                width: "100%",
+                height: "100%",
+                opacity: readingAway ? 0 : 1,
+                transform: reading && focused ? `translateY(${(-READING_LIFT_PX / seatScale).toFixed(2)}px)` : "none",
+                transition: reducedMotion ? "none" : `opacity ${READING_MS}ms ease, transform ${READING_MS}ms cubic-bezier(.3, .7, .2, 1)`,
+              }}>
               {/* the arrival / departure, on its own layer so the depth
                   styling below can't fight its filter and opacity */}
               <div
@@ -1071,6 +1098,7 @@ export function PuddleDiveGallery({
                   />}
                 </div>
               </div>
+              </div>
               {/* A neighbour is a destination, not a toy: this lid keeps the
                   pointer off its OrbitControls so the click that lands on it
                   bubbles up and brings it to the apex instead. */}
@@ -1104,14 +1132,17 @@ export function PuddleDiveGallery({
       {/* ═══ CAPTION — between the dome and the timescale ═══ */}
       <div
         ref={captionRef}
+        data-caption-lift
         className="absolute left-0 right-0 text-center"
         style={{
-          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h,
+          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h + (caption ? 0 : CAPTION_DROP_PX),
+          transform: reading ? `translateY(${-READING_LIFT_PX}px)` : "none",
           padding: "0 clamp(24px, 6vw, 80px)",
           fontFamily: SERIF,
           // in the field the words come only while a memory is under the pointer
           opacity: chromeVisible && (field?.on ? !!captionItem : yearsChrome) ? 1 : 0,
-          transition: field?.on ? "opacity 0.45s ease" : "opacity 0.8s ease",
+          transition: (field?.on ? "opacity 0.45s ease" : "opacity 0.8s ease")
+            + (reducedMotion ? "" : `, transform ${READING_MS}ms cubic-bezier(.3, .7, .2, 1)`),
           zIndex: 30,
           pointerEvents: caption ? "auto" : "none",
         }}
@@ -1138,11 +1169,6 @@ export function PuddleDiveGallery({
         </div>}
       </div>
 
-      {showArrows && !caption && !hideHeader && (
-        <GalleryScrollHint visible={yearsVisible} settled={rimSettled}
-          atNewest={!hasNewer} leaving={pondDeparture > 0} />
-      )}
-
       {/* ═══ ARROWS ═══ */}
       {showArrows && hasOlder && (
         <button
@@ -1156,8 +1182,9 @@ export function PuddleDiveGallery({
           onPointerEnter={(e) => { if (e.pointerType === "mouse") e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0"; }}
           onPointerLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
-            <path d="M16 2 L2 12 L16 22 Z" />
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="none" stroke="currentColor" strokeWidth={2}
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
+            <path d="M14 3 L4 12 L14 21" />
           </svg>
         </button>
       )}
@@ -1173,8 +1200,9 @@ export function PuddleDiveGallery({
           onPointerEnter={(e) => { if (e.pointerType === "mouse") e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0"; }}
           onPointerLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
-            <path d="M2 2 L16 12 L2 22 Z" />
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="none" stroke="currentColor" strokeWidth={2}
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
+            <path d="M4 3 L14 12 L4 21" />
           </svg>
         </button>
       )}

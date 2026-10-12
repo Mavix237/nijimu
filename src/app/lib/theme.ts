@@ -7,8 +7,8 @@ export const SERIF_ITALIC_TRACKING = "0.012em";
 export const SERIF_CJK = "'GenRyuMin2 TW', Rowan, Georgia, serif";
 export const SERIF_DISPLAY = "'Exposure Trial Plus', Rowan, 'GenRyuMin2 TW', Georgia, serif";
 export const SERIF_EXPOSURE = "'Exposure Trial', Rowan, 'GenRyuMin2 TW', Georgia, serif";
-export const SANS = "Switzer, sans-serif";
-export const SANS_UI = "'SF Pro', system-ui, sans-serif";
+export const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+export const SANS_UI = "'Helvetica Neue', Helvetica, Arial, sans-serif";
 /** Quiet captions — transcribing, recording notes, pane asides. */
 export const NOTE_SIZE = "clamp(11px, 2.4vw, 12px)";
 /** Uppercase meta labels. */
@@ -25,7 +25,7 @@ export const META = {
 export const BODY_SIZE = "clamp(14px, 3.2vw, 15px)";
 /** Shared size for instructional copy (pond invitation, thought prompts, hold hint). */
 export const INSTRUCTION_SIZE = "clamp(14px, 3.2vw, 16px)";
-/** Small Switzer prompts floating above the create-memory pond's ripples. */
+/** Small sans prompts floating above the create-memory pond's ripples. */
 export const POND_PROMPT_SIZE = "clamp(12px, 2.8vw, 13px)";
 /** Spoken transcript on the pond. */
 export const PROSE_SIZE = "clamp(13px, 2.4vw, 15px)";

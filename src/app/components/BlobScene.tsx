@@ -8,6 +8,7 @@ import { ArtifactForm, formForMemory } from "../lib/superformula";
 import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
+import { useLandingCopyShown } from "../lib/landingCopy";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
 import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival } from "../lib/landingTransition";
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
@@ -443,6 +444,7 @@ export function BlobScene({
   const markFrom = useRef<{ top: number; left: number; fontSize: number; gap: number } | null>(null);
   const markInkFrom = useRef<string | null>(null);
   const [markHeld, setMarkHeld] = useState(false);
+  const landingCopy = useLandingCopyShown();
   if (!landingArrival) markInkFrom.current = null;
   else if (!markInkFrom.current) {
     markInkFrom.current = headerOnDark ? HEADER_LIGHT.mark : HEADER_INK.mark;
@@ -1780,7 +1782,7 @@ export function BlobScene({
                 width: "fit-content",
               }}
             >
-              <p
+              {landingCopy && <p
                 style={{
                   fontFamily: SERIF,
                   color: headerOnDark ? HEADER_LIGHT.desc : HEADER_INK.desc,
@@ -1790,8 +1792,9 @@ export function BlobScene({
                   margin: 0,
                   padding: 0,
                   textAlign: "center",
-                  width: 0,
-                  minWidth: "100%",
+                  // the entry stacks narrow now, so the line keeps its own measure (two lines, as beside the old row)
+                  width: "19em",
+                  maxWidth: "80vw",
                   boxSizing: "border-box",
                   opacity: entryDesc * (returnReveal && !headerShown ? 0 : 1),
                   transition: returnReveal && revealArmed
@@ -1800,7 +1803,7 @@ export function BlobScene({
                 }}
               >
                 An interactive memory sculpting tool to trace how memory evolves.
-              </p>
+              </p>}
               <button
                 type="button"
                 className="landing-enter-btn"
@@ -1811,9 +1814,10 @@ export function BlobScene({
                 }}
                 style={{
                   display: "inline-flex",
+                  flexDirection: "column",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 16,
+                  gap: 10,
                   margin: 0,
                   padding: 0,
                   border: "none",
@@ -1828,13 +1832,12 @@ export function BlobScene({
                   transition: HEADER_COLOR_FADE,
                 }}
               >
-                <span
+                {landingCopy && <span
                   style={{
                     fontFamily: SANS,
                     fontSize: HEADER_DESC_SIZE + 1,
                     letterSpacing: "0.01em",
                     whiteSpace: "nowrap",
-                    marginRight: -4,
                     opacity: entryHeader * (returnReveal && !headerShown ? 0 : 1),
                     transition: returnReveal && revealArmed
                       ? `opacity ${LANDING_RETURN.headerFadeMs}ms ease`
@@ -1842,11 +1845,13 @@ export function BlobScene({
                   }}
                 >
                   {ctaLabel}
-                </span>
-                {!markHeld && (
+                </span>}
+                {/* held in its row while the flying copy leaves, so the lines above and below stay put */}
+                {(
                   <span
                     ref={markRef}
                     style={{
+                      visibility: markHeld ? "hidden" : undefined,
                       fontFamily: SERIF_CJK,
                       fontStyle: "normal",
                       letterSpacing: PAGE_HEADER_MARK.letterSpacing,
@@ -1973,12 +1978,14 @@ export function BlobScene({
         }
         .landing-enter-arrow svg {
           position: absolute;
-          left: -0.5em;
+          left: 50%;
           top: 50%;
           width: 1em;
           height: 1em;
+          margin-left: -0.5em;
           margin-top: -0.5em;
           overflow: visible;
+          transform: rotate(90deg);
           transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .landing-enter-stem {
@@ -1992,7 +1999,7 @@ export function BlobScene({
         }
         .landing-enter-btn:hover .landing-enter-arrow svg,
         .landing-enter-btn:focus-visible .landing-enter-arrow svg {
-          transform: translateX(3px);
+          transform: rotate(90deg) translateX(3px);
         }
         div::-webkit-scrollbar { display: none; }
       `}</style>

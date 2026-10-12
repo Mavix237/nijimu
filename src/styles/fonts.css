@@ -29,8 +29,8 @@
     U+FF0B-FF0C, U+FF1A-FF1B, U+FF1F;
 }
 
-/* Switzer — static cuts (all weights + italics). Single family for SANS
-   (light / outline buttons, labels, editor chrome). */
+/* Switzer — static cuts (all weights + italics). Kept on disk; SANS is
+   Helvetica Neue (see theme.ts) and does not request these faces. */
 @font-face {
   font-family: "Switzer";
   src: url("../assets/fonts/Switzer-Thin.woff2") format("woff2");

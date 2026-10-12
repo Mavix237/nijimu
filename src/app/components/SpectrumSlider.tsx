@@ -1,6 +1,7 @@
 import { useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from "react";
 import { CHROME_GRAY, PANE_INK } from "../lib/colors";
 import { BODY_SIZE, SERIF } from "../lib/theme";
+import { GHOST_OPACITY } from "./PillButton";
 
 export type SpectrumEnd = "circle" | "flower" | "petals" | "bloom" | "haze";
 
@@ -140,7 +141,7 @@ export function SpectrumSlider({ value, onChange, from, to, label, valueText, ke
     onChange(Math.max(0, Math.min(1, next)));
   };
 
-  const tick: CSSProperties = { position: "absolute", top: "50%", width: 1, height: 11, marginTop: -5.5, background: CHROME_GRAY, opacity: 0.8 };
+  const tick: CSSProperties = { position: "absolute", top: "50%", width: 1, height: 11, marginTop: -5.5, background: CHROME_GRAY, opacity: GHOST_OPACITY };
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, height: 32, width: "min(56ch, calc(100vw - 48px))",
@@ -175,7 +176,7 @@ export function SpectrumSlider({ value, onChange, from, to, label, valueText, ke
         onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onLostPointerCapture={up}
         onKeyDown={key}
         style={{ position: "relative", flex: 1, height: 32, touchAction: "none", cursor: dragging ? "grabbing" : "pointer" }}>
-        <div ref={track} style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 1, marginTop: -0.5, background: CHROME_GRAY, opacity: 0.8 }} />
+        <div ref={track} style={{ position: "absolute", left: 0, right: 0, top: "50%", height: 1, marginTop: -0.5, background: CHROME_GRAY, opacity: GHOST_OPACITY }} />
         <span style={{ ...tick, left: 0 }} />
         <span style={{ ...tick, right: 0 }} />
         <span className="spectrum-grip" style={{ position: "absolute", top: 0, bottom: 0, width: 24, left: `calc(${v * 100}% - 12px)`,

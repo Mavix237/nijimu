@@ -5,8 +5,9 @@ interface PillButtonProps {
   label: string;
   onClick: () => void;
   disabled?: boolean;
-  /** light = gray text on light pages (default); dark = white text on dark pages; outline = bordered secondary */
-  variant?: "light" | "dark" | "outline";
+  /** light = gray text on light pages (default); dark = white text on dark pages; outline = bordered secondary;
+   * ghost = the light label alone, smaller and quieter, no fill */
+  variant?: "light" | "dark" | "outline" | "ghost";
   /** trailing glyph, e.g. "›" or "✦" */
   trailing?: string;
   /** leading node, e.g. a stop-icon SVG */
@@ -24,6 +25,9 @@ const LIGHT_TEXT = "#7b7b87";
 const OUTLINE_BORDER = "1px solid rgba(123, 123, 135, 0.28)";
 const LIGHT_FILL = "rgba(123, 123, 135, 0.16)";
 const LIGHT_FILL_DISABLED = "rgba(123, 123, 135, 0.08)";
+const GHOST_SIZE = `calc(${BUTTON_SIZE_SM} * 0.8)`;
+/** The ghost label's strength; the handling slider's rule shares it. */
+export const GHOST_OPACITY = 0.62;
 
 export function PillButton({
   label,
@@ -38,13 +42,15 @@ export function PillButton({
 }: PillButtonProps) {
   const isDark = variant === "dark";
   const isOutline = variant === "outline";
+  const isGhost = variant === "ghost";
   const textColor = isDark
     ? "white"
     : disabled
       ? DIMMED
       : LIGHT_TEXT;
+  const fontSize = isGhost ? GHOST_SIZE : BUTTON_SIZE_SM;
 
-  const background = isOutline
+  const background = isOutline || isGhost
     ? "transparent"
     : isDark
       ? "rgba(218, 218, 218, 0.25)"
@@ -68,6 +74,7 @@ export function PillButton({
         background,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
+        opacity: isGhost ? GHOST_OPACITY : undefined,
         transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease",
         ...style,
       }}
@@ -76,7 +83,7 @@ export function PillButton({
       <span
         style={{
           fontFamily: isDark ? SANS_UI : SANS,
-          fontSize: BUTTON_SIZE_SM,
+          fontSize,
           fontWeight: isDark ? 300 : 400,
           lineHeight: 1.5,
           letterSpacing: 0,
@@ -91,7 +98,7 @@ export function PillButton({
         <span
           style={{
             fontFamily: SANS_UI,
-            fontSize: BUTTON_SIZE_SM,
+            fontSize,
             lineHeight: 0,
             letterSpacing: 0,
             color: textColor,

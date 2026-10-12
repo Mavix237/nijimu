@@ -210,8 +210,9 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
   const words = useMemo(() => transcript.split(/[\s.,!?]+/).filter(Boolean), [transcript]);
 
 
-  // another memory, another set of words: the trail and the count start over
+  // another memory, another set of words — or the transcript closed: the trail and the count start over
   useEffect(() => {
+    if (revealed) return;
     trailNow.current = [];
     setTrail([]);
     setLeaving(false);
@@ -223,7 +224,7 @@ export function TranscriptTrail({ memoryId, transcript, visible, avoid, revealed
     speed.current = { v: 0, t: 0 };
     done.current = false;
     window.clearTimeout(revealTimer.current);
-  }, [memoryId]);
+  }, [memoryId, revealed]);
   useEffect(() => () => window.clearTimeout(revealTimer.current), []);
 
   /** The journey's end: the words go, one after another, the trail empties, and a

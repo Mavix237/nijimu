@@ -1,5 +1,5 @@
 /**
- * The choices at the foot of a floating pane: a Switzer label with a trailing mark.
+ * The choices at the foot of a floating pane: a Helvetica Neue label with a trailing mark.
  * Every option is set in the body's ink; the one the pane hopes for in
  * Medium, the way out in Regular. A dot mark opens from its centre on hover — filled with the given
  * colour for the hoped-for option, a bare ring for the way out. A way out may

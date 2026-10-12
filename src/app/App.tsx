@@ -24,6 +24,7 @@ import { ProfilePanel } from "./components/ProfilePanel";
 import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
 import { useCompact } from "./hooks/useCompact";
 import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
+import { setLandingCopyShown, useLandingCopyShown } from "./lib/landingCopy";
 
 /** GitHub Pages subpath: Vite sets BASE_URL from vite.config base (e.g. /repo/). */
 const routerBasename =
@@ -182,7 +183,10 @@ function GlobalControls({
   }, [pathname, onMenuOpenChange]);
   const { list: menuList } = useHeaderMenu();
 
-  const [nameShown, setNameShown] = useState<"music" | null>(null);
+  const [nameShown, setNameShown] = useState<"music" | "copy" | null>(null);
+  const copyShown = useLandingCopyShown();
+  // the landing alone has the copy toggle; it takes the corner and the music steps in one seat
+  const onLanding = pathname === "/";
 
   const iconButtonStyle = {
     position: "fixed" as const,
@@ -238,11 +242,32 @@ function GlobalControls({
         onMouseLeave={() => setNameShown(null)}
         onFocus={() => setNameShown("music")}
         onBlur={() => setNameShown(null)}
-        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)" }}
+        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: onLanding ? "var(--chrome-r1)" : "var(--chrome-r0)" }}
       >
         <HeaderIconLabel name="music" shown={nameShown === "music"} />
         {musicGlyph}
       </button>
+
+      {onLanding && (
+        <button
+          onClick={() => setLandingCopyShown(!copyShown)}
+          aria-label={copyShown ? "hide the landing copy" : "show the landing copy"}
+          aria-pressed={!copyShown}
+          onMouseEnter={() => setNameShown("copy")}
+          onMouseLeave={() => setNameShown(null)}
+          onFocus={() => setNameShown("copy")}
+          onBlur={() => setNameShown(null)}
+          style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)", opacity: leavingScene ? 0 : 1, transition: "opacity 0.4s ease" }}
+        >
+          <HeaderIconLabel name={copyShown ? "copy on" : "copy off"} shown={nameShown === "copy"} />
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <line x1="5" y1="8" x2="19" y2="8" />
+            <line x1="8" y1="13" x2="16" y2="13" />
+            <line x1="10" y1="18" x2="14" y2="18" />
+            {!copyShown && <line x1="4" y1="4" x2="20" y2="20" />}
+          </svg>
+        </button>
+      )}
 
       <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />
     </>

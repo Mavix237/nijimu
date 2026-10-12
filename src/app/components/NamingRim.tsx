@@ -22,7 +22,7 @@ import {
   getArtifactMesh,
   type ArtifactForm,
 } from "../lib/superformula";
-import { SERIF } from "../lib/theme";
+import { SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { TextButton } from "./TextButton";
 import { SaveMemoryDialog } from "./SaveMemoryDialog";
 import {
@@ -93,6 +93,8 @@ const currentYear = new Date().getFullYear();
 
 /** How long the save button takes to leave before the words settle. */
 const SAVE_FADE_MS = 380;
+/** After the name and year are in, save waits this long, ms. */
+const SAVE_DELAY_MS = 3000;
 
 function FlickerCaret({
   color = CHROME_GRAY,
@@ -359,6 +361,18 @@ export function useNamingRim(
 
   const canContinue = memoryName.trim() !== "" && yearSettled && !saving;
 
+  /* Save waits until the name and year are in and the typing has paused. */
+  const saveFilled = fieldsVisible && memoryName.trim() !== "" && yearSettled;
+  const [saveShown, setSaveShown] = useState(false);
+  useEffect(() => {
+    if (!saveFilled) {
+      setSaveShown(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setSaveShown(true), SAVE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [saveFilled, memoryName, year]);
+
   const persistAndOpenGallery = () => {
     if (!canContinue) return;
     const shape = state?.shape;
@@ -425,7 +439,7 @@ export function useNamingRim(
   /* Same DOM shape as StaticCaption — a column, the title in a block with the
      shared gap below it, then the year — so when the fields become words
      nothing shifts. */
-  const actions = fieldsVisible && memoryName.trim() !== "" && yearSettled && (
+  const actions = saveFilled && saveShown && (
         <><TextButton
           label="save memory"
           onClick={() => setSaveDialog(true)}
@@ -438,6 +452,8 @@ export function useNamingRim(
             transition: reducedMotion
               ? "none"
               : `opacity ${SAVE_FADE_MS}ms ease, filter ${SAVE_FADE_MS}ms ease`,
+            // backwards only, so the leaving transition above still owns opacity afterwards
+            animation: reducedMotion ? undefined : `nijimuTextIn ${TEXT_ENTER_MS}ms ease backwards`,
           }}
         />
         {saveDialog && <SaveMemoryDialog session={session} title={memoryName.trim()} year={year}

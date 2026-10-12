@@ -4,7 +4,7 @@ import { LIFE_EVENTS } from "../data/memoryData";
 import { CHROME_GRAY } from "../lib/colors";
 import { carouselFrame } from "../lib/carouselLayout";
 import { META, NOTE_SIZE, SANS } from "../lib/theme";
-import { getArtifactMesh, type ArtifactForm } from "../lib/superformula";
+import { describeForm, formKey, getArtifactMesh, type ArtifactForm, type SuperParams } from "../lib/superformula";
 import {
   EARLIER_SHAPES, LIBRARY_SIZE, PLACEMENT_DEFAULT, SHAPE_CANDIDATES, Y_SERIES,
   entrySignature, forgetGalleryLibrary, galleryLibrary, libraryEntry, loadGalleryLibrary, saveGalleryLibrary, useGalleryLibrary,
@@ -30,6 +30,33 @@ const INK = "#6f6f7a";
 const FAINT = "rgba(123, 123, 135, 0.14)";
 
 type Placements = Record<string, ShapePlacement>;
+/** A candidate's form as edited here; absent is the candidate's own. */
+type FormEdit = { form: ArtifactForm; morph: number };
+type FormEdits = Record<string, FormEdit>;
+
+/* ───────── softening ───────── */
+
+const round3 = (v: number) => Math.round(v * 1000) / 1000;
+/** Every exponent drawn toward 2 on a log scale: m = 4 with all three at 2 is a circle, so the
+    lobes keep their count while points round off and hard corners give. 1 is a sphere. */
+function softenParams(p: SuperParams, s: number): SuperParams {
+  // squared, so the first half of the slider is the fine part: points rounding, not yet a ball
+  const t = s * s;
+  const toward = (n: number) => round3(Math.exp(Math.log(n) + (Math.log(2) - Math.log(n)) * t));
+  return { ...p, n1: toward(p.n1), n2: toward(p.n2), n3: toward(p.n3) };
+}
+const softenForm = (form: ArtifactForm, s: number): ArtifactForm =>
+  s <= 0 ? form : { ...form, top: softenParams(form.top, s), side: softenParams(form.side, s) };
+
+const RAW: { key: keyof Pick<SuperParams, "m" | "n1" | "n2" | "n3">; min: number; max: number; step: number }[] = [
+  { key: "m", min: 0, max: 20, step: 0.25 },
+  { key: "n1", min: 0.15, max: 20, step: 0.01 },
+  { key: "n2", min: 0.15, max: 20, step: 0.01 },
+  { key: "n3", min: 0.15, max: 20, step: 0.01 },
+];
+// exponents span orders of magnitude, so their sliders run on a log scale
+const toSlider = (key: string, v: number) => (key === "m" ? v : Math.log(v));
+const fromSlider = (key: string, v: number) => (key === "m" ? v : round3(Math.exp(v)));
 
 const SLIDERS: { key: Exclude<keyof ShapePlacement, "view" | "photo">; label: string; min: number; max: number; step: number; unit?: string }[] = [
   { key: "size", label: "size", min: 0.5, max: 1.6, step: 0.01 },
@@ -51,13 +78,22 @@ const viewSig = (v: ShapePlacement["view"]) => (v ? `${v.around}|${v.pitch}` : "
 function initialChoice(entries: LibraryEntry[]) {
   const chosen: string[] = [];
   const placements: Placements = {};
+  const forms: FormEdits = {};
   for (const e of entries) {
-    if (!BY_KEY.has(e.key) || chosen.includes(e.key)) continue;
+    const c = BY_KEY.get(e.key);
+    if (!c || chosen.includes(e.key)) continue;
     placements[e.key] = placementOf(e, chosen.length);
+    if (formKey(e.form) !== formKey(c.form) || e.morph !== c.morph) forms[e.key] = { form: e.form, morph: e.morph };
     chosen.push(e.key);
   }
-  return { chosen, placements };
+  return { chosen, placements, forms };
 }
+
+/** The candidate wearing its edited form, if it has one. */
+const edited = (c: ShapeCandidate, forms: FormEdits): ShapeCandidate => {
+  const f = forms[c.key];
+  return f ? { ...c, form: f.form, morph: f.morph } : c;
+};
 
 const sameEntries = (a: LibraryEntry[], b: LibraryEntry[]) =>
   a.length === b.length && a.every((e, i) =>
@@ -71,7 +107,7 @@ const thumbs = new Map<string, string>();
 
 /** The form drawn flat, a little from above and turned, its faces shaded toward a key light. */
 function thumbnail(key: string, form: ArtifactForm, morph: number, px: number): string {
-  const id = `${key}|${morph}|${px}`;
+  const id = `${key}|${formKey(form)}|${morph}|${px}`;
   const hit = thumbs.get(id);
   if (hit) return hit;
   const mesh = getArtifactMesh(form);
@@ -128,13 +164,15 @@ function thumbnail(key: string, form: ArtifactForm, morph: number, px: number): 
 }
 
 function Thumb({ shape, size }: { shape: ShapeCandidate; size: number }) {
-  const [url, setUrl] = useState(() => thumbs.get(`${shape.key}|${shape.morph}|${size * 2}`) ?? "");
+  const id = `${shape.key}|${formKey(shape.form)}|${shape.morph}|${size * 2}`;
+  const [drawn, setDrawn] = useState(() => ({ id, url: thumbs.get(id) ?? "" }));
+  const url = drawn.id === id ? drawn.url : thumbs.get(id) ?? drawn.url;
   useEffect(() => {
-    if (url) return;
-    // one at a time, off the first paint
-    const id = window.setTimeout(() => setUrl(thumbnail(shape.key, shape.form, shape.morph, size * 2)), 0);
-    return () => window.clearTimeout(id);
-  }, [shape, size, url]);
+    if (thumbs.has(id) && drawn.id === id) return;
+    // one at a time, off the first paint; an edited form redraws a beat behind its sliders
+    const t = window.setTimeout(() => setDrawn({ id, url: thumbnail(shape.key, shape.form, shape.morph, size * 2) }), thumbs.has(id) ? 0 : 200);
+    return () => window.clearTimeout(t);
+  }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   return url
     ? <img src={url} alt="" width={size} height={size} draggable={false} style={{ display: "block", width: size, height: size }} />
     : <span style={{ display: "block", width: size, height: size }} />;
@@ -144,7 +182,10 @@ function Thumb({ shape, size }: { shape: ShapeCandidate; size: number }) {
 
 export function ShapeLibraryLab() {
   const library = useGalleryLibrary();
-  const [{ chosen, placements }, setChoice] = useState(() => initialChoice(library.entries));
+  const [{ chosen, placements, forms }, setChoice] = useState(() => initialChoice(library.entries));
+  /** The softness slider works from the form as it was when the slider was first touched. */
+  const [softening, setSoftening] = useState<{ key: string; base: ArtifactForm; s: number } | null>(null);
+  const [rawOpen, setRawOpen] = useState(false);
   const [focus, setFocus] = useState<string>(() => chosen[0] ?? SHAPE_CANDIDATES[0].key);
   const [note, setNote] = useState("");
   const [screen, setScreen] = useState(() => ({ w: window.innerWidth, h: window.innerHeight }));
@@ -154,12 +195,15 @@ export function ShapeLibraryLab() {
     return () => window.removeEventListener("resize", on);
   }, []);
 
-  const candidate = BY_KEY.get(focus) ?? SHAPE_CANDIDATES[0];
+  const original = BY_KEY.get(focus) ?? SHAPE_CANDIDATES[0];
+  const candidate = edited(original, forms);
+  const formEdited = !!forms[focus];
   const placement = placements[focus] ?? PLACEMENT_DEFAULT;
   const slot = chosen.indexOf(focus);
   const full = chosen.length >= LIBRARY_SIZE;
+  const soft = softening?.key === focus ? softening.s : 0;
 
-  const entries = useMemo(() => chosen.map((k) => libraryEntry(BY_KEY.get(k)!, placements[k] ?? PLACEMENT_DEFAULT)), [chosen, placements]);
+  const entries = useMemo(() => chosen.map((k) => libraryEntry(edited(BY_KEY.get(k)!, forms), placements[k] ?? PLACEMENT_DEFAULT)), [chosen, placements, forms]);
   const kept = loadGalleryLibrary();
   const unsaved = entries.length !== LIBRARY_SIZE || !kept || !sameEntries(entries, kept);
 
@@ -197,10 +241,47 @@ export function ShapeLibraryLab() {
 
   const place = (patch: Partial<ShapePlacement>) =>
     setChoice((c) => ({ ...c, placements: { ...c.placements, [focus]: { ...(c.placements[focus] ?? PLACEMENT_DEFAULT), ...patch } } }));
+  const shapeForm = (patch: Partial<FormEdit>) =>
+    setChoice((c) => ({ ...c, forms: { ...c.forms, [focus]: { ...(c.forms[focus] ?? { form: original.form, morph: original.morph }), ...patch } } }));
+  const setSoft = (s: number) => {
+    const base = softening?.key === focus ? softening.base : candidate.form;
+    setSoftening({ key: focus, base, s });
+    shapeForm({ form: softenForm(base, s) });
+  };
+  const setRaw = (set: "top" | "side", key: string, value: number) => {
+    // a raw edit takes the softened form as it stands; softness starts again from there
+    setSoftening(null);
+    shapeForm({ form: { ...candidate.form, [set]: { ...candidate.form[set], [key]: value } } });
+  };
+  const resetForm = () => {
+    setSoftening(null);
+    setChoice((c) => {
+      const { [focus]: _gone, ...rest } = c.forms;
+      return { ...c, forms: rest };
+    });
+  };
+  const copyValues = async () => {
+    const text = JSON.stringify(entries.map((e, i) => ({
+      year: LIFE_EVENTS[i].year, memory: LIFE_EVENTS[i].event, ...e, photo: e.photo ?? slotPhotoIndex(i),
+    })), null, 2);
+    try {
+      await navigator.clipboard.writeText(text);
+      setNote("copied — paste it into the chat");
+    } catch {
+      const area = document.createElement("textarea");
+      area.value = text;
+      document.body.appendChild(area);
+      area.select();
+      const ok = document.execCommand("copy");
+      area.remove();
+      setNote(ok ? "copied — paste it into the chat" : "could not copy; see the console");
+      if (!ok) console.log(text);
+    }
+  };
   const toggle = (key: string) => setChoice((c) => {
     if (c.chosen.includes(key)) return { ...c, chosen: c.chosen.filter((k) => k !== key) };
     if (c.chosen.length >= LIBRARY_SIZE) return c;
-    return { chosen: [...c.chosen, key], placements: { ...c.placements, [key]: c.placements[key] ?? PLACEMENT_DEFAULT } };
+    return { ...c, chosen: [...c.chosen, key], placements: { ...c.placements, [key]: c.placements[key] ?? PLACEMENT_DEFAULT } };
   });
   const move = (key: string, by: number) => setChoice((c) => {
     const i = c.chosen.indexOf(key), j = i + by;
@@ -219,6 +300,7 @@ export function ShapeLibraryLab() {
   };
   const forget = () => {
     forgetGalleryLibrary();
+    setSoftening(null);
     setChoice(initialChoice(galleryLibrary()));
     setNote("forgotten — the gallery wears the built-in library");
   };
@@ -295,6 +377,47 @@ export function ShapeLibraryLab() {
             disabled={slot < 0 && full} onClick={() => toggle(focus)} />
           <TextButton label="reset" onClick={() => place(PLACEMENT_DEFAULT)} />
         </div>
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginTop: 12, marginBottom: 4 }}>
+          <span style={{ color: INK }}>form{formEdited ? " · edited" : ""}</span>
+          {formEdited && <TextButton label="original form" onClick={resetForm} />}
+        </div>
+        {([
+          { label: "softness", value: soft, set: setSoft, hint: "rounds points and corners; 1 is a sphere" },
+          { label: "growth", value: candidate.morph, set: (v: number) => shapeForm({ morph: v }), hint: "0 is a sphere, 1 the whole form" },
+        ]).map(({ label, value, set, hint }) => (
+          <label key={label} title={hint} style={{ display: "block", marginBottom: 4 }}>
+            <span style={{ display: "flex", justifyContent: "space-between", color: INK }}>
+              <span>{label}</span>
+              <span style={{ color: CHROME_GRAY, fontVariantNumeric: "tabular-nums" }}>{value.toFixed(2)}</span>
+            </span>
+            <input type="range" className="library-range" min={0} max={1} step={0.01} value={value}
+              onChange={(e) => set(Number(e.target.value))} />
+          </label>
+        ))}
+        <TextButton label={rawOpen ? "hide the exponents" : "the exponents"} onClick={() => setRawOpen(!rawOpen)} />
+        {rawOpen && (["top", "side"] as const).map((set) => (
+          <div key={set} style={{ marginTop: 6 }}>
+            <span style={{ color: CHROME_GRAY }}>{set === "top" ? "seen from above" : "seen from the side"}</span>
+            {RAW.map(({ key, min, max, step }) => {
+              const v = candidate.form[set][key];
+              const isM = key === "m";
+              return (
+                <label key={key} style={{ display: "block", marginBottom: 2 }}>
+                  <span style={{ display: "flex", justifyContent: "space-between", color: INK }}>
+                    <span>{key}</span>
+                    <span style={{ color: CHROME_GRAY, fontVariantNumeric: "tabular-nums" }}>{isM ? v : v.toFixed(2)}</span>
+                  </span>
+                  <input type="range" className="library-range"
+                    min={toSlider(key, min)} max={toSlider(key, max)} step={isM ? step : 0.01} value={toSlider(key, v)}
+                    onChange={(e) => setRaw(set, key, fromSlider(key, Number(e.target.value)))} />
+                </label>
+              );
+            })}
+          </div>
+        ))}
+        <p style={{ margin: "4px 0 10px", color: CHROME_GRAY, overflowWrap: "anywhere" }}>{describeForm(candidate.form)}</p>
+
         {SLIDERS.map(({ key, label, min, max, step, unit }) => (
           <label key={key} style={{ display: "block", marginBottom: 4 }}>
             <span style={{ display: "flex", justifyContent: "space-between", color: INK }}>
@@ -347,7 +470,7 @@ export function ShapeLibraryLab() {
                   <>
                     <button type="button" onClick={() => setFocus(c.key)} style={{ display: "flex", alignItems: "center", gap: 6, flex: 1,
                       minWidth: 0, border: "none", background: "transparent", padding: 0, cursor: "pointer", color: INK, font: "inherit", textAlign: "left" }}>
-                      <Thumb key={c.key} shape={c} size={24} />
+                      <Thumb key={c.key} shape={edited(c, forms)} size={24} />
                       <span style={{ whiteSpace: "nowrap" }}>{c.name}</span>
                       <span style={{ color: CHROME_GRAY, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{life.event}</span>
                     </button>
@@ -366,6 +489,7 @@ export function ShapeLibraryLab() {
           <TextButton label="save to library" disabled={chosen.length !== LIBRARY_SIZE || !unsaved} onClick={save}
             style={{ color: chosen.length === LIBRARY_SIZE && unsaved ? "#3f3f48" : undefined }} />
           {kept && <TextButton label="forget" onClick={forget} />}
+          <TextButton label="copy values" disabled={chosen.length !== LIBRARY_SIZE} onClick={copyValues} />
           <Link to="/memory" style={{ color: CHROME_GRAY, fontSize: NOTE_SIZE, textDecoration: "none" }}>see the gallery →</Link>
         </div>
         <p style={{ margin: "6px 0 0", minHeight: 16, color: CHROME_GRAY }}>
@@ -386,7 +510,7 @@ export function ShapeLibraryLab() {
                       style={{ width: "100%", padding: "4px 0 5px", border: `1px solid ${c.key === focus ? "rgba(111, 111, 122, 0.6)" : FAINT}`,
                         borderRadius: 3, background: at >= 0 ? "rgba(255, 255, 255, 0.75)" : "transparent", cursor: "pointer",
                         display: "flex", flexDirection: "column", alignItems: "center", gap: 2, color: INK, font: "inherit" }}>
-                      <Thumb shape={c} size={52} />
+                      <Thumb shape={edited(c, forms)} size={52} />
                       <span>{c.name}</span>
                     </button>
                     <button type="button" aria-label={at >= 0 ? `remove ${c.name}` : `add ${c.name}`}

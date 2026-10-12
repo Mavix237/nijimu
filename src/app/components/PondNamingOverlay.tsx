@@ -58,6 +58,8 @@ const ARRIVE_SETTLE_VH = 3;
  * body — the gallery's thick-dark feet and rim read as a grey ball over
  * this much light. The memory's own stain stays in its tune.
  */
+/** The veil lowering the water under the vessel: the water's grey-green, darker. */
+const SURFACE_DIM = "61, 71, 70";
 const NAMING_ROOM: Room = { above: "#f3f3ee", below: "#e6e6e6" };
 const NAMING_LIGHT = { envAbove: 1.09, envBelow: 1.09, thickDark: 0.06, rim: 0.67, highlight: 1, keyIntensity: 1.41 };
 /** The same light for a memory at far & faded: the key gone, the sky dimmer, the rim a little quieter. */
@@ -111,6 +113,7 @@ export function PondNamingOverlay({
   const { state } = session;
 
   const washRef = useRef<HTMLDivElement>(null);
+  const dimRef = useRef<HTMLDivElement>(null);
   const lightRef = useRef<HTMLDivElement>(null);
   const artifactRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -149,6 +152,7 @@ export function PondNamingOverlay({
   const pose = (sink: number) => {
     const wash = pondSinkWash(sink);
     if (washRef.current) washRef.current.style.opacity = String(wash);
+    if (dimRef.current) dimRef.current.style.opacity = String(1 - smooth(sink / 0.4));
     if (chromeRef.current) chromeRef.current.style.opacity = String(1 - smooth(sink / 0.4));
   };
   const showPassage = (opacity: number) => {
@@ -369,6 +373,14 @@ export function PondNamingOverlay({
       {compact && passage && <div style={{ pointerEvents: "auto" }}>
         <MemoryReadingPane memory={readable} onClose={() => setReading(false)} />
       </div>}
+
+      {/* The water and sky lowered under the vessel, as on the photo step; the vessel and words sit above it. */}
+      <div aria-hidden style={{
+        position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none",
+        background: `radial-gradient(ellipse 42% 38% at 50% 55%, rgba(${SURFACE_DIM}, .1) 30%, rgba(${SURFACE_DIM}, .17) 100%),
+          linear-gradient(to top, rgba(${SURFACE_DIM}, .06), rgba(${SURFACE_DIM}, 0) 45%)`,
+        opacity: rising ? 0 : 1,
+      }} ref={dimRef} />
 
       <div
         ref={washRef}

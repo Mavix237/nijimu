@@ -10,6 +10,9 @@ import { PondRecordingOverlay } from "./PondRecordingOverlay";
 import { PondNamingOverlay } from "./PondNamingOverlay";
 import type { NamingSession } from "./NamingRim";
 
+/** The invitation and the questions on the water, set aside for now. */
+const SHOW_POND_COPY = false;
+
 export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, naming = null, onReady, onLeave, onNamingSaved, namingBackRef, covered = false, renderScene }: {
   /** Another step owns the controls while the pond stays mounted underneath. */
   covered?: boolean;
@@ -161,20 +164,20 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
 
   const pondProps: PondProps = { arrival, reducedMotion, touch, cursorRef, holdRef: holdProgress,
     hintRef, hintRevealRef: hintReveal, promptRefs, cueRef, onReady: ready, lifeReady,
-    promptRipples: !overlaid && active, sinkRef };
+    promptRipples: SHOW_POND_COPY && !overlaid && active, sinkRef };
 
   return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
     style={{ position: "absolute", inset: 0, overflow: "hidden", background: "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)", WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
     {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
     {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
 
-    {POND_THOUGHTS.map((thought, i) => <div key={thought.text} ref={el => { promptRefs.current[i] = el; }} data-pond-prompt={i} aria-hidden="true"
+    {SHOW_POND_COPY && POND_THOUGHTS.map((thought, i) => <div key={thought.text} ref={el => { promptRefs.current[i] = el; }} data-pond-prompt={i} aria-hidden="true"
       style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SANS, fontWeight: 400, fontSynthesis: "none", fontSize: POND_PROMPT_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
       {thought.text}
     </div>)}
-    <PondHeading visible={enabled} reducedMotion={reducedMotion}>
+    {SHOW_POND_COPY && <PondHeading visible={enabled} reducedMotion={reducedMotion}>
       To create a new memory artifact, record yourself talking about a particular memory.
-    </PondHeading>
+    </PondHeading>}
     {!overlaid && <button ref={buttonRef} aria-label="Hold to begin" aria-describedby="pond-hold-help" disabled={!enabled}
       onPointerDown={e => {
         if (e.button !== 0) return;

@@ -9,7 +9,7 @@ interface TextButtonProps {
   style?: CSSProperties;
 }
 
-/** Bare label control — Switzer, no tracking, no chrome. */
+/** Bare label control — Helvetica Neue, no tracking, no chrome. */
 export function TextButton({
   label,
   onClick,

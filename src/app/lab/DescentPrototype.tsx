@@ -290,6 +290,30 @@ const DESCENT_LOOK = new THREE.CatmullRomCurve3([
 
 const PHOTOS = [photoA, photoB];
 
+/* While the photo is chosen and floats, the water and sky behind the strip
+   are lowered a little (the strip itself is drawn after, untouched, and a
+   little lighter), so the film reads against the glare. */
+const surfaceDimVertex = /* glsl */ `
+  varying vec2 vUv;
+  void main() {
+    vUv = uv;
+    gl_Position = vec4(position.xy, 0.0, 1.0);
+  }
+`;
+const surfaceDimFragment = /* glsl */ `
+  uniform float uDim;
+  varying vec2 vUv;
+  void main() {
+    vec2 c = (vUv - vec2(.5, .52)) / vec2(.42, .38);
+    float outer = smoothstep(.55, 1.5, length(c));
+    float glare = smoothstep(.45, 0.0, vUv.y);
+    float a = (.1 + .07 * outer + .06 * glare) * uDim;
+    gl_FragColor = vec4(.24, .28, .275, a);
+  }
+`;
+/** The surface veil's ease, s: it comes and goes as the photo step does. */
+const SURFACE_DIM_S = .5;
+
 /* Lab switches on the URL. ?speed=0.25 plays the whole shot at quarter speed.
    ?from=wrap opens on the wrap itself — the photo already on the film, the
    descent done, the form surfaced and handled, confirm just pressed — so the
@@ -615,6 +639,7 @@ const filmFragment = /* glsl */ `
   uniform float uBelow;
   uniform float uDevelop;
   uniform float uFade;
+  uniform float uLift;
   varying vec2 vLocal;
   varying vec3 vWorld;
   varying vec3 vNormal;
@@ -644,6 +669,7 @@ const filmFragment = /* glsl */ `
     float sheen = pow(max(0.0, dot(reflect(-eye, n), normalize(vec3(-.3, .8, -.5)))), 18.0);
     color = color * (.92 + .08 * n.y) + sheen * .16;
     color *= mix(1.0, .965, uFloat);
+    color = mix(color, min(color * 1.1 + .05, vec3(1.0)), uLift);
     if (!gl_FrontFacing) {
       // from under the water the film is backlit, light coming through it; uBelow is how much of the image survives that
       color = mix(vec3(.92, .95, .94), color * 1.05, uBelow);
@@ -839,6 +865,8 @@ interface StageState {
   photoReady: boolean;
   /** Route changes seek the existing scene without resetting its water clock. */
   view: "choose" | "surface" | "underwater" | null;
+  /** The photo step is up: lower the water behind the strip. */
+  surfaceDim: boolean;
   surfaceLight: number;
   captureSurface?: () => void;
   voicePulses: VoiceRippleSpot[];
@@ -1111,7 +1139,15 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       uBelow: { value: WRAP_TUNE_DEFAULT.filmBelow },
       // the whole strip's alpha: 1 until the eye has gone under it, then it thins away for good
       uFade: { value: 1 },
+      // lighter on the surface, with the water lowered behind it
+      uLift: { value: 0 },
     };
+  });
+  const surfaceDimUniforms = useKept(() => ({ uDim: { value: 0 } }));
+  useFrame((_, delta) => {
+    const dim = surfaceDimUniforms.uDim;
+    dim.value += ((stage.current.surfaceDim ? 1 : 0) - dim.value) * (1 - Math.exp(-Math.min(delta, .1) / SURFACE_DIM_S));
+    filmUniforms.uLift.value = dim.value;
   });
   const motesUniforms = useMemo(() => ({
     uTime: waves.uTime, uUnder: under, uWash: water.uWash, uPixel: { value: gl.getPixelRatio() },
@@ -1760,7 +1796,8 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
        vessel's haze; the colour pick reaches the glass through the room it
        reflects, as it reaches the water. */
     const body = form.current;
-    const handlingSeat = size.width <= 600 ? UNDERWATER_PHONE.artifactDrop : HANDLING_DROP;
+    const handlingSeat = (size.width <= 600 ? UNDERWATER_PHONE.artifactDrop : HANDLING_DROP)
+      + HANDLING_DROP_PX / Math.max(1, size.height);
     const handlingTarget = riseAt.current !== null ? 0
       : wrapAt.current !== null ? handlingSeat * (1 - flowProgress(t - wrapAt.current, 0, WRAP_MOVE_S))
       : s.step ? handlingSeat : 0;
@@ -1978,6 +2015,11 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       <shaderMaterial name="surface" transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
         vertexShader={waterVertex} fragmentShader={waterFragment} uniforms={surfaceUniforms} />
     </mesh>
+    <mesh renderOrder={1} frustumCulled={false}>
+      <planeGeometry args={[2, 2]} />
+      <shaderMaterial name="surface dim" transparent depthTest={false} depthWrite={false}
+        vertexShader={surfaceDimVertex} fragmentShader={surfaceDimFragment} uniforms={surfaceDimUniforms} />
+    </mesh>
     <mesh ref={film} renderOrder={2} frustumCulled={false}>
       <planeGeometry args={[1, 1, 64, 48]} />
       <shaderMaterial name="film" transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
@@ -2020,6 +2062,14 @@ const easeMorph = (m: number) => m * m * (3 - 2 * m);
 const UNDER_INK = CHROME_GRAY;
 /** Signed shift of the handled vessel from the look point, as a fraction of the view. Negative sits higher. */
 const HANDLING_DROP = 0.01;
+/** A further fixed drop, px, leaving air between the vessel's top and the copy above it. */
+const HANDLING_DROP_PX = 50;
+/** Desktop foot: slider and continue both sit this much lower, px… */
+const HANDLING_FOOT_DROP_PX = 50;
+/** …and the slider this much closer still to continue. */
+const HANDLING_FOOT_CLOSER_PX = 30;
+/** Continue alone, a little lower again. */
+const HANDLING_CONTINUE_DROP_PX = 20;
 /** Desktop camera window, bottom-right. Continue sits on its top edge. */
 const DESKTOP_CAMERA = { right: 28, bottom: 28, width: 128, height: 96 } as const;
 /** The gesture illustration in a phone's foot row sits in a square cell the
@@ -2457,6 +2507,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const stage = useRef<StageState>({
     photoReady: !prelude,
     view: routeStep ? "underwater" : null,
+    surfaceDim: false,
     surfaceLight: 0,
     voicePulses: [],
     foregroundBounds: null,
@@ -2938,6 +2989,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   // it on a history return. Keep all surface controls out of layout underwater.
   const surfaceControlsVisible = !prelude && !routeStep &&
     (phase === "choose" || phase === "falling" || phase === "floating");
+  stage.current.surfaceDim = surfaceControlsVisible;
 
   /* While the camera sees no hand, the pointer is the hand in the water. */
   const pointerAsHand = (e: ReactPointerEvent) => {
@@ -3070,23 +3122,6 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           if (file) void pick(file);
         }} />
 
-      {/* The bundled stills, small and to one side, so the lab can run without a photo of one's own. */}
-      <div role="listbox" aria-label="photo library" style={{ position: "absolute", left: 0, right: 0, bottom: 34,
-        display: "flex", justifyContent: "center", alignItems: "center", gap: 14,
-        opacity: choosing ? 1 : 0, transition: "opacity 500ms ease 150ms", animation: choosing && !from ? "descentFadeIn 1400ms ease 1500ms backwards" : "none",
-        pointerEvents: choosing ? "auto" : "none", zIndex: 10 }}>
-        <span style={{ fontFamily: SANS, fontSize: NOTE_SIZE, color: CHROME_GRAY, opacity: 0.6, marginRight: 6 }}>or one of these</span>
-        {PHOTOS.map((url) => (
-          <button key={url} type="button" role="option" aria-selected={lifted === url} aria-label="select photo"
-            onClick={() => void pick(url)}
-            style={{ width: 48, height: 48, flex: "0 0 48px", padding: 0, overflow: "hidden",
-              borderRadius: "50%", border: "1px solid rgba(123, 123, 135, 0.25)", background: "#e7e7e8",
-              boxShadow: "0 6px 18px rgba(40, 36, 48, 0.1)", cursor: "pointer", opacity: 0.85 }}>
-            <img src={url} alt="" style={{ display: "block", width: "100%", height: "100%", objectFit: "cover" }} />
-          </button>
-        ))}
-      </div>
-
       {phase === "floating" && (
         <button type="button" aria-label="press to pass through" aria-describedby="descent-hint"
           disabled={assessmentPending}
@@ -3107,9 +3142,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         width: "max-content", maxWidth: "min(20em, 40vw)", pointerEvents: "none", zIndex: 6,
         color: CHROME_GRAY, fontFamily: SERIF, fontWeight: 400, fontSynthesis: "none",
         fontSize: INSTRUCTION_SIZE, lineHeight: 1.45,
-        opacity: phase === "floating" ? 1 : 0, filter: phase === "floating" ? "none" : "blur(6px)",
+        opacity: phase === "floating" && assessmentPending ? 1 : 0,
+        filter: phase === "floating" && assessmentPending ? "none" : "blur(6px)",
         transition: "opacity 720ms ease, filter 720ms ease" }}>
-        {assessmentPending ? "finding your memory’s form…" : "press to pass through"}
+        {assessmentPending ? "finding your memory’s form…" : ""}
       </p>
       </div>
 
@@ -3144,7 +3180,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           ...(compact
             ? { left: "var(--chrome-inset)", right: "var(--chrome-inset)",
               bottom: `calc(${UNDERWATER_PHONE.rowBottom} + ${UNDERWATER_PHONE.rowHeight + UNDERWATER_PHONE.sliderGap}px)` }
-            : { top: "78%", left: "50%", transform: "translate(-50%, -50%)" }) }}>
+            : { top: `calc(78% + ${HANDLING_FOOT_DROP_PX + HANDLING_FOOT_CLOSER_PX}px)`, left: "50%", transform: "translate(-50%, -50%)" }) }}>
           {step === "shape" && <SpectrumSlider value={morph} onChange={setSignal} from="circle" to="flower"
             label="memory shape" valueText={`${Math.round(morph * 100)}% shaped`} style={sliderFill} />}
           {step === "rhythm" && <SpectrumSlider value={m2 / RHYTHM_MAX} onChange={setSignal} from="petals" to="bloom"
@@ -3172,6 +3208,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             height: DESKTOP_CAMERA.height,
             minHeight: DESKTOP_CAMERA.height,
             alignItems: "flex-start",
+            transform: `translateY(${HANDLING_FOOT_DROP_PX + HANDLING_CONTINUE_DROP_PX}px)`,
           }}
           heading={<div key={step} className="nijimu-text-in" style={{ animation: textEnter() }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
@@ -3188,7 +3225,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
                 : <>{stepLines(step, transcript)[0]}<br />{stepLines(step, transcript)[1]}</>}
             </p>
           </div>}
-          actions={compact ? undefined : <PillButton label="continue" trailing="›" variant={step === "color" ? "dark" : "light"} onClick={continueStep} />} />
+          actions={compact ? undefined : <PillButton label="continue" trailing="›" variant="ghost" onClick={continueStep} />} />
         {!compact && <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
           opacity: (step === "distance" || tracking.isTracking) && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
           <GestureHint kind={step} active={gestureLive} style={{

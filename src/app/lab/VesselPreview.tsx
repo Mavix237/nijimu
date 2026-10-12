@@ -10,6 +10,7 @@ import { FILM_LOOK_DEFAULT, FILM_LOOK_GLSL, filmLookUniforms, prepareFilmPhoto, 
 import { SHEET_GLSL, STOCKS, STRIP_FACE_GLSL, STRIP_GLSL, STRIP_MM, createEdgePrint, setStock, sheetUniforms, stockHex } from "./filmStrip";
 import { createArtifactGeometry } from "../hooks/useArtifactGeometry";
 import { MAX_DPR, RT_SAMPLES, VESSEL_DETAIL } from "../lib/deviceTier";
+import { FINITE_GLSL } from "../lib/finiteGlsl";
 import {
   ARTIFACT_CATEGORIES, CATEGORY_LABELS, computeMeshNormals, createArtifactForm, describeForm, formKey, isArtifactForm, type ArtifactCategory, type ArtifactForm, type SuperParams,
 } from "../lib/superformula";
@@ -762,7 +763,10 @@ export const sheetVertex = /* glsl */ `
     vMm = aMm;
     vec4 world = modelMatrix * vec4(position, 1.0);
     vWorld = world.xyz;
-    vNormalW = normalize(mat3(modelMatrix) * normal);
+    // a degenerate vertex (a pole, a collapsed fold) can carry a zero normal;
+    // normalize() of it is NaN, which the post blurs spread into squares
+    vec3 normalW = mat3(modelMatrix) * normal;
+    vNormalW = dot(normalW, normalW) > 1e-20 ? normalize(normalW) : vec3(0.0, 1.0, 0.0);
     gl_Position = projectionMatrix * viewMatrix * world;
   }
 `;
@@ -889,7 +893,10 @@ export const glassVertex = /* glsl */ `
     vModel = position;
     vWorld = world.xyz;
     vCentre = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-    vNormalW = normalize(mat3(modelMatrix) * normal);
+    // a degenerate vertex (a pole, a collapsed fold) can carry a zero normal;
+    // normalize() of it is NaN, which the post blurs spread into squares
+    vec3 normalW = mat3(modelMatrix) * normal;
+    vNormalW = dot(normalW, normalW) > 1e-20 ? normalize(normalW) : vec3(0.0, 1.0, 0.0);
     vViewW = normalize(cameraPosition - world.xyz);
     gl_Position = projectionMatrix * viewMatrix * world;
   }
@@ -1279,6 +1286,7 @@ export const glassFragment = /* glsl */ `
 export const glassRefractFragment = /* glsl */ `
   ${GLASS_COMMON_GLSL}
   uniform sampler2D tScene;
+  ${FINITE_GLSL}
   uniform vec2 uResolution;
   uniform float uEnvAbove;
   uniform float uEnvBelow;
@@ -1302,15 +1310,15 @@ export const glassRefractFragment = /* glsl */ `
   // shows the room instead of black
   vec4 behind(vec2 uv, float radius) {
     vec2 r = vec2(radius * uResolution.y / uResolution.x, radius);
-    vec4 c = texture2D(tScene, uv) * 2.0;
-    c += texture2D(tScene, uv + vec2(r.x, 0.0));
-    c += texture2D(tScene, uv - vec2(r.x, 0.0));
-    c += texture2D(tScene, uv + vec2(0.0, r.y));
-    c += texture2D(tScene, uv - vec2(0.0, r.y));
-    c += texture2D(tScene, uv + r * .7);
-    c += texture2D(tScene, uv - r * .7);
-    c += texture2D(tScene, uv + vec2(r.x, -r.y) * .7);
-    c += texture2D(tScene, uv - vec2(r.x, -r.y) * .7);
+    vec4 c = finite4(texture2D(tScene, uv)) * 2.0;
+    c += finite4(texture2D(tScene, uv + vec2(r.x, 0.0)));
+    c += finite4(texture2D(tScene, uv - vec2(r.x, 0.0)));
+    c += finite4(texture2D(tScene, uv + vec2(0.0, r.y)));
+    c += finite4(texture2D(tScene, uv - vec2(0.0, r.y)));
+    c += finite4(texture2D(tScene, uv + r * .7));
+    c += finite4(texture2D(tScene, uv - r * .7));
+    c += finite4(texture2D(tScene, uv + vec2(r.x, -r.y) * .7));
+    c += finite4(texture2D(tScene, uv - vec2(r.x, -r.y) * .7));
     return c / 10.0;
   }
   void main() {
@@ -1431,7 +1439,10 @@ export const mistVertex = /* glsl */ `
     vModel = position;
     vWorld = world.xyz;
     vCentre = (modelMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-    vNormalW = normalize(mat3(modelMatrix) * normal);
+    // a degenerate vertex (a pole, a collapsed fold) can carry a zero normal;
+    // normalize() of it is NaN, which the post blurs spread into squares
+    vec3 normalW = mat3(modelMatrix) * normal;
+    vNormalW = dot(normalW, normalW) > 1e-20 ? normalize(normalW) : vec3(0.0, 1.0, 0.0);
     vViewW = normalize(cameraPosition - world.xyz);
     gl_Position = projectionMatrix * viewMatrix * world;
   }
@@ -1447,9 +1458,14 @@ export const mistFragment = /* glsl */ `
     // faces the eye a little — and the band, cut there, drew a hard contour round
     // every shell. Near the edge the facing is taken from the surface as drawn
     // (its screen-space derivatives), which does reach 0 at the silhouette.
-    vec3 nFlat = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-    float flatFacing = abs(dot(nFlat, v));
-    float facing = mix(flatFacing, max(0.0, dot(n, v)), smoothstep(.1, .4, flatFacing));
+    // Where the derivatives collapse (a sliver or a pole) the cross product is
+    // zero and normalize() is NaN — a dark pixel the distance blur grew into a
+    // black square. Fall back to the smooth normal there.
+    vec3 flatCross = cross(dFdx(vWorld), dFdy(vWorld));
+    float flatLen2 = dot(flatCross, flatCross);
+    float smoothFacing = max(0.0, dot(n, v));
+    float flatFacing = flatLen2 > 1e-30 ? abs(dot(flatCross, v)) * inversesqrt(flatLen2) : smoothFacing;
+    float facing = mix(flatFacing, smoothFacing, smoothstep(.1, .4, flatFacing));
     // flat through the middle, thinning to nothing toward the shell's own edge; the outer shells thin sooner
     float body = pow(smoothstep(0.0, .75, facing), 1.0 + uShell);
     // the fog drifts slowly round the form with the glow's movement

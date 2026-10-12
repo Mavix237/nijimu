@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { FINITE_GLSL } from "./finiteGlsl";
 
 const vertexShader = /* glsl */ `
   varying vec2 vUv;
@@ -9,7 +10,8 @@ const fragmentShader = /* glsl */ `
   uniform vec2 uStep;
   uniform float uExtract;
   varying vec2 vUv;
-  vec3 sampleLight(vec2 uv) { return texture2D(uImage, clamp(uv, 0.0, 1.0)).rgb; }
+  ${FINITE_GLSL}
+  vec3 sampleLight(vec2 uv) { return finite4(texture2D(uImage, clamp(uv, 0.0, 1.0))).rgb; }
   void main() {
     if (uExtract > .5) {
       vec3 c = (sampleLight(vUv + uStep * vec2(-1, -1))
@@ -92,15 +94,19 @@ export function createSilhouetteBlur() {
       uniform sampler2D uImage;
       uniform vec2 uStep;
       varying vec2 vUv;
+      ${FINITE_GLSL}
       void main() {
         vec4 sum = vec4(0.0);
         float total = 0.0;
         for (int i = -16; i <= 16; i++) {
           float w = exp(-float(i * i) / 64.0);
-          sum += texture2D(uImage, clamp(vUv + uStep * float(i), 0.0, 1.0)) * w;
+          // a non-finite tap is left out rather than spread over all 33
+          vec4 tap = texture2D(uImage, clamp(vUv + uStep * float(i), 0.0, 1.0));
+          if (nonFinite(tap)) continue;
+          sum += tap * w;
           total += w;
         }
-        gl_FragColor = sum / total;
+        gl_FragColor = total > 0.0 ? sum / total : vec4(0.0);
       }
     `, depthTest: false, depthWrite: false, blending: THREE.NoBlending });
   const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);

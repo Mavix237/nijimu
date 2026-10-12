@@ -1277,8 +1277,24 @@ export function BlobScene({
     const captionColor = classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR;
     const dotColor = classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR;
     const visible = dimmed ? 0.2 : 1;
-    const soften = Math.max(headerNear, overlap) * 6;
-    const softenFilter = soften > 0.1 ? `blur(${soften}px)` : "none";
+    /* Softening without a CSS filter: a blur() inside the difference-blended
+       layer gets its own GPU surface, and on some GPUs that surface's
+       expanded edge was drawn from uninitialised memory — the stray RGB lines
+       over buried captions. A text-shadow and a widened gradient dot paint
+       in place instead. Quantised so a near-settled overlap does not
+       repaint every frame at sub-pixel radii. */
+    const soften = Math.round(Math.max(headerNear, overlap) * 6 * 4) / 4;
+    const softened = soften >= 0.5;
+    const dotR = dotSize / 2;
+    const dotBox = softened ? dotSize + soften * 4 : dotSize;
+    const dotFill = softened
+      ? `radial-gradient(circle closest-side, ${dotColor} ${Math.max(0, dotR - soften) / (dotBox / 2) * 100}%, transparent 100%)`
+      : undefined;
+    const dotSpread = softened ? Math.min(1, (dotR / (dotR + soften)) ** 2 * 2) : 1;
+    const ringSoft = softened ? clamp(1 - soften / 4, 0, 1) : 1;
+    const softText = softened
+      ? { color: "transparent", textShadow: `0 0 ${soften * 2}px ${captionColor}` }
+      : undefined;
 
     return (
       <div
@@ -1296,14 +1312,14 @@ export function BlobScene({
           style={{
             left: `${a.dotX}px`,
             top: `${a.dotY}px`,
-            width: dotSize,
-            height: dotSize,
+            width: dotBox,
+            height: dotBox,
             borderRadius: "50%",
-            backgroundColor: dotColor,
+            backgroundColor: dotFill ? undefined : dotColor,
+            backgroundImage: dotFill,
             transform: "translate(-50%, -50%)",
             zIndex: 22 + stack,
-            opacity: classicChrome ? visible * BLOB_DOT_OPACITY : (dimmed ? 0.25 : 1),
-            filter: softenFilter,
+            opacity: (classicChrome ? visible * BLOB_DOT_OPACITY : (dimmed ? 0.25 : 1)) * dotSpread,
           }}
         />
         {isPulsating && (
@@ -1320,8 +1336,7 @@ export function BlobScene({
               boxSizing: "content-box",
               transform: "translate(-50%, -50%)",
               zIndex: 21 + stack,
-              opacity: (dimmed ? 0.15 : 1) * (classicChrome ? BLOB_DOT_OPACITY : 1),
-              filter: softenFilter,
+              opacity: (dimmed ? 0.15 : 1) * (classicChrome ? BLOB_DOT_OPACITY : 1) * ringSoft,
               animation: "ringPulse 2.5s ease-in-out infinite",
               ["--ring-from" as string]: `${dotSize}px`,
               ["--ring-to" as string]: `${dotSize * 5.6}px`,
@@ -1343,7 +1358,7 @@ export function BlobScene({
             pointerEvents: buried ? "none" : "auto",
           }}
         >
-          <div style={{ opacity: visible, filter: softenFilter }}>
+          <div style={{ opacity: visible, ...softText }}>
             <div
               style={{
                 fontFamily: SERIF_CJK,

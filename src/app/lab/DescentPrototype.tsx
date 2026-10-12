@@ -1,5 +1,6 @@
 import { useCompact } from "../hooks/useCompact";
 import { createAscentBloom, createSilhouetteBlur } from "../lib/ascentBloom";
+import { FINITE_GLSL } from "../lib/finiteGlsl";
 import { ascentLightAt, ASCENT_LIGHT_GLSL, ASCENT_INTERIOR_GLSL } from "../lib/ascentLight";
 import { FlowPageGrid } from "../components/FlowPageGrid";
 import { vesselTint } from "../lib/vesselTint";
@@ -725,6 +726,7 @@ const touchFragment = /* glsl */ `
   uniform float uAscentHandoff;
   uniform float uAscentAtmosphere;
   varying vec2 vUv;
+  ${FINITE_GLSL}
   float touchHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
   float touchNoise(vec2 p) {
     vec2 i = floor(p), f = fract(p);
@@ -759,17 +761,17 @@ const touchFragment = /* glsl */ `
     // Fade displacement at the frame edge instead of stretching its last texel.
     vec2 edge = smoothstep(vec2(0.0), vec2(.04), vUv) * smoothstep(vec2(0.0), vec2(.04), 1.0 - vUv);
     shift *= edge.x * edge.y;
-    vec4 c = texture2D(tScene, vUv + shift);
+    vec4 c = finite4(texture2D(tScene, vUv + shift));
     // the light splits by a hair where the water is thickest
     float split = near * .1;
-    c.r = texture2D(tScene, vUv + shift * (1.0 + split)).r;
-    c.b = texture2D(tScene, vUv + shift * (1.0 - split)).b;
+    c.r = finite4(texture2D(tScene, vUv + shift * (1.0 + split))).r;
+    c.b = finite4(texture2D(tScene, vUv + shift * (1.0 - split))).b;
     // and the gathered water catches a touch more light
     c.rgb += near * .02;
     // Water softens the approaching memory, and growing light diffuses its
     // silhouette during ascent. The page chrome stays crisp in both cases.
     if (uArrivalBlur > .05 && length((vUv - uArrivalCenter) * aspect) < .65) {
-      vec4 soft = texture2D(tSoftScene, vUv + shift);
+      vec4 soft = finite4(texture2D(tSoftScene, vUv + shift));
       float mask = 1.0 - smoothstep(.38, .65, length((vUv - uArrivalCenter) * aspect));
       c = mix(c, soft, mask);
     }
@@ -785,7 +787,7 @@ const touchFragment = /* glsl */ `
     // Real HDR light from the glass diffuses into the surrounding water.
     // Keep the source's lit contours visible before the whole eye adapts.
     if (uAscentBloom > .001) {
-      vec3 glow = texture2D(tAscentBloom, vUv + shift).rgb;
+      vec3 glow = finite4(texture2D(tAscentBloom, vUv + shift)).rgb;
       vec3 spill = vec3(1.0) - exp(-glow * (.3 + .5 * uAscentBloom));
       c.rgb = mix(c.rgb, vec3(.888, .902, .897), spill);
     }

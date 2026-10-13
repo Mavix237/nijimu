@@ -3090,7 +3090,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       </div>
 
       {phase === "floating" && (
-        <button type="button" aria-label="press to pass through" aria-describedby="descent-hint"
+        <button type="button" aria-label="press and hold to pass through" aria-describedby="descent-hint"
           disabled={assessmentPending}
           onPointerDown={(e) => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setHolding(true); }}
           onPointerUp={() => setHolding(false)}
@@ -3111,7 +3111,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         fontSize: INSTRUCTION_SIZE, lineHeight: 1.45,
         opacity: phase === "floating" ? 1 : 0, filter: phase === "floating" ? "none" : "blur(6px)",
         transition: "opacity 720ms ease, filter 720ms ease" }}>
-        {assessmentPending ? "finding your memory’s form…" : "press to pass through"}
+        {assessmentPending ? "finding your memory’s form…" : "press and hold to pass through"}
       </p>
       </div>
 

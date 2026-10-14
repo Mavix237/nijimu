@@ -638,6 +638,7 @@ export function VesselGalleryProvider({
         focused={seat.focused}
         still={seat.still}
         frameloop={field.busy ? "always" : seat.frameloop}
+        blurPx={seat.blurPx}
         onPick={pickRef.current ? pick : undefined}
       />
     );

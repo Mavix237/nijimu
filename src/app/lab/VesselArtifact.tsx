@@ -9,7 +9,7 @@ import { setApexHover } from "../lib/apexHover";
 import { useVesselParts, type VesselParts } from "./vesselBuilds";
 import { createEdgePrint } from "./filmStrip";
 import {
-  BLANK_PHOTO, FOV, FRONT_LAYER, LOOK_Y, Mist, PITCH_MAX, PITCH_MIN, airFor, backdropVertex, blitFragment, buildGlass,
+  BLANK_PHOTO, FOV, FRONT_LAYER, LOOK_Y, Mist, PITCH_MAX, PITCH_MIN, airFor, backdropVertex, blitFragment, blurFragment, buildGlass,
   createGlassUniformSet, createSheetUniformSet, glassFragment, glassRefractFragment, glassVertex, hash2,
   keyFrom, photoLoader, seedDirections, sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms,
   type Glass, type GlassMode, type Room, type Sheet, type SheetFace, type SheetMode, type VesselTune,
@@ -70,6 +70,9 @@ export interface VesselArtifactProps {
   locked?: boolean;
   /** As a drag turns the eye: the wall angle it now faces and its height, in degrees. */
   onView?: (facing: number, pitch: number) => void;
+  /** Depth softness in CSS pixels of this canvas, before the seat's scale.
+      Drawn here so the blur is the same pixels in Safari and Chrome. */
+  blurPx?: number;
   /** A press and release without a drag at the apex — the seat is being asked for. */
   onPick?: () => void;
   /** Called after the first complete frame, so arrivals wait for the actual vessel. */
@@ -77,6 +80,30 @@ export interface VesselArtifactProps {
 }
 
 interface Built { glass: Glass; sheet: Sheet; distance: number }
+
+interface Soften {
+  frame: THREE.WebGLRenderTarget;
+  pong: THREE.WebGLRenderTarget;
+  blur: THREE.ShaderMaterial;
+  quad: THREE.Mesh;
+  scene: THREE.Scene;
+  ortho: THREE.OrthographicCamera;
+}
+
+/** One separable pass of the lab's 13-tap kernel onto the screen. σ is in device pixels. */
+function spreadSoft(renderer: THREE.WebGLRenderer, s: Soften, sigma: number) {
+  const tap = sigma / 2.5;
+  const blur = s.blur;
+  blur.uniforms.tScene.value = s.frame.texture;
+  (blur.uniforms.uStep.value as THREE.Vector2).set(tap / Math.max(1, s.frame.width), 0);
+  s.quad.material = blur;
+  renderer.setRenderTarget(s.pong);
+  renderer.render(s.scene, s.ortho);
+  blur.uniforms.tScene.value = s.pong.texture;
+  (blur.uniforms.uStep.value as THREE.Vector2).set(0, tap / Math.max(1, s.frame.height));
+  renderer.setRenderTarget(null);
+  renderer.render(s.scene, s.ortho);
+}
 
 /* ───────── the photos, shared by every seat that shows one ─────────
    One texture per URL for the visit: a seat that mounts, leaves and comes
@@ -160,7 +187,7 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
 }
 
 function VesselObject({
-  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady,
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady, blurPx = 0,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
@@ -290,9 +317,44 @@ function VesselObject({
     return { target, blit, quad, scene, ortho };
   }, []);
   useEffect(() => () => { pass.target.dispose(); pass.blit.dispose(); pass.quad.geometry.dispose(); }, [pass]);
+  // The seat's depth softness. A CSS blur of this transparent canvas fringes in
+  // Safari, so a neighbour is softened here, in the same pixels both browsers
+  // composite. The apex stays sharp and never allocates the extra targets.
+  const blurLive = useRef(blurPx);
+  blurLive.current = blurPx;
+  const soften = useRef<Soften | null>(null);
+  useEffect(() => () => {
+    const s = soften.current;
+    if (!s) return;
+    s.frame.dispose();
+    s.pong.dispose();
+    s.blur.dispose();
+    s.quad.geometry.dispose();
+  }, []);
+  const ensureSoften = () => {
+    if (soften.current) return soften.current;
+    const frame = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false });
+    const pong = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false, stencilBuffer: false });
+    const blur = new THREE.ShaderMaterial({
+      vertexShader: backdropVertex, fragmentShader: blurFragment,
+      uniforms: { tScene: { value: frame.texture }, uStep: { value: new THREE.Vector2() } },
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blur);
+    quad.frustumCulled = false;
+    const scene = new THREE.Scene();
+    scene.add(quad);
+    const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    soften.current = { frame, pong, blur, quad, scene, ortho };
+    return soften.current;
+  };
   useEffect(() => {
     const dpr = gl.getPixelRatio();
-    pass.target.setSize(Math.max(1, Math.round(size.width * dpr)), Math.max(1, Math.round(size.height * dpr)));
+    const w = Math.max(1, Math.round(size.width * dpr));
+    const h = Math.max(1, Math.round(size.height * dpr));
+    pass.target.setSize(w, h);
+    const s = soften.current;
+    if (s) { s.frame.setSize(w, h); s.pong.setSize(w, h); }
     invalidate();
   }, [pass, gl, size, invalidate]);
 
@@ -365,9 +427,21 @@ function VesselObject({
     const bob = HOVER_BOB * d * h.amount * Math.sin(h.phase);
     camera.position.set(-Math.sin(y) * Math.cos(p) * d, LOOK_Y - bob + Math.sin(p) * d, Math.cos(y) * Math.cos(p) * d);
     camera.lookAt(0, LOOK_Y - bob, 0);
+    // CSS blur()'s argument is the Gaussian deviation, in the canvas's own
+    // pixels (the seat scales afterwards). The 13-tap kernel is σ = 2.5 taps.
+    const sigma = blurLive.current * renderer.getPixelRatio();
+    const s = sigma > 0.35 ? ensureSoften() : null;
+    if (s && (s.frame.width !== pass.target.width || s.frame.height !== pass.target.height)) {
+      s.frame.setSize(pass.target.width, pass.target.height);
+      s.pong.setSize(pass.target.width, pass.target.height);
+    }
+    const out = s ? s.frame : null;
     if (!refract) {
       view.layers.enableAll();
+      renderer.setRenderTarget(out);
       renderer.render(scene, view);
+      renderer.setRenderTarget(null);
+      if (s) spreadSoft(renderer, s, sigma);
       reportReady();
       return;
     }
@@ -375,7 +449,7 @@ function VesselObject({
     view.layers.set(0);
     renderer.setRenderTarget(pass.target);
     renderer.render(scene, view);
-    renderer.setRenderTarget(null);
+    renderer.setRenderTarget(out);
     renderer.render(pass.scene, pass.ortho);
     renderer.clearDepth();
     view.layers.set(FRONT_LAYER);
@@ -383,6 +457,7 @@ function VesselObject({
     renderer.render(scene, view);
     renderer.autoClear = true;
     view.layers.enableAll();
+    if (s) spreadSoft(renderer, s, sigma);
     reportReady();
   }, 1);
 
@@ -419,7 +494,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
     // that tiny size and stretched when it reached the apex
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
-      dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} frameloop={props.frameloop}
+      dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       style={{ width: "100%", height: "100%" }}>
       <VesselObject {...props} parts={parts} />

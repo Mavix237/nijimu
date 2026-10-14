@@ -1536,7 +1536,7 @@ const BLUR_TAPS_GLSL = /* glsl */ `
     return c;
   }
 `;
-const blurFragment = /* glsl */ `
+export const blurFragment = /* glsl */ `
   ${BLUR_TAPS_GLSL}
   void main() { gl_FragColor = blur13(vUv); }
 `;

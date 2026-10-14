@@ -25,6 +25,9 @@ export interface ArtifactSeat {
   frameloop: "always" | "demand";
   /** How far away the seat reads (the vessel's own distance, 0 clear); set by the field. */
   haze?: number;
+  /** Depth softness in CSS pixels of the unscaled seat. The vessel draws it,
+      so Safari and Chrome soften the same pixels. */
+  blurPx?: number;
   /** Seats from the apex along the curve (0 at the apex): what to build first. */
   offset?: number;
 }

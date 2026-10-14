@@ -148,6 +148,9 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
 
   return (
     <p ref={ref} className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE,
+      // a little higher than the landing lines, so a wide short window
+      // keeps the vessel clear of the tip
+      top: "14.5vh",
       // the size of the wordmark just above it
       fontSize: PAGE_HEADER_MARK.fontSize,
       zIndex: 31, opacity: on ? 1 : 0,

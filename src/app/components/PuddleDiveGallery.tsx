@@ -248,12 +248,14 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
 
 /** Gap between the title and the year, in the caption block's own em. */
 export const CAPTION_TITLE_GAP = "0.8em";
+/** The gallery's title-to-year gap: the shared one, 30% tighter. */
+const GALLERY_TITLE_YEAR_GAP = "0.56em";
 
 /** The settled caption — a memory's words and its year. */
 export function StaticCaption({ title, year }: { title: string; year: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <div style={{ marginBottom: CAPTION_TITLE_GAP }}>
+      <div style={{ marginBottom: GALLERY_TITLE_YEAR_GAP }}>
         <span style={{ ...CAPTION_TITLE_STYLE, display: "inline-block", whiteSpace: "pre-line" }}>
           {title}
         </span>
@@ -1003,13 +1005,17 @@ export function PuddleDiveGallery({
                       ? "none"
                       : neighborAnimation(offset)
                     : artifactAnimation,
-                  willChange: "filter, opacity, transform",
+                  // a filter layer over a transparent canvas is what fringes the
+                  // vessels in Safari; only a seat that is actually filtering keeps one
+                  willChange: gather || (!override && depth.blurPx > 0.2) ? "filter, opacity, transform" : "transform, opacity",
                 }}
               >
                 {/* depth: how far into the water this slot has fallen. The
                     bob lives on the model so a step never cuts a CSS float
                     short and drops the box. The depth blur belongs to the
-                    dome, not the water, so both screens carry it. */}
+                    dome, not the water, so both screens carry it. A vessel
+                    draws that softness itself, in its own pixels, so Safari
+                    and Chrome composite the same blur. */}
                 <div
                   style={{
                     width: "100%",
@@ -1017,7 +1023,7 @@ export function PuddleDiveGallery({
                     opacity: depth.opacity,
                     filter:
                       [
-                        depth.blurPx ? `blur(${depth.blurPx}px)` : "",
+                        !override && depth.blurPx ? `blur(${depth.blurPx}px)` : "",
                         waterEffect && focused && wobbling ? "url(#dive-refraction)" : "",
                       ]
                         .filter(Boolean)
@@ -1030,6 +1036,7 @@ export function PuddleDiveGallery({
                     still: !focused && rimSettled,
                     frameloop: focused || !rimSettled || pondDeparture > 0 ? "always" : "demand",
                     haze: depth.haze,
+                    blurPx: depth.blurPx,
                     offset,
                   }) : <SceneViewer
                     measureUnscaled
@@ -1106,7 +1113,7 @@ export function PuddleDiveGallery({
         ref={captionRef}
         className="absolute left-0 right-0 text-center"
         style={{
-          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h,
+          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH + (caption ? 0 : 0.02)) * viewport.h,
           padding: "0 clamp(24px, 6vw, 80px)",
           fontFamily: SERIF,
           // in the field the words come only while a memory is under the pointer

@@ -9,7 +9,7 @@ import { getTranscription } from "../lib/transcribe";
 import type { ArtifactForm } from "../lib/superformula";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
-import { transcriptCharacters, transcriptTypingDelay } from "../lib/transcriptTyping";
+import { transcriptCharacters, transcriptTypingDelay, transcriptTypingPace } from "../lib/transcriptTyping";
 import type { VoiceRippleSpot } from "../lib/voicePeaks";
 
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
@@ -75,8 +75,6 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     return { parts, characters: transcriptCharacters(transcript.split(/\s+/).join(" ")) };
   }, [transcript]);
   const restored = !!state?.transcriptReady && !!transcript.trim();
-  /** The stand-in memory, not a recording still being heard. */
-  const isSample = !transcriptionId && transcript === SAMPLE_TRANSCRIPT;
 
   const [visibleCharacterCount, setVisibleCharacterCount] = useState(() => (restored ? printing.characters.length : 0));
   const [isTyping, setIsTyping] = useState(!restored);
@@ -152,6 +150,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
       return;
     }
     let count = 0;
+    const pace = transcriptTypingPace(printing.characters);
     setVisibleCharacterCount(0);
     const typeNext = () => {
       count++;
@@ -162,7 +161,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
         typingFinishRef.current = window.setTimeout(() => setShowContinue(true), 300);
         return;
       }
-      typingTimerRef.current = window.setTimeout(typeNext, transcriptTypingDelay(printing.characters[count - 1], count - 1));
+      typingTimerRef.current = window.setTimeout(typeNext, transcriptTypingDelay(printing.characters[count - 1], count - 1) * pace);
     };
     typingTimerRef.current = window.setTimeout(typeNext, 180);
 
@@ -172,10 +171,10 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     };
   }, [printing, awaitingTranscript, transcribeError, transcript, reducedMotion]);
 
-  /* A click while the sample is still printing shows the whole body at once.
+  /* A click while the words are still printing shows the whole body at once.
      Buttons and links are left alone. */
   useEffect(() => {
-    if (!isSample || !isTyping) return;
+    if (!isTyping || awaitingTranscript || transcribeError) return;
     const skip = (event: PointerEvent) => {
       if (event.button !== 0) return;
       const target = event.target;
@@ -191,7 +190,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     };
     window.addEventListener("pointerdown", skip);
     return () => window.removeEventListener("pointerdown", skip);
-  }, [isSample, isTyping, printing]);
+  }, [isTyping, awaitingTranscript, transcribeError, printing]);
 
   const goToRecord = () => {
     navigate(RECORD_START_PATH + location.search, {
@@ -291,7 +290,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
               justifyContent: "flex-start",
               alignItems: "center",
               gap: 48,
-              cursor: isSample && isTyping ? "pointer" : undefined,
+              cursor: isTyping && !awaitingTranscript ? "pointer" : undefined,
             }}
           >
             <div
@@ -359,7 +358,8 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             </div>
           </div>
         </div>
-        {(pairReady || transcribeError) && (
+        {/* "record again" is there as soon as the words are; continue waits for the printout (a click skips it) */}
+        {(!awaitingTranscript || transcribeError) && (
           <div
             style={{
               /* the actions' row, as on the recording screen */
@@ -373,7 +373,6 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
               justifyContent: "center",
               gap: 22,
               pointerEvents: "auto",
-              visibility: transcribeError || showContinue ? "visible" : "hidden",
             }}
           >
             {transcribeError ? (
@@ -390,6 +389,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                   trailing="›"
                   onClick={handleContinue}
                   disabled={fadeOutContent}
+                  style={{ visibility: pairReady ? "visible" : "hidden" }}
                 />
               </>
             )}

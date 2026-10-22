@@ -4,6 +4,25 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## UI motion pass (2026-10-22)
+
+Chrome motion follows the animation rules (press feedback, interruptible,
+exits quicker than entrances); 3D/atmospheric transitions are untouched.
+`motion.css` holds the shared press classes: `.nijimu-press` (scale .97 —
+the `scale` property, so it composes with a positioning transform; PillButton,
+the phone's round continue), `.nijimu-press-icon` (the header glyph gives,
+not the button) and `.nijimu-text-button` (TextButton: mouse-only hover,
+press, focus ring); `.nijimu-glyph-in` keys state glyphs (music, view) in.
+The transcript printout is capped at `TRANSCRIPT_TYPING_MAX_MS` (8 s, pauses
+scaled), any transcript skips on a click, and "record again" shows with the
+words. Gallery arrow keys are paced like the wheel and leave for the pond only
+on a fresh press once the rim is still. GlassPane uses transitions on
+`data-state` (from/in/out), so a close or reopen turns round mid-way. Header
+menu opens 200 ms / closes 150 ms; header names wait 300 ms the first time,
+then neighbours show at once. PaneOption hover 240–280 ms. The spectrum knob
+cross-fades two shapes by scale/opacity. The gallery caption's first line
+starts its last word within 560 ms.
+
 ## Transcript review restored; highlighting archived (2026-10-11)
 
 Recording and the sample go from `/record/start` to `/record/transcript`, which

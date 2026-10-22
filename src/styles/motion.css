@@ -35,3 +35,34 @@
 @media (prefers-reduced-motion: reduce) {
   .nijimu-settle-halo { animation: nijimuSettleHaloFade 500ms ease-out forwards; }
 }
+
+/* Anything pressed gives a little under the finger. `scale`, not `transform`,
+   so it composes with whatever transform positions the control. Release is
+   the same quick curve, so a tap reads as one soft beat. */
+.nijimu-press, .nijimu-text-button {
+  transition: scale 160ms cubic-bezier(0.23, 1, 0.32, 1), opacity 200ms ease;
+}
+.nijimu-press:not(:disabled):active { scale: 0.97; }
+/* A header icon: the glyph gives, not the button (its opacity and transition
+   are the chrome's own). A 16px glyph needs a deeper give to be seen at all. */
+.nijimu-press-icon > svg { transition: scale 160ms cubic-bezier(0.23, 1, 0.32, 1); }
+.nijimu-press-icon:not(:disabled):active > svg { scale: 0.86; transition-duration: 100ms; }
+
+/* A glyph that changes with its state (music on/off, the gallery's view) is
+   keyed on that state and comes in focusing from a breath smaller, so the
+   swap reads as the icon changing rather than a flash. */
+@keyframes nijimuGlyphIn {
+  from { opacity: 0; filter: blur(2px); transform: scale(0.9); }
+}
+.nijimu-glyph-in { animation: nijimuGlyphIn 180ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .nijimu-glyph-in { animation: nijimuTextIn 150ms ease both; }
+}
+
+/* A bare label: its ink lifts under a mouse and dips under the press. */
+.nijimu-text-button:not(:disabled):active { scale: 0.97; opacity: 0.6; transition-duration: 100ms; }
+@media (hover: hover) and (pointer: fine) {
+  .nijimu-text-button:not(:disabled):hover { opacity: 0.72; }
+}
+.nijimu-text-button:focus { outline: none; }
+.nijimu-text-button:focus-visible { outline: 1px solid rgba(123, 123, 135, 0.35); outline-offset: 4px; border-radius: 2px; }

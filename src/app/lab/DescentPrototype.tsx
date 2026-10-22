@@ -3231,7 +3231,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
                 transform: "scaleX(-1)", pointerEvents: "none",
                 opacity: tracking.isTracking ? 1 : 0, transition: "opacity 700ms ease" }} />
           </div>
-          <button type="button" aria-label="continue" onClick={continueStep}
+          <button type="button" aria-label="continue" onClick={continueStep} className="nijimu-press"
             style={{ width: UNDERWATER_PHONE.rowHeight, height: UNDERWATER_PHONE.rowHeight, borderRadius: "50%",
               border: "none", padding: 0, background: "rgba(123, 123, 135, 0.16)", cursor: "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",

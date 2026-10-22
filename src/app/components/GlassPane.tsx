@@ -8,6 +8,7 @@ import { PANE_ACTION, PANE_CONTENT_GAP } from "../lib/theme";
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const LEAVE_MS = LANDING_RETURN.profileLeaveMs;
+const CARD_EASE = "cubic-bezier(0.22, 0.8, 0.28, 1)";
 const PANEL_RADIUS = 12;
 const PANEL_SMOOTHING = 0.6;
 const PANEL_WIDTH = 480;
@@ -48,6 +49,9 @@ export function GlassPane({
   const compact = useCompact();
   const [mounted, setMounted] = useState(open);
   const [leaving, setLeaving] = useState(false);
+  /** One frame after mounting, so the pane transitions from its unseen state. */
+  const [entered, setEntered] = useState(false);
+  const paneState = leaving ? "out" : entered ? "in" : "from";
   const cardRef = useRef<HTMLDivElement | null>(null);
   const restoreFocusTo = useRef<HTMLElement | null>(null);
   const onCloseRef = useRef(onClose);
@@ -66,10 +70,17 @@ export function GlassPane({
     const timer = window.setTimeout(() => {
       setMounted(false);
       setLeaving(false);
+      setEntered(false);
       onExitedRef.current?.();
     }, LEAVE_MS);
     return () => window.clearTimeout(timer);
   }, [open, mounted]);
+
+  useEffect(() => {
+    if (!mounted || entered) return;
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => setEntered(true)); });
+    return () => cancelAnimationFrame(frame);
+  }, [mounted, entered]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,7 +129,7 @@ export function GlassPane({
   return (
     <div
       className="nijimuProfileScrim"
-      data-leaving={leaving}
+      data-state={paneState}
       onClick={() => { if (!closeDisabled) onClose(); }}
       style={{
         position: "fixed",
@@ -128,7 +139,6 @@ export function GlassPane({
         alignItems: "center",
         justifyContent: "center",
         padding: "clamp(16px, 5vw, 40px)",
-        backgroundColor: "rgba(108, 108, 122, 0.1)",
       }}
     >
       {/* On a phone the whole screen softens behind the pane. A sibling layer,
@@ -137,7 +147,7 @@ export function GlassPane({
         <div
           aria-hidden
           className="nijimuProfileVeil"
-          data-leaving={leaving}
+          data-state={paneState}
           style={{
             position: "absolute",
             inset: 0,
@@ -153,7 +163,7 @@ export function GlassPane({
         <div
           aria-hidden
           className="nijimuProfileCard"
-          data-leaving={leaving}
+          data-state={paneState}
           style={{
             position: "absolute",
             inset: 0,
@@ -165,7 +175,7 @@ export function GlassPane({
         <div
           ref={cardRef}
           className="nijimuProfileCard"
-          data-leaving={leaving}
+          data-state={paneState}
           role="dialog"
           aria-modal="true"
           aria-label={labelledBy ? undefined : label}
@@ -230,53 +240,31 @@ export function GlassPane({
         .nijimuPaneBody > p { margin: 0; }
         .nijimuPaneBody > p + p { margin-top: .4em; }
 
-        @keyframes nijimuProfileFadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes nijimuProfileFadeOut {
-          from { opacity: 1; }
-          to { opacity: 0; }
-        }
-        @keyframes nijimuProfileDimIn {
-          from { background-color: rgba(108, 108, 122, 0); }
-        }
-        @keyframes nijimuProfileDimOut {
-          to { background-color: rgba(108, 108, 122, 0); }
-        }
-        @keyframes nijimuProfileCardIn {
-          from { opacity: 0; transform: translateY(12px) scale(0.965); }
-          to { opacity: 1; transform: none; }
-        }
-        @keyframes nijimuProfileCardOut {
-          from { opacity: 1; transform: none; }
-          to { opacity: 0; transform: translateY(6px) scale(0.985); }
-        }
+        /* Transitions, not keyframes: a pane closed while it is still opening,
+           or opened again as it leaves, turns round from where it is. */
         .nijimuProfileScrim {
-          animation: nijimuProfileDimIn 240ms ease both;
-        }
-        .nijimuProfileScrim[data-leaving="true"] {
-          animation: nijimuProfileDimOut ${LEAVE_MS}ms ease both;
+          background-color: rgba(108, 108, 122, 0.1);
+          transition: background-color 240ms ease;
         }
         .nijimuProfileVeil {
-          animation: nijimuProfileFadeIn 280ms ease both;
-        }
-        .nijimuProfileVeil[data-leaving="true"] {
-          animation: nijimuProfileFadeOut ${LEAVE_MS}ms ease both;
+          transition: opacity 280ms ease;
         }
         .nijimuProfileCard {
-          animation: nijimuProfileCardIn 320ms cubic-bezier(0.22, 0.8, 0.28, 1) both;
+          transition: opacity 320ms ${CARD_EASE}, transform 320ms ${CARD_EASE};
         }
-        .nijimuProfileCard[data-leaving="true"] {
-          animation: nijimuProfileCardOut ${LEAVE_MS}ms ease both;
+        .nijimuProfileScrim:not([data-state="in"]) { background-color: rgba(108, 108, 122, 0); }
+        .nijimuProfileVeil:not([data-state="in"]) { opacity: 0; }
+        .nijimuProfileCard[data-state="from"] { opacity: 0; transform: translateY(12px) scale(0.965); }
+        .nijimuProfileCard[data-state="out"] { opacity: 0; transform: translateY(6px) scale(0.985); }
+        /* leaving is quicker than arriving */
+        .nijimuProfileScrim[data-state="out"],
+        .nijimuProfileVeil[data-state="out"],
+        .nijimuProfileCard[data-state="out"] {
+          transition-duration: ${LEAVE_MS}ms;
+          transition-timing-function: ease;
         }
         @media (prefers-reduced-motion: reduce) {
-          .nijimuProfileCard {
-            animation: nijimuProfileFadeIn 200ms ease both;
-          }
-          .nijimuProfileCard[data-leaving="true"] {
-            animation: nijimuProfileFadeOut ${LEAVE_MS}ms ease both;
-          }
+          .nijimuProfileCard { transform: none !important; transition: opacity 200ms ease; }
         }
       `}</style>
     </div>

@@ -150,11 +150,13 @@ const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
 };
 
 /** A transcript line slides down into place over LINE_IN_MS, the next LINE_STAGGER_MS after.
-    The first line comes in a word at a time, WORD_STAGGER_MS apart; the second follows
-    the first line's last word by one more step. */
+    The first line comes in a word at a time, WORD_STAGGER_MS apart — closer for a long
+    line, so its last word starts within FIRST_LINE_MAX_MS; the second follows the first
+    line's last word by one more step. */
 const LINE_IN_MS = 720;
 const LINE_STAGGER_MS = 80;
 const WORD_STAGGER_MS = 70;
+const FIRST_LINE_MAX_MS = 560;
 
 /** The words stop above `floorY`; when they would run past it, the last lines fade out.
     They come in line by line, each sliding down out of its own mask; the lines are
@@ -213,7 +215,9 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
         opacity: visible ? 1 : 0,
         ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
       }}>
-        {lines.map((line, i) => {
+        {lines.map((line, i, all) => {
+          const firstWords = all[0].split(" ").length;
+          const wordStep = Math.min(WORD_STAGGER_MS, FIRST_LINE_MAX_MS / firstWords);
           // shown afresh each time: the lines come in again
           const enter = (delay: number) => visible
             ? `${still ? "transcriptLineFade" : "transcriptLineIn"} ${LINE_IN_MS}ms cubic-bezier(.2, .7, .2, 1) ${delay}ms both`
@@ -226,7 +230,7 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
                   <Fragment key={j}>
                     {/* each word slides down out of its own mask */}
                     <span style={{ display: "inline-block", overflow: "hidden", verticalAlign: "top" }}>
-                      <span style={{ display: "inline-block", animation: enter(j * WORD_STAGGER_MS) }}>{word}</span>
+                      <span style={{ display: "inline-block", animation: enter(j * wordStep) }}>{word}</span>
                     </span>
                     {j < first.length - 1 ? " " : ""}
                   </Fragment>
@@ -234,7 +238,7 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
               </span>
             );
           }
-          const after = lines[0].split(" ").length * WORD_STAGGER_MS;
+          const after = firstWords * wordStep;
           return (
             <span key={i} style={{ display: "block", overflow: "hidden" }}>
               <span style={{ display: "block", textAlign: "center", animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
@@ -446,8 +450,10 @@ export function PuddleDiveGallery({
     }
   }, [activeIdx, rimSettled, pondDeparture, onOverscrollExit]);
 
-  /* arrows — keyboard */
+  /* arrows — keyboard. Paced like the wheel, so a held key steps rather than
+     racing the rim; leaving for the pond takes a fresh press once the rim is still. */
   useEffect(() => {
+    let lockedUntil = 0;
     const handler = (e: KeyboardEvent) => {
       if (phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
       const t = e.target as HTMLElement | null;
@@ -456,12 +462,17 @@ export function PuddleDiveGallery({
       if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (e.key === "Escape") { onExit?.(); return; }
       if (inField) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const now = performance.now();
+      if (now < lockedUntil) return;
+      lockedUntil = now + (reducedMotion ? 80 : 140);
       if (e.key === "ArrowLeft") { if (hasOlder) onNavigate(-1); }
-      else if (e.key === "ArrowRight") hasNewer ? onNavigate(1) : onOverscrollExit?.();
+      else if (hasNewer) onNavigate(1);
+      else if (!e.repeat && rimSettledRef.current) onOverscrollExit?.();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit]);
+  }, [phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit, reducedMotion]);
 
   /* A sideways gesture over the carousel is for the artifacts, never for the
      browser's swipe-to-go-back — which unwound the entry and dropped the

@@ -56,7 +56,7 @@ export function PillButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={className}
+      className={className ? `nijimu-press ${className}` : "nijimu-press"}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -68,7 +68,7 @@ export function PillButton({
         background,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
-        transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease",
+        transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, scale 160ms cubic-bezier(0.23, 1, 0.32, 1)",
         ...style,
       }}
     >

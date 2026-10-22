@@ -13,3 +13,13 @@ export function transcriptTypingDelay(character: string, index: number): number 
   if (/\s/u.test(character)) return 85 + variation * 55;
   return 18 + variation * 20;
 }
+
+/** The whole printout takes at most this long; a longer memory types faster, keeping its rhythm. */
+export const TRANSCRIPT_TYPING_MAX_MS = 8000;
+
+/** What each pause is multiplied by so the printout fits TRANSCRIPT_TYPING_MAX_MS. */
+export function transcriptTypingPace(characters: string[]): number {
+  let total = 0;
+  characters.forEach((character, index) => { total += transcriptTypingDelay(character, index); });
+  return total > TRANSCRIPT_TYPING_MAX_MS ? TRANSCRIPT_TYPING_MAX_MS / total : 1;
+}

@@ -2001,13 +2001,16 @@ export function BlobScene({
           stroke-dashoffset: 1;
           transition: stroke-dashoffset 0.36s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        .landing-enter-btn:hover .landing-enter-stem,
         .landing-enter-btn:focus-visible .landing-enter-stem {
           stroke-dashoffset: 0;
         }
-        .landing-enter-btn:hover .landing-enter-arrow svg,
         .landing-enter-btn:focus-visible .landing-enter-arrow svg {
           transform: translateX(3px);
+        }
+        /* a mouse only: a tap would leave the stem drawn */
+        @media (hover: hover) and (pointer: fine) {
+          .landing-enter-btn:hover .landing-enter-stem { stroke-dashoffset: 0; }
+          .landing-enter-btn:hover .landing-enter-arrow svg { transform: translateX(3px); }
         }
         div::-webkit-scrollbar { display: none; }
       `}</style>

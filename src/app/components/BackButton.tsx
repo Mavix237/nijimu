@@ -23,6 +23,7 @@ export function BackButton({ onClick }: BackButtonProps) {
     <button
       onClick={handleClick}
       aria-label="back"
+      className="nijimu-press-icon"
       style={{
         position: "absolute",
         top: HEADER_CENTER - BACK_SIZE / 2,
@@ -40,10 +41,11 @@ export function BackButton({ onClick }: BackButtonProps) {
         opacity: 0.6,
         transition: "opacity 0.2s ease",
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.opacity = "1";
+      // a mouse only: a tap's synthetic enter would leave the arrow lit
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") e.currentTarget.style.opacity = "1";
       }}
-      onMouseLeave={(e) => {
+      onPointerLeave={(e) => {
         e.currentTarget.style.opacity = "0.6";
       }}
     >

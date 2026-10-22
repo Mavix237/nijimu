@@ -239,7 +239,7 @@ const PANE_OPTION_CSS = `
   border-radius: 50%;
   box-sizing: border-box;
   transform: scale(${DOT_REST});
-  transition: transform 520ms ${OPEN}, opacity 360ms ease;
+  transition: transform 280ms ${OPEN}, opacity 220ms ease;
 }
 .nijimuPaneRing {
   border: 1.25px solid ${PANE_INK.ring};
@@ -247,10 +247,10 @@ const PANE_OPTION_CSS = `
 }
 .nijimuPaneIcon, .nijimuPaneArrow {
   display: block;
-  transition: transform 420ms ${OPEN}, opacity 280ms ease;
+  transition: transform 240ms ${OPEN}, opacity 200ms ease;
 }
 .nijimuPaneOption[data-mark="icon-ring"] .nijimuPaneRing { transform: scale(${CLOCK_FACE}); }
-.nijimuPaneLabel { transition: transform 420ms ${OPEN}; }
+.nijimuPaneLabel { transition: transform 240ms ${OPEN}; }
 
 @media (hover: hover) {
   .nijimuPaneOption:not(:disabled):hover .nijimuPaneDot { transform: scale(1); }

@@ -147,22 +147,43 @@ export function SpectrumSlider({ value, onChange, from, to, label, valueText, ke
       fontFamily: SERIF, fontSize: BODY_SIZE, ...style }}>
       <style>{`
         .spectrum-slider { outline: none; }
+        /* The resting pill and the held bar are two layers that trade places by
+           scale and opacity, so the knob never lays itself out again mid-drag. */
         .spectrum-knob {
+          position: relative;
+          width: ${Math.max(KNOB_REST.w, KNOB_HELD.w)}px; height: ${Math.max(KNOB_REST.h, KNOB_HELD.h)}px;
+        }
+        .spectrum-knob::before, .spectrum-knob::after {
+          content: "";
+          position: absolute; left: 50%; top: 50%;
+          transition: transform 280ms ${EASE}, opacity 200ms ease;
+        }
+        .spectrum-knob::before {
           width: ${KNOB_REST.w}px; height: ${KNOB_REST.h}px; border-radius: ${KNOB_REST.r}px;
+          margin: ${-KNOB_REST.h / 2}px 0 0 ${-KNOB_REST.w / 2}px;
           background: ${PANE_INK.secondary};
-          transition: width 280ms ${EASE}, height 280ms ${EASE}, border-radius 280ms ${EASE}, background-color 280ms ${EASE};
         }
-        .spectrum-slider[data-dragging] .spectrum-knob,
-        .spectrum-slider:focus-visible .spectrum-knob {
-          width: ${KNOB_HELD.w}px; height: ${KNOB_HELD.h}px; border-radius: ${KNOB_HELD.r}px; background: ${PANE_INK.body};
+        .spectrum-knob::after {
+          width: ${KNOB_HELD.w}px; height: ${KNOB_HELD.h}px; border-radius: ${KNOB_HELD.r}px;
+          margin: ${-KNOB_HELD.h / 2}px 0 0 ${-KNOB_HELD.w / 2}px;
+          background: ${PANE_INK.body};
+          opacity: 0;
+          transform: scale(${KNOB_REST.w / KNOB_HELD.w}, ${KNOB_REST.h / KNOB_HELD.h});
         }
+        .spectrum-slider[data-dragging] .spectrum-knob::before,
+        .spectrum-slider:focus-visible .spectrum-knob::before {
+          opacity: 0; transform: scale(${KNOB_HELD.w / KNOB_REST.w}, ${KNOB_HELD.h / KNOB_REST.h});
+        }
+        .spectrum-slider[data-dragging] .spectrum-knob::after,
+        .spectrum-slider:focus-visible .spectrum-knob::after { opacity: 1; transform: none; }
         @media (hover: hover) {
-          .spectrum-grip:hover .spectrum-knob {
-            width: ${KNOB_HELD.w}px; height: ${KNOB_HELD.h}px; border-radius: ${KNOB_HELD.r}px; background: ${PANE_INK.body};
+          .spectrum-grip:hover .spectrum-knob::before {
+            opacity: 0; transform: scale(${KNOB_HELD.w / KNOB_REST.w}, ${KNOB_HELD.h / KNOB_REST.h});
           }
+          .spectrum-grip:hover .spectrum-knob::after { opacity: 1; transform: none; }
         }
         @media (prefers-reduced-motion: reduce) {
-          .spectrum-knob { transition-duration: 120ms; }
+          .spectrum-knob::before, .spectrum-knob::after { transition-duration: 120ms; }
         }
       `}</style>
       {/* both ends hold exactly 26px: the haze glyph is drawn 47px wide for its

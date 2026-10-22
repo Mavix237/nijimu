@@ -40,14 +40,14 @@ export function GalleryViewToggle({
         <path d="M8 4.75V11.25M4.75 8H11.25" stroke={CHROME_GRAY} strokeWidth="1.2" />
       </svg>
     ) : toGrid ? (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <svg key="grid" className="nijimu-glyph-in" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
         <rect x="1.5" y="1.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
         <rect x="9.5" y="1.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
         <rect x="1.5" y="9.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
         <rect x="9.5" y="9.5" width="5" height="5" stroke={CHROME_GRAY} strokeWidth="1.2" />
       </svg>
     ) : (
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+      <svg key="gallery" className="nijimu-glyph-in" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
         <circle cx="8" cy="8" r="3.2" stroke={CHROME_GRAY} strokeWidth="1.2" />
         <circle cx="2.6" cy="8" r="1.6" stroke={CHROME_GRAY} strokeWidth="1.2" />
         <circle cx="13.4" cy="8" r="1.6" stroke={CHROME_GRAY} strokeWidth="1.2" />
@@ -67,6 +67,7 @@ export function GalleryViewToggle({
     <button
       type="button"
       aria-label={title}
+      className="nijimu-press-icon"
       onClick={(event) => {
         event.stopPropagation();
         onToggle();

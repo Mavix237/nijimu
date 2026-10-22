@@ -22,6 +22,7 @@ export function TextButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      className="nijimu-text-button"
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -36,7 +37,8 @@ export function TextButton({
         color: "#7b7b87",
         letterSpacing: 0,
         whiteSpace: "nowrap",
-        opacity: disabled ? 0.4 : 1,
+        // left unset when enabled so the hover and press can move it
+        opacity: disabled ? 0.4 : undefined,
         ...style,
       }}
     >

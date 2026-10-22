@@ -104,7 +104,11 @@ export function HeaderMenuRow({ icon, label, ariaLabel, expanded, order, onClick
   );
 }
 
-const TURN_MS = 320;
+/** The burger's quarter turn. The list opens on a strong ease-out and folds faster than it opened. */
+const TURN_MS = 240;
+const OPEN_MS = 200;
+const CLOSE_MS = 150;
+const EASE_OUT = "cubic-bezier(0.23, 1, 0.32, 1)";
 
 /** The burger and the list it opens. The list stays mounted (closed, inert) so the rows always have somewhere to go. */
 export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
@@ -148,6 +152,7 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
         aria-expanded={open}
         aria-controls="header-menu"
         aria-haspopup="menu"
+        className="nijimu-press-icon"
         onClick={(event) => {
           event.stopPropagation();
           onOpenChange(!open);
@@ -180,7 +185,8 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
           aria-hidden
           style={{
             transform: open ? "rotate(-90deg)" : "rotate(0deg)",
-            transition: reduced ? "none" : `transform ${TURN_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+            // the press (motion.css) is a scale on this same glyph, so it is listed here too
+            transition: reduced ? "scale 160ms ease" : `transform ${TURN_MS}ms ${EASE_OUT}, scale 160ms ${EASE_OUT}`,
           }}
         >
           <path d="M2 4.25H14M2 8H14M2 11.75H14" stroke={CHROME_GRAY} strokeWidth="1.2" strokeLinecap="round" />
@@ -216,9 +222,12 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
           backdropFilter: "blur(24px)",
           WebkitBackdropFilter: "blur(24px)",
           opacity: open ? 1 : 0,
-          transform: open ? "translateY(0)" : "translateY(-6px)",
+          // reduced motion keeps the fade and drops the travel
+          transform: open || reduced ? "none" : "translateY(-4px) scale(0.97)",
           transformOrigin: "top right",
-          transition: reduced ? "none" : `opacity ${TURN_MS - 60}ms ease, transform ${TURN_MS}ms cubic-bezier(0.4, 0, 0.2, 1)`,
+          transition: open
+            ? `opacity ${OPEN_MS}ms ease, transform ${OPEN_MS}ms ${EASE_OUT}`
+            : `opacity ${CLOSE_MS}ms ease, transform ${CLOSE_MS}ms ease`,
           pointerEvents: open ? "auto" : "none",
         }}
       >

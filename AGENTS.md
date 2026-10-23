@@ -4,6 +4,45 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Sans type pass (2026-10-22, demo)
+
+The sans is self-hosted Roboto (OFL; `Roboto-latin.woff2` + italic, variable
+300–700, Latin subset, ~50 KB each) in place of system Helvetica/Arial. Text
+ink is three tokens, `INK` in `colors.ts`: `action` #5a5a63 (anything pressed
+or that must be read, ≈5:1 on panes/paper), `body` #6e6e77 (quiet copy, ≥3:1)
+and `whisper` #8e8e96 (ornament only); icons keep `CHROME_GRAY`. `PANE_INK`
+maps onto them: a pane's hoped-for option is action ink at 500, its way out
+body ink at 400. The sans scale is `SANS_TYPE` (theme.ts): micro 11 (+.04em),
+ui 13, option 15, title 19; weights 400/500 only. Pane titles are 19/500.
+PillButton: action ink at 500, pale fill with a hairline edge, "›" drawn as a
+thin arrow; `ghost` (the underwater continue) is full ink at 13px, no fill.
+The phone burger folds into a cross. Phone underwater label 11px, copy 13px.
+The spoken words (`TRANSCRIPT`: transcript page, naming passage) are EB
+Garamond (OFL, `EBGaramond-latin.woff2`, 400–500) via `SERIF_DISPLAY`, at
+`PROSE_SIZE` clamp(14px, 2.7vw, 17px) and .01em; Exposure Trial Plus is no
+longer drawn. "Hold to begin" is `POND_INK` #4f6b73 at 13–14px.
+
+## Gallery reading layout and serif preview (2026-10-22, demo)
+
+When a memory's words open (`reading`, PuddleDiveGallery) the vessel settles up
+to 45px below the old 100px lift and the caption climbs 25px more; the ruler
+dims to .4. Each `VesselArtifact` canvas publishes the glass's projected reach
+(`data-top`/`data-foot`); the gallery fits the vessel between the wordmark
+(56px) and the words (20px gap), giving up the settle, then the caption's
+climb, then shrinking to .88 — the words never move or shorten. On very short
+screens the crown may reach the header. TEMPORARY: the T key reloads with every
+serif in EB Garamond and back (`serifPreview.ts`, `SerifPreviewToggle`,
+"EB Garamond Preview" faces at size-adjust 110%); remove once decided.
+
+## Gallery photos by memory (2026-10-22, demo)
+
+`src/assets/vessel-gallery/NN.jpg` is the still for `LIFE_EVENTS[NN]` (00–15),
+and wins over any library `photo` pick (`memoryPhoto`, VesselGalleryPreview).
+Replace a memory's picture by replacing its numbered file. The set was
+replaced on 2026-10-22: web-sized JPGs (sRGB, metadata stripped, none
+upscaled; 08 is only 360×396), 13 is the earlier 09. The window crops each to
+a centred 3:2. The bundled `memory-photo*.jpg` stills stay as the fallback.
+
 ## UI motion pass (2026-10-22)
 
 Chrome motion follows the animation rules (press feedback, interruptible,
@@ -262,9 +301,8 @@ All GlassPane action buttons use `PaneOptions` / `PaneOption`, including profile
 and memory reading. Full-width rows have 1px top/bottom rules in
 `GALLERY_TRANSCRIPT.color` (trail ink); adjacent rows share one rule, with zero
 group gap and zero button margins. The last button has no bottom rule.
-The trail rules use 25% opacity. The primary option's ink (`PANE_INK.primary`)
-is the body copy's `CHROME_GRAY`, and the secondary options share that ink
-and opacity; only weight sets them apart (primary 500, secondary 400).
+The trail rules use 25% opacity. The primary option is `PANE_INK.primary`
+(`INK.action`) at 500; secondary options are `PANE_INK.body` (`INK.body`) at 400.
 A way out may wear an icon with `ring` (camera dialog's “Maybe later”: Phosphor's
 clock, `ClockIcon`); on hover the icon fades and the grey ring opens from the
 clock face's size. `PANE_ACTION.paddingY` supplies 14px vertical

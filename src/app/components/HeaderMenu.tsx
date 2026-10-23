@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { CHROME_GRAY } from "../lib/colors";
-import { SANS } from "../lib/theme";
+import { CHROME_GRAY, INK } from "../lib/colors";
+import { SANS, SANS_TYPE } from "../lib/theme";
 
 /*
  * On a phone the header's corner icons fold into one: a burger in the
@@ -84,11 +84,11 @@ export function HeaderMenuRow({ icon, label, ariaLabel, expanded, order, onClick
         padding: "11px 12px",
         border: "none",
         background: "transparent",
-        color: CHROME_GRAY,
+        // a row is an action, not a label: the action ink at the UI size, barely tracked
+        color: INK.action,
         cursor: "pointer",
         fontFamily: SANS,
-        fontSize: 12,
-        letterSpacing: "0.04em",
+        ...SANS_TYPE.ui,
         lineHeight: 1,
         textTransform: "lowercase",
         whiteSpace: "nowrap",
@@ -104,7 +104,7 @@ export function HeaderMenuRow({ icon, label, ariaLabel, expanded, order, onClick
   );
 }
 
-/** The burger's quarter turn. The list opens on a strong ease-out and folds faster than it opened. */
+/** The burger folding into a cross. The list opens on a strong ease-out and folds faster than it opened. */
 const TURN_MS = 240;
 const OPEN_MS = 200;
 const CLOSE_MS = 150;
@@ -176,20 +176,29 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
           pointerEvents: hidden ? "none" : "auto",
         }}
       >
-        {/* turns a quarter anticlockwise as the list opens, and back as it folds */}
+        {/* the outer lines fold into a cross as the list opens; the middle one lets go */}
         <svg
           width="16"
           height="16"
           viewBox="0 0 16 16"
           fill="none"
           aria-hidden
-          style={{
-            transform: open ? "rotate(-90deg)" : "rotate(0deg)",
-            // the press (motion.css) is a scale on this same glyph, so it is listed here too
-            transition: reduced ? "scale 160ms ease" : `transform ${TURN_MS}ms ${EASE_OUT}, scale 160ms ${EASE_OUT}`,
-          }}
+          // the press (motion.css) is a scale on the glyph
+          style={{ transition: `scale 160ms ${EASE_OUT}` }}
         >
-          <path d="M2 4.25H14M2 8H14M2 11.75H14" stroke={CHROME_GRAY} strokeWidth="1.2" strokeLinecap="round" />
+          {([
+            ["M2 4.25H14", "rotate(45deg) translateY(3.75px)"],
+            ["M2 8H14", "scaleX(0.3)"],
+            ["M2 11.75H14", "rotate(-45deg) translateY(-3.75px)"],
+          ] as const).map(([d, folded], i) => (
+            <path key={d} d={d} stroke={CHROME_GRAY} strokeWidth="1.2" strokeLinecap="round"
+              style={{
+                transformOrigin: "8px 8px",
+                transform: open ? folded : "none",
+                opacity: open && i === 1 ? 0 : 1,
+                transition: reduced ? "none" : `transform ${TURN_MS}ms ${EASE_OUT}, opacity ${TURN_MS / 2}ms ease`,
+              }} />
+          ))}
         </svg>
       </button>
 

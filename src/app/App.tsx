@@ -21,6 +21,7 @@ import {
 } from "./lib/landingReturn";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
 import { ProfilePanel } from "./components/ProfilePanel";
+import { SerifPreviewToggle } from "./components/SerifPreviewToggle";
 import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
 import { useCompact } from "./hooks/useCompact";
 import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
@@ -83,6 +84,8 @@ function RootLayout() {
     <HeaderMenuContext.Provider value={headerMenu}>
       <GlobalControls profileOpen={profileOpen} onProfileOpenChange={setProfileOpen}
         menu={compact ? { open: menuOpen, onOpenChange: setMenuOpen, listRef: setMenuList } : null} />
+      {/* TEMPORARY: the T key, Rowan ⇄ EB Garamond in every serif (serifPreview.ts) */}
+      <SerifPreviewToggle />
       <div
         aria-hidden
         style={{

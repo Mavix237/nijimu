@@ -8,8 +8,8 @@ import { useTouchFirst } from "./GalleryOnboarding";
 import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { TranscriptTrail } from "./TranscriptTrail";
-import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
+import { CHROME_GRAY, COLOR_PALETTE, INK } from "../lib/colors";
+import { GALLERY_TRANSCRIPT, SANS, SANS_TYPE, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
 import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
@@ -137,8 +137,21 @@ export const CAPTION_YEAR_STYLE: CSSProperties = {
 
 /** Space kept between the memory's words and the timescale. */
 const TRANSCRIPT_CLEARANCE = 24;
-/** While the transcript is open the apex vessel and its caption rise this far, px; the neighbours go. */
+/** While the transcript is open the neighbours go and both the apex vessel and its caption
+    rise READING_LIFT_PX; then the vessel settles back down up to READING_VESSEL_DROP_PX and
+    the caption climbs up to READING_CAPTION_CLIMB_PX more, so the words gather under the
+    form — as far as the room between them allows. They never come closer than
+    READING_MIN_GAP_PX: where even the plain lift would meet, the vessel shrinks (to
+    READING_MIN_SCALE at most) and then rises the rest of the way. */
 const READING_LIFT_PX = 100;
+const READING_VESSEL_DROP_PX = 45;
+const READING_CAPTION_CLIMB_PX = 25;
+const READING_MIN_GAP_PX = 20;
+const READING_MIN_SCALE = 0.88;
+/** The wordmark's foot: a reading vessel keeps below it where it can. px. */
+const READING_TOP_CLEAR_PX = 56;
+/** The ruler's strength while a memory's words are open. */
+const READING_RULER_OPACITY = 0.4;
 const READING_MS = 900;
 /** The caption's extra clearance below the apex vessel, px. */
 const CAPTION_DROP_PX = 50;
@@ -167,7 +180,7 @@ const FIRST_LINE_MAX_MS = 560;
     They come in line by line, each sliding down out of its own mask; the lines are
     found by setting the words once, unseen, at the same width and reading where
     each one wraps. */
-function CaptionTranscript({ text, visible, floorY }: { text: string; visible: boolean; floorY: number }) {
+function CaptionTranscript({ text, visible, floorY, lift }: { text: string; visible: boolean; floorY: number; lift: number }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const measure = useRef<HTMLParagraphElement>(null);
   const [room, setRoom] = useState<number | null>(null);
@@ -199,7 +212,7 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
     // the room is taken at the caption's resting place, whatever part of its lift has run
     const lifter = el.closest<HTMLElement>("[data-caption-lift]");
     const moved = lifter ? new DOMMatrix(getComputedStyle(lifter).transform).m42 : 0;
-    const top = el.getBoundingClientRect().top - moved - (visible ? READING_LIFT_PX : 0);
+    const top = el.getBoundingClientRect().top - moved - (visible ? lift : 0);
     const space = Math.max(0, floorY - top);
     setRoom(el.scrollHeight > space + 1 ? space : null);
   }, [lines, floorY, visible]);
@@ -424,6 +437,57 @@ export function PuddleDiveGallery({
   /** The apex memory's words are open under its year: it rises and stands alone. */
   const reading = !caption && !field?.on && !compact && rimSettled && !!apexItem?.transcript
     && (touchFirst || revealedId === apexItem.id);
+  /** Where the vessel and its words sit while reading, measured as the words open from the
+      glass's own foot (the seat canvas's data-foot, VesselArtifact; the seat's box where a
+      seat has none) and the caption's resting top. Kept after closing, so the way back
+      retraces the same path. */
+  const [readingPose, setReadingPose] = useState({ vesselLift: READING_LIFT_PX, captionLift: READING_LIFT_PX, scale: 1 });
+  useLayoutEffect(() => {
+    if (!reading || !apexItem) return;
+    let frame = 0;
+    let tries = 0;
+    const measure = () => {
+      const seat = document.querySelector<HTMLElement>(`.dive-artifact[data-memory-id="${CSS.escape(apexItem.id)}"]`);
+      if (!seat) { if (tries++ < 240) frame = requestAnimationFrame(measure); return; }
+      // the seat's own box: the reading lift moves a layer inside it, never the box
+      const box = seat.getBoundingClientRect();
+      const canvas = seat.querySelector<HTMLCanvasElement>("canvas[data-foot]");
+      // words opened before the vessel has drawn (a touch-first screen opens them at once):
+      // measure by the box for now, and again once the glass reports its reach
+      if (!canvas && tries++ < 240) frame = requestAnimationFrame(measure);
+      const top = canvas ? box.top + Number(canvas.dataset.top) * box.height : box.top;
+      const foot = canvas ? box.top + Number(canvas.dataset.foot) * box.height : box.bottom;
+      const centre = box.top + box.height / 2;
+      const captionTop = (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h;
+      /* The vessel, risen `lift` and scaled `k` about its centre, must sit between the
+         header and the words: lift ≥ least(k), lift ≤ most(k). Prefer the full settle
+         and the caption's full climb; give up the climb, then the size, before the words. */
+      const least = (k: number, captionLift: number) =>
+        centre + (foot - centre) * k - (captionTop - captionLift - READING_MIN_GAP_PX);
+      const most = (k: number) => centre - (centre - top) * k - READING_TOP_CLEAR_PX;
+      const settled = READING_LIFT_PX - READING_VESSEL_DROP_PX;
+      // the vessel's lift inside the band, nearest the full settle
+      const place = (k: number, captionLift: number) => {
+        const low = least(k, captionLift), high = most(k);
+        return low <= high ? Math.min(high, Math.max(low, settled)) : null;
+      };
+      // full size, the caption's full climb and then its plain lift
+      for (const captionLift of [READING_LIFT_PX + READING_CAPTION_CLIMB_PX, READING_LIFT_PX]) {
+        const lift = place(1, captionLift);
+        if (lift !== null) { setReadingPose({ vesselLift: lift, captionLift, scale: 1 }); return; }
+      }
+      // then smaller, as far as READING_MIN_SCALE; the words keep their place and their length
+      const band = captionTop - READING_LIFT_PX - READING_MIN_GAP_PX - READING_TOP_CLEAR_PX;
+      const k = Math.max(READING_MIN_SCALE, Math.min(1, band / Math.max(1, foot - top)));
+      // where even that will not fit (a short screen), the words stay clear and the
+      // vessel's crown may reach toward the header
+      setReadingPose({ vesselLift: place(k, READING_LIFT_PX) ?? least(k, READING_LIFT_PX), captionLift: READING_LIFT_PX, scale: k });
+    };
+    measure();
+    return () => cancelAnimationFrame(frame);
+  }, [reading, apexItem, viewport.h, viewport.w]);
+  const readingVesselLift = readingPose.vesselLift;
+  const readingCaptionLift = readingPose.captionLift;
   useEffect(() => () => setApexHover(false), []);
   const rimSettledRef = useRef(rimSettled);
   rimSettledRef.current = rimSettled;
@@ -1007,7 +1071,9 @@ export function PuddleDiveGallery({
                 width: "100%",
                 height: "100%",
                 opacity: readingAway ? 0 : 1,
-                transform: reading && focused ? `translateY(${(-READING_LIFT_PX / seatScale).toFixed(2)}px)` : "none",
+                transform: reading && focused
+                  ? `translateY(${(-readingVesselLift / seatScale).toFixed(2)}px) scale(${readingPose.scale.toFixed(3)})`
+                  : "none",
                 transition: reducedMotion ? "none" : `opacity ${READING_MS}ms ease, transform ${READING_MS}ms cubic-bezier(.3, .7, .2, 1)`,
               }}>
               {/* the arrival / departure, on its own layer so the depth
@@ -1129,6 +1195,7 @@ export function PuddleDiveGallery({
           activeIdx={rimAt}
           viewport={viewport}
           visible={yearsVisible && !inField}
+          dimmed={reading}
           travelMs={0}
           travelEase={travelEase}
           enterAnimation={carriedChrome}
@@ -1147,7 +1214,7 @@ export function PuddleDiveGallery({
         className="absolute left-0 right-0 text-center"
         style={{
           top: (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h + (caption ? 0 : CAPTION_DROP_PX),
-          transform: reading ? `translateY(${-READING_LIFT_PX}px)` : "none",
+          transform: reading ? `translateY(${-readingCaptionLift}px)` : "none",
           padding: "0 clamp(24px, 6vw, 80px)",
           fontFamily: SERIF,
           // in the field the words come only while a memory is under the pointer
@@ -1175,7 +1242,8 @@ export function PuddleDiveGallery({
           {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
           {!caption && !field?.on && !compact && shownCaption.transcript && (
             <CaptionTranscript text={shownCaption.transcript} visible={rimSettled && (touchFirst || revealedId === shownCaption.id)}
-              floorY={viewport.h - (showTimeScale ? TS_BOTTOM_PX + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
+              floorY={viewport.h - (showTimeScale ? TS_BOTTOM_PX + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)}
+              lift={readingCaptionLift} />
           )}
         </div>}
       </div>
@@ -1230,8 +1298,8 @@ export function PuddleDiveGallery({
         {/* a way into the vessel preview (/lab/gallery), beside the arrow; not shown inside the preview itself */}
         {!override && (
           <Link to="/lab/gallery" aria-label="see the memories as vessels"
-            style={{ position: "absolute", top: 36, left: 70, zIndex: 100, fontFamily: SANS, fontSize: 12, letterSpacing: "0.04em",
-              color: CHROME_GRAY, opacity: 0.55, textDecoration: "none" }}>
+            style={{ position: "absolute", top: 36, left: 70, zIndex: 100, fontFamily: SANS, ...SANS_TYPE.micro,
+              color: INK.whisper, textDecoration: "none" }}>
             vessels
           </Link>
         )}
@@ -1468,6 +1536,7 @@ function TimeScale({
   activeIdx,
   viewport,
   visible,
+  dimmed = false,
   travelMs,
   travelEase,
   enterAnimation,
@@ -1478,6 +1547,8 @@ function TimeScale({
   activeIdx: number;
   viewport: { w: number; h: number };
   visible: boolean;
+  /** Fainter while a memory's words are open, so the eye stays on them. */
+  dimmed?: boolean;
   travelMs: number;
   travelEase: string;
   /** Set when the ruler is new to the screen and has to draw itself in. */
@@ -1583,7 +1654,7 @@ function TimeScale({
       width="100%"
       height="100%"
       style={{
-        opacity: visible ? 1 : 0,
+        opacity: visible ? (dimmed ? READING_RULER_OPACITY : 1) : 0,
         transition: "opacity 0.8s ease",
         animation: enterAnimation,
         pointerEvents: "none",

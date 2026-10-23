@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObjec
 import { useLocation, useNavigate } from "react-router";
 import { useHoldToCreate } from "../hooks/useHoldToCreate";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, RECORD_START_PATH } from "../lib/routes";
-import { CHROME_GRAY } from "../lib/colors";
+import { CHROME_GRAY, INK, POND_INK } from "../lib/colors";
 import { INSTRUCTION_SIZE, POND_PROMPT_SIZE, SANS, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { POND_THOUGHTS, hasSeenPondInstruction, markPondInstructionSeen, pondPromptCue } from "../lib/pondPrompts";
 import { PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
@@ -172,7 +172,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
 
     {SHOW_POND_COPY && POND_THOUGHTS.map((thought, i) => <div key={thought.text} ref={el => { promptRefs.current[i] = el; }} data-pond-prompt={i} aria-hidden="true"
-      style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SANS, fontWeight: 400, fontSynthesis: "none", fontSize: POND_PROMPT_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
+      style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: INK.body, fontFamily: SANS, fontWeight: 400, fontSynthesis: "none", fontSize: POND_PROMPT_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
       {thought.text}
     </div>)}
     {SHOW_POND_COPY && <PondHeading visible={enabled} reducedMotion={reducedMotion}>
@@ -211,7 +211,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       <span className="sr-only">Hold for two seconds, or hold Space or Enter. Release to cancel.</span>
     </button>}
     <div ref={hintRef} id="pond-hold-help" aria-hidden
-      style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 20, opacity: 0, filter: "blur(6px)", whiteSpace: "nowrap", fontFamily: SANS, fontSize: INSTRUCTION_SIZE, letterSpacing: "0.01em", color: CHROME_GRAY, transformOrigin: "left top" }}>
+      style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 20, opacity: 0, filter: "blur(6px)", whiteSpace: "nowrap", fontFamily: SANS, fontSize: "clamp(13px, 3vw, 14px)", letterSpacing: "0.01em", color: POND_INK, transformOrigin: "left top" }}>
       Hold to begin
     </div>
     {recording && <PondRecordingOverlay reducedMotion={reducedMotion} onVoicePulse={pulseWater} />}

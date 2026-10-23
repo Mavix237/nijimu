@@ -29,6 +29,55 @@
     U+FF0B-FF0C, U+FF1A-FF1B, U+FF1F;
 }
 
+/* EB Garamond — the spoken words (TRANSCRIPT: the transcript page and the
+   naming passage). SIL OFL 1.1, Google Fonts. Variable roman, 400–500, Latin
+   subset. */
+@font-face {
+  font-family: "EB Garamond";
+  src: url("../assets/fonts/EBGaramond-latin.woff2") format("woff2");
+  font-weight: 400 500;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* TEMPORARY — "EB Garamond Preview": the same files under another name,
+   enlarged to sit at Rowan's size, for the all-serif preview (serifPreview.ts).
+   Loaded only while that preview is on. Remove with it. */
+@font-face {
+  font-family: "EB Garamond Preview";
+  src: url("../assets/fonts/EBGaramond-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+  size-adjust: 110%;
+}
+@font-face {
+  font-family: "EB Garamond Preview";
+  src: url("../assets/fonts/EBGaramond-Italic-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: italic;
+  font-display: swap;
+  size-adjust: 110%;
+}
+
+/* Roboto — the sans, for now (SIL OFL 1.1, Google Fonts). One variable file
+   per style, weights 300–700 at the standard width, Latin and Latin-1 with
+   general punctuation and arrows; other scripts fall through the stack. */
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Roboto";
+  src: url("../assets/fonts/Roboto-Italic-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: italic;
+  font-display: swap;
+}
+
 /* Switzer — static cuts (all weights + italics). Kept on disk; SANS is
    Helvetica Neue (see theme.ts) and does not request these faces. */
 @font-face {

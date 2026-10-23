@@ -1,5 +1,6 @@
 import { CSSProperties, ReactNode } from "react";
-import { BUTTON_SIZE_SM, SANS, SANS_UI } from "../lib/theme";
+import { INK } from "../lib/colors";
+import { BUTTON_SIZE_SM, SANS, SANS_TYPE, SANS_UI } from "../lib/theme";
 
 interface PillButtonProps {
   label: string;
@@ -20,14 +21,27 @@ interface PillButtonProps {
 }
 
 const DIMMED = "rgba(140, 140, 140, 0.5)";
-/** Shared chrome — cool gray to match light-page UI */
-const LIGHT_TEXT = "#7b7b87";
-const OUTLINE_BORDER = "1px solid rgba(123, 123, 135, 0.28)";
-const LIGHT_FILL = "rgba(123, 123, 135, 0.16)";
-const LIGHT_FILL_DISABLED = "rgba(123, 123, 135, 0.08)";
-const GHOST_SIZE = `calc(${BUTTON_SIZE_SM} * 0.8)`;
-/** The ghost label's strength; the handling slider's rule shares it. */
+/** The label is the action ink; the fill stays pale with a hairline edge, so
+ * the pill reads as a control on the water without a grey-on-grey blob. */
+const LIGHT_TEXT = INK.action;
+const OUTLINE_BORDER = "1px solid rgba(90, 90, 99, 0.28)";
+const LIGHT_BORDER = "1px solid rgba(90, 90, 99, 0.14)";
+const LIGHT_FILL = "rgba(123, 123, 135, 0.1)";
+const LIGHT_FILL_DISABLED = "rgba(123, 123, 135, 0.06)";
+/** The ghost is the underwater steps' continue: no fill, but full ink at the UI size. */
+const GHOST_SIZE = `${SANS_TYPE.ui.fontSize}px`;
+/** The handling slider's rule strength (no longer the ghost label's). */
 export const GHOST_OPACITY = 0.62;
+
+/** The trailing "›" drawn as the same thin arrow the panes and phone use. */
+function TrailingArrow() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ display: "block", flex: "none" }}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
 
 export function PillButton({
   label,
@@ -67,14 +81,14 @@ export function PillButton({
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: 12,
-        padding: "12px 28px",
+        gap: 8,
+        padding: isGhost ? "12px 16px" : "12px 26px",
         borderRadius: 100,
-        border: isOutline ? OUTLINE_BORDER : "none",
+        border: isOutline ? OUTLINE_BORDER : isGhost || isDark ? "none" : LIGHT_BORDER,
+        color: textColor,
         background,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
-        opacity: isGhost ? GHOST_OPACITY : undefined,
         transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, scale 160ms cubic-bezier(0.23, 1, 0.32, 1)",
         ...style,
       }}
@@ -84,9 +98,10 @@ export function PillButton({
         style={{
           fontFamily: isDark ? SANS_UI : SANS,
           fontSize,
-          fontWeight: isDark ? 300 : 400,
+          // the pill is the screen's way on: it leads at 500
+          fontWeight: isDark || isGhost ? 400 : 500,
           lineHeight: 1.5,
-          letterSpacing: 0,
+          letterSpacing: SANS_TYPE.ui.letterSpacing,
           color: textColor,
           textShadow: isDark ? "0px 4px 100px black" : "none",
           textTransform: transform,
@@ -94,17 +109,8 @@ export function PillButton({
       >
         {label}
       </span>
-      {trailing && (
-        <span
-          style={{
-            fontFamily: SANS_UI,
-            fontSize,
-            lineHeight: 0,
-            letterSpacing: 0,
-            color: textColor,
-            fontVariationSettings: "'wdth' 100",
-          }}
-        >
+      {trailing === "›" ? <TrailingArrow /> : trailing && (
+        <span style={{ fontFamily: SANS, fontSize, lineHeight: 0, color: textColor }}>
           {trailing}
         </span>
       )}

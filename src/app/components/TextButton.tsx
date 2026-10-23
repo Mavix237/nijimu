@@ -1,5 +1,6 @@
 import { CSSProperties } from "react";
-import { BUTTON_SIZE_SM, SANS } from "../lib/theme";
+import { INK } from "../lib/colors";
+import { BUTTON_SIZE_SM, SANS, SANS_TYPE } from "../lib/theme";
 
 interface TextButtonProps {
   label: string;
@@ -34,8 +35,8 @@ export function TextButton({
         fontFamily: SANS,
         fontSize: BUTTON_SIZE_SM,
         fontWeight: 400,
-        color: "#7b7b87",
-        letterSpacing: 0,
+        color: INK.action,
+        letterSpacing: SANS_TYPE.ui.letterSpacing,
         whiteSpace: "nowrap",
         // left unset when enabled so the hover and press can move it
         opacity: disabled ? 0.4 : undefined,

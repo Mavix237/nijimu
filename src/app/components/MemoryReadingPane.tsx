@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { INK } from "../lib/colors";
 import { BODY_SIZE, NOTE_SIZE, SANS, SERIF, SERIF_CJK } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
 import { PaneOption, PaneOptions } from "./PaneOption";
@@ -40,12 +41,12 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
               style={{
                 margin: 0,
                 fontFamily: SANS,
-                fontWeight: 600,
+                fontWeight: 500,
                 // Keep the reading title at the size of the words below it.
                 fontSize: BODY_SIZE,
-                letterSpacing: "-0.01em",
+                letterSpacing: 0,
                 lineHeight: 1.4,
-                color: "#7b7b87",
+                color: INK.action,
                 textAlign: "center",
                 textWrap: "balance",
                 overflowWrap: "anywhere",

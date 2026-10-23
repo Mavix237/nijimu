@@ -5,13 +5,28 @@
 /** Muted chrome gray — homescreen wordmark, top-right icons, hold-to-create hint. */
 export const CHROME_GRAY = "#7e7e86";
 
-/** Floating panes: a sans title, Rowan body, and sans options — every
- * option in the body's ink, set apart by weight. `secondary` is the lighter
- * ink of slider knobs and notes, no longer the panes' ways out. */
+/** Text ink, three steps. `action` is what can be pressed or must be read
+ * (≈5:1 on the panes and paper, ≈4.3:1 on the pale water); `body` is quiet
+ * copy (≥3:1 everywhere); `whisper` is ornament only — never an action or
+ * an instruction. Icons keep CHROME_GRAY. */
+export const INK = {
+  action: "#5a5a63",
+  body: "#6e6e77",
+  whisper: "#8e8e96",
+} as const;
+
+/** Words set on the pond itself ("Hold to begin"): the water's grey-green
+ * turned toward lake blue and taken deeper, low in saturation, so the copy
+ * reads as part of the lake rather than chrome laid over it (≈3.8:1). */
+export const POND_INK = "#4f6b73";
+
+/** Floating panes: a sans title, Rowan body, and sans options. The hoped-for
+ * option is the action ink at 500; a way out is the body ink at 400.
+ * `secondary` is the lighter ink of slider knobs and notes. */
 export const PANE_INK = {
-  title: CHROME_GRAY,
-  body: CHROME_GRAY,
-  primary: CHROME_GRAY,
+  title: INK.action,
+  body: INK.body,
+  primary: INK.action,
   secondary: "#9b9ba3",
   ring: "#aaaaaa",
 } as const;

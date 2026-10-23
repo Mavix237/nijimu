@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { CHROME_GRAY } from "../lib/colors";
-import { SANS } from "../lib/theme";
+import { INK } from "../lib/colors";
+import { SANS, SANS_TYPE } from "../lib/theme";
 
 /** Space under a header icon. Hovering there shows the control's name. */
 export const HEADER_ICON_LABEL_PAD = 28;
@@ -37,11 +37,10 @@ export function HeaderIconLabel({ name, shown }: { name: string; shown: boolean 
         left: "50%",
         transform: "translateX(-50%)",
         fontFamily: SANS,
-        fontSize: 11,
+        ...SANS_TYPE.micro,
         fontWeight: 400,
-        letterSpacing: "0.04em",
         lineHeight: 1,
-        color: CHROME_GRAY,
+        color: INK.body,
         whiteSpace: "nowrap",
         textTransform: "lowercase",
         opacity: shown ? 1 : 0,

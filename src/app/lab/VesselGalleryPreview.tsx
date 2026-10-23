@@ -39,8 +39,8 @@ import photoB from "../../assets/memory-photo-02.jpg";
  * and facing the viewer, who turns the vessel by dragging it. Each curated
  * memory wears its shape from the gallery library (lib/galleryLibrary, chosen
  * in /lab/shapes) at the size and with the picture placed as kept there; the
- * photos are src/assets/vessel-gallery, in name order (drop ten in; the
- * bundled stills stand in for any missing).
+ * photos are src/assets/vessel-gallery, one per memory, named for it
+ * (`13.jpg` is LIFE_EVENTS[13]; the bundled stills stand in for any missing).
  *
  * Pressing the vessel at the apex opens it in the lab as an editor for that
  * one memory — its form, glass, sheet, dye, light and photo — and "back to
@@ -60,9 +60,15 @@ import photoB from "../../assets/memory-photo-02.jpg";
  * kept here and handed to the gallery through adjustSeat every frame.
  */
 
-export const PHOTOS = Object.entries(
+const GALLERY_FILES = Object.entries(
   import.meta.glob("../../assets/vessel-gallery/*.{jpg,jpeg,png,webp}", { eager: true, import: "default" }) as Record<string, string>,
-).sort(([a], [b]) => a.localeCompare(b)).map(([, url]) => url);
+).sort(([a], [b]) => a.localeCompare(b));
+export const PHOTOS = GALLERY_FILES.map(([, url]) => url);
+/** A still named for a memory — `13.jpg` is LIFE_EVENTS[13]'s — keyed by that number. */
+const PHOTO_BY_MEMORY = new Map(GALLERY_FILES.flatMap(([path, url]) => {
+  const stem = path.split("/").pop()!.replace(/\.[^.]+$/, "");
+  return /^\d+$/.test(stem) ? [[Number(stem), url] as const] : [];
+}));
 const FALLBACK = [photoA, photoB];
 // fetched and decoded once the page is idle — after the landing's first paint, not competing with
 // its fonts and script — so the seats still open with their pictures already in the stock
@@ -120,8 +126,12 @@ export function slotPhotoIndex(index: number): number {
   return seat < 0 ? 0 : seat;
 }
 
-/** The picture inside a curated memory: a library pick, else the still the shapes lab shows for that place. */
+/** The picture inside a curated memory: the still named for it (`NN.jpg`), else a library
+    pick, else the still the shapes lab shows for that place. Replacing a memory's picture
+    is replacing its numbered file. */
 export function memoryPhoto(index: number, picked?: number): string {
+  const named = PHOTO_BY_MEMORY.get(index);
+  if (named) return named;
   const i = picked !== undefined && PHOTOS[picked] ? picked : slotPhotoIndex(index);
   return PHOTOS[i] ?? FALLBACK[i % FALLBACK.length];
 }

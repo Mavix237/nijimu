@@ -347,6 +347,29 @@ function VesselObject({
   readyRef.current = onReady;
   const reportReady = () => { if (!didRender.current && photoReady.current) { didRender.current = true; readyRef.current?.(gl.domElement); } };
   const refract = glassMode === "refract";
+  /* Where the glass reaches on the canvas, as fractions of its height from the top: the
+     highest and lowest of its vertices through this camera, published as data-top and
+     data-foot so the gallery can keep the header and a memory's words clear of the form
+     itself rather than of its box. Recounted only when the view has moved, over every
+     fourth vertex. */
+  const footPose = useRef("");
+  const footPoint = useMemo(() => new THREE.Vector3(), []);
+  const publishFoot = (view: THREE.Camera, el: HTMLCanvasElement) => {
+    const pose = `${view.position.x.toFixed(3)},${view.position.y.toFixed(3)},${view.position.z.toFixed(3)},${el.clientHeight}`;
+    if (pose === footPose.current) return;
+    footPose.current = pose;
+    view.updateMatrixWorld();
+    const p = built.glass.positions;
+    let low = 1;
+    let high = -1;
+    for (let k = 0; k < p.length; k += 12) {
+      footPoint.set(p[k], p[k + 1], p[k + 2]).project(view);
+      low = Math.min(low, footPoint.y);
+      high = Math.max(high, footPoint.y);
+    }
+    el.dataset.top = ((1 - Math.min(1, high)) / 2).toFixed(4);
+    el.dataset.foot = ((1 - Math.max(-1, low)) / 2).toFixed(4);
+  };
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
     if (compiledFor.current !== glassMode) return;
     const step = Math.min(dt, 0.1);
@@ -365,6 +388,7 @@ function VesselObject({
     const bob = HOVER_BOB * d * h.amount * Math.sin(h.phase);
     camera.position.set(-Math.sin(y) * Math.cos(p) * d, LOOK_Y - bob + Math.sin(p) * d, Math.cos(y) * Math.cos(p) * d);
     camera.lookAt(0, LOOK_Y - bob, 0);
+    publishFoot(view, renderer.domElement);
     if (!refract) {
       view.layers.enableAll();
       renderer.render(scene, view);

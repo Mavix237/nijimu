@@ -1,14 +1,30 @@
+import { INK } from "./colors";
+import { SERIF_GARAMOND } from "./serifPreview";
+
 // Shared font stacks — the single place to change typography.
 // SERIF is Latin-first: English renders in Rowan; CJK glyphs fall through to
 // self-hosted GenRyuMin2 TW (see fonts.css).
-export const SERIF = "Rowan, 'GenRyuMin2 TW', Georgia, serif";
+/** Rowan, or — while the temporary serif preview is on (serifPreview.ts) —
+ * EB Garamond in every serif stack, scaled to Rowan's x-height (fonts.css). */
+const LATIN_SERIF = SERIF_GARAMOND ? "'EB Garamond Preview'" : "Rowan";
+export const SERIF = `${LATIN_SERIF}, 'GenRyuMin2 TW', Georgia, serif`;
 /** A hair of air for Rowan italic titles — the italic sits tight without it. */
 export const SERIF_ITALIC_TRACKING = "0.012em";
-export const SERIF_CJK = "'GenRyuMin2 TW', Rowan, Georgia, serif";
-export const SERIF_DISPLAY = "'Exposure Trial Plus', Rowan, 'GenRyuMin2 TW', Georgia, serif";
-export const SERIF_EXPOSURE = "'Exposure Trial', Rowan, 'GenRyuMin2 TW', Georgia, serif";
-export const SANS = "'Helvetica Neue', Helvetica, Arial, sans-serif";
-export const SANS_UI = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+export const SERIF_CJK = `'GenRyuMin2 TW', ${LATIN_SERIF}, Georgia, serif`;
+/** The spoken words: EB Garamond (fonts.css). */
+export const SERIF_DISPLAY = `'EB Garamond', ${LATIN_SERIF}, 'GenRyuMin2 TW', Georgia, serif`;
+export const SERIF_EXPOSURE = SERIF_GARAMOND ? SERIF : "'Exposure Trial', Rowan, 'GenRyuMin2 TW', Georgia, serif";
+/** Self-hosted Roboto (fonts.css), so the sans is the same on every platform. */
+export const SANS = "Roboto, 'Helvetica Neue', Arial, sans-serif";
+export const SANS_UI = SANS;
+/** The sans scale: four sizes, two weights (400, and 500 for what leads).
+ * `micro` is the only size that is tracked out. */
+export const SANS_TYPE = {
+  micro: { fontSize: 11, letterSpacing: "0.04em" },
+  ui: { fontSize: 13, letterSpacing: "0.01em" },
+  option: { fontSize: 15, letterSpacing: 0 },
+  title: { fontSize: 19, letterSpacing: "-0.005em" },
+} as const;
 /** Quiet captions — transcribing, recording notes, pane asides. */
 export const NOTE_SIZE = "clamp(11px, 2.4vw, 12px)";
 /** Uppercase meta labels. */
@@ -17,8 +33,8 @@ export const META = {
   fontFamily: SANS,
   fontSize: LABEL_SIZE,
   fontWeight: 500,
-  letterSpacing: "0.5px",
-  color: "#9b9ba3",
+  letterSpacing: "0.04em",
+  color: INK.body,
   textTransform: "uppercase",
 } as const;
 /** Pane body copy and highlight prompts. */
@@ -28,18 +44,19 @@ export const INSTRUCTION_SIZE = "clamp(14px, 3.2vw, 16px)";
 /** Small sans prompts floating above the create-memory pond's ripples. */
 export const POND_PROMPT_SIZE = "clamp(12px, 2.8vw, 13px)";
 /** Spoken transcript on the pond. */
-export const PROSE_SIZE = "clamp(13px, 2.4vw, 15px)";
+/** EB Garamond's small x-height sets it about a tenth larger than the face it replaced. */
+export const PROSE_SIZE = "clamp(14px, 2.7vw, 17px)";
 /** Naming step: the same words above the vessel, at four-fifths the pond size. */
 export const NAMING_PROSE_SIZE = `calc(${PROSE_SIZE} * 0.8)`;
 /** Wash behind a word the highlight step has lifted. */
 export const TRANSCRIPT_HIGHLIGHT = "rgba(123, 123, 135, 0.22)";
-/** Exposure Trial Plus, as the pond sets the spoken words. Color stays with the page. */
+/** EB Garamond, as the pond sets the spoken words. Color stays with the page. */
 export const TRANSCRIPT = {
   fontFamily: SERIF_DISPLAY,
   fontSize: PROSE_SIZE,
   fontWeight: 400,
   lineHeight: 1.45,
-  letterSpacing: "0.02em",
+  letterSpacing: "0.01em",
   fontFeatureSettings: '"kern" 1',
   fontKerning: "normal",
 } as const;
@@ -101,8 +118,8 @@ export const FLOW_PAGE = {
 export const UNDERWATER_PHONE = {
   headingTop: "max(env(safe-area-inset-top, 0px), clamp(104px, 15dvh, 124px))",
   /** The step's English name under its character, and the instructions below. */
-  labelSize: 10,
-  instructionSize: 11,
+  labelSize: 11,
+  instructionSize: 13,
   /** The instructions' measure, narrower than the heading row (≈ 220px at 11px). */
   instructionWidth: "20em",
   instructionGap: 14,

@@ -23,6 +23,19 @@ then neighbours show at once. PaneOption hover 240–280 ms. The spectrum knob
 cross-fades two shapes by scale/opacity. The gallery caption's first line
 starts its last word within 560 ms.
 
+## Landing goo in WebGL (2026-10-26)
+
+Safari skipped the landing's `filter: url(#gooey)` (animated, composited blob
+divs under an SVG reference filter on a layer wider than its buffers) and
+showed only the soft blobs. `components/GooeyBlobCanvas.tsx` now draws the
+goo in WebGL2 in every browser: it reads each blob div's live computed box,
+transform, `scale`, corner radii, blur and opacity per frame (the CSS
+animations and BlobScene's JS stay the source of motion), rebuilds the
+multiplied layer analytically, then does the filter's blur (σ 18), alpha
+threshold (×22 −9) and `atop` composite in linearRGB. The divs stay mounted,
+hidden. The SVG filter remains the fallback without WebGL2; `?goo=svg` forces
+it for comparison. Phones (`lite`) are unchanged (no goo).
+
 ## Transcript review restored; highlighting archived (2026-10-11)
 
 Recording and the sample go from `/record/start` to `/record/transcript`, which

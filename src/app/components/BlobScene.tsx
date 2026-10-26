@@ -12,6 +12,7 @@ import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
 import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival } from "../lib/landingTransition";
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
 import { carouselSeat, carouselContainsOffset, inkUnfoldSeat } from "../lib/carouselLayout";
+import { GooeyBlobCanvas } from "./GooeyBlobCanvas";
 
 /* Only the field's own gallery mode draws a 3D form; the landing never does,
    so three.js is not loaded with it. */
@@ -337,6 +338,9 @@ export function BlobScene({
   const [blobs] = useState<BlobData[]>(() =>
     generateBlobs(events, savedMemories, window.innerWidth <= 768),
   );
+  const [gooeyGl, setGooeyGl] = useState<boolean | null>(null);
+  const gooeySvgOnly = useMemo(() => new URLSearchParams(window.location.search).get("goo") === "svg", []);
+  const blobColors = useMemo(() => blobs.map((b) => b.color), [blobs]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const blobEls = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -1255,6 +1259,11 @@ export function BlobScene({
   /* ─── derived ─── */
   const showGooey = !lite && morphVal < 0.5 && entryShrink < 0.34;
   const gooeyT = clamp(Math.max(morphVal * 2.2, entryShrink * 3), 0, 1);
+  const gooey = { sigma: lerp(18, 2, gooeyT), alphaMul: lerp(22, 1, gooeyT), alphaOff: lerp(-9, 0, gooeyT) };
+  /* The goo is drawn in WebGL (GooeyBlobCanvas) so Safari, which skips the
+     SVG filter over these animated blobs, pools them as Chrome does; the SVG
+     filter stays as the fallback where WebGL2 is missing. ?goo=svg forces it. */
+  const gooeyInGl = showGooey && gooeyGl === true;
 
   // Connection lines: from hovered event's dot to each connected event's dot
   const hoveredConns = hoveredIdx !== null ? getConnections(hoveredIdx) : [];
@@ -1467,7 +1476,13 @@ export function BlobScene({
         }}
       >
         {/* ═══ BLOB LAYER ═══ */}
-        <div className="absolute inset-0" style={{ filter: showGooey ? "url(#gooey)" : "none" }}>
+        <div
+          className="absolute inset-0"
+          style={{
+            filter: showGooey && !gooeyInGl ? "url(#gooey)" : "none",
+            visibility: gooeyInGl ? "hidden" : undefined,
+          }}
+        >
           {blobs.map((blob, i) => (
             <div
               key={blob.id}
@@ -1490,6 +1505,17 @@ export function BlobScene({
             />
           ))}
         </div>
+        {!lite && !gooeySvgOnly && gooeyGl !== false && (
+          <GooeyBlobCanvas
+            els={blobEls}
+            colors={blobColors}
+            width={canvasWidth}
+            height={canvasHeight}
+            active={showGooey}
+            params={gooey}
+            onSupport={setGooeyGl}
+          />
+        )}
 
         {/* ═══ AMBIENT BLOBS ═══ */}
         <div

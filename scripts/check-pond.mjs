@@ -82,6 +82,11 @@ for (const reduced of [false, true]) {
 }
 
 const { pondPromptCue, POND_PROMPT_PERIOD, POND_THOUGHTS } = load("../src/app/lib/pondPrompts.ts", { "./landingTransition": landing });
+assert.equal(pondPromptCue(-1).ripple, 0, "no ripple while the first drop is still falling");
+assert.equal(pondPromptCue(-1).opacity, 0);
+assert.equal(pondPromptCue(-1).age, -1, "the cue counts down to the first landing");
+assert.equal(pondPromptCue(-1).cycle, 0);
+assert.equal(pondPromptCue(POND_PROMPT_PERIOD * 4 + 1).cycle, 4);
 assert.equal(pondPromptCue(0).ripple, 0);
 assert.ok(pondPromptCue(.05).ripple > 0, "the impulse is visible while its radius is still tiny");
 assert.equal(pondPromptCue(.1).ripple, 1, "do not wait until a large ring has already formed");

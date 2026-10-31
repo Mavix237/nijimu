@@ -11,6 +11,7 @@ import { BackButton } from "./BackButton";
 import { GalleryIntroLines } from "./GalleryOnboarding";
 import { useLandingReturn } from "../lib/landingReturn";
 import { INK_ENTRY, pickLandingGalleryIndex, type InkArrival } from "../lib/landingTransition";
+import { clearInkSeats } from "../lib/inkCutouts";
 import { buildArchive } from "../lib/archive";
 import { useGalleryPush } from "../lib/labPush";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH, DESCENT_STEP_PATHS, isDescentPath } from "../lib/routes";
@@ -191,6 +192,8 @@ export function LandingPage() {
   const enter = () => {
     preloadLandingScenes();
     if (startedAt !== null) return;
+    // the last entry's seats are not this one's
+    clearInkSeats();
     const archive = buildArchive();
     const slot = pickLandingGalleryIndex(archive.length);
     setEntryFocus({ id: archive[slot]?.id ?? "", slot });

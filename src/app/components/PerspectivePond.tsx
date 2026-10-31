@@ -7,12 +7,30 @@ import { POND_TRAIL_SLOTS, POND_TRAIL_LIFETIME, samplePondTrail, type TrailPoint
 import { POND_DROP_SLOTS } from "../lib/voicePeaks";
 import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamera";
 import { PortraitFit } from "../lib/portraitView";
+import { HOLD_WAVE_HEIGHT, HOLD_WAVE_LENGTH, HOLD_WAVE_SPEED, POND_PIGMENT_GLSL, POND_SLOW_DROP, POND_SLOW_PACE,
+  createPondPigmentUniforms, type PondPigmentUniforms } from "../lib/pondPigment";
+import { PondPigmentDrops } from "./PondPigmentDrops";
 
-export interface PondTouch { x: number; y: number; serial: number; strength?: number; soft?: boolean }
+/** The pond's colour: the landing's ground (#e4e4e6), as display values. The
+ * water above the surface and the page behind it both wear it. */
+export const POND_PAPER = [228 / 255, 228 / 255, 230 / 255] as const;
+/** The water's natural tint at its fullest, near at hand (a multiply). */
+const POND_NATURAL = [.935, .97, .975];
+/** How much of its own darkening the water keeps below the paper's tone. */
+const POND_SHADE = .45;
+/** The page behind the pond: the same grey, lighter overhead and deeper low. */
+export const POND_BACKDROP = "linear-gradient(#ededee, #e4e4e6 42%, #c4c4c8)";
+
+
+export interface PondTouch { x: number; y: number; serial: number; strength?: number; soft?: boolean;
+  /** Spread slowly, on a slower clock than the pond's (a press on the water). */
+  slow?: boolean }
 
 export const POND_WAVES_GLSL = /* glsl */ `
   uniform float uTime;
-  uniform vec4 uDrops[${POND_DROP_SLOTS}]; // negative strength selects the gentle transcription envelope
+  // negative strength selects the gentle transcription envelope; a magnitude
+  // of ${POND_SLOW_DROP} or more (strength + ${POND_SLOW_DROP}) runs the train on a slower clock
+  uniform vec4 uDrops[${POND_DROP_SLOTS}];
   uniform vec4 uSheetDrop;   // centre x, z, time laid down, strength
   uniform vec4 uSheetShape;  // half width, half height, cos yaw, sin yaw
   uniform vec4 uTrails[${POND_TRAIL_SLOTS}];
@@ -32,6 +50,29 @@ export const POND_WAVES_GLSL = /* glsl */ `
       sin(p.y * .68 - uTime * .27) + sin(p.x * .44 + uTime * .33)
     ) * .5;
   }
+  // The held sphere's waves: one continuous train from where it rests, for as
+  // long as it is held (uHold: x, z, when the hold began, when it was let go —
+  // far ahead while it is still held). Each place on the water carries the
+  // wave the sphere sent out when that water was reached, so there are no
+  // separate rings, only an even, slow spreading, which goes on outward
+  // after it is let go. x: the wave (−1…1), y: its weight there.
+  uniform vec4 uHold;
+  vec2 holdWave(vec2 p, out vec2 dir) {
+    dir = vec2(0.0);
+    if (uHold.w <= uHold.z) return vec2(0.0);
+    vec2 delta = p - uHold.xy;
+    float rd = length(delta);
+    delta += breath(p) * min(.05, .01 + rd * .02);
+    float d = length(delta);
+    dir = delta / max(d, .025);
+    // when the water here was reached by what the sphere sent out
+    float sent = uTime - d / ${HOLD_WAVE_SPEED.toFixed(2)};
+    float on = smoothstep(uHold.z, uHold.z + .5, sent) * (1.0 - smoothstep(uHold.w, uHold.w + .6, sent));
+    if (on <= 0.0) return vec2(0.0);
+    float wave = sin((sent - uHold.z) * ${(2 * Math.PI * HOLD_WAVE_SPEED / HOLD_WAVE_LENGTH).toFixed(3)});
+    float weight = on * exp(-d * .5) / (1.0 + d * .8) * smoothstep(0.0, .08, d);
+    return vec2(wave, weight);
+  }
   // One dispersive wave train per touch: a leading crest, a trough behind it,
   // then smaller crests falling back — rather than three separate rings that
   // each have to be born and grow. Height plus the horizontal displacement
@@ -41,9 +82,13 @@ export const POND_WAVES_GLSL = /* glsl */ `
     vec2 wob = breath(p);
     for (int i = 0; i < ${POND_DROP_SLOTS}; i++) {
       float strength = abs(uDrops[i].w);
+      float slow = step(${POND_SLOW_DROP.toFixed(1)}, strength);
+      strength -= slow * ${POND_SLOW_DROP.toFixed(1)};
       float soft = uDrops[i].w < 0.0 ? 1.0 : 0.0;
       if (strength < .001 || uTime < uDrops[i].z) continue;
-      float age = uTime - uDrops[i].z;
+      // a slow train lives on its own, slower clock (POND_SLOW_PACE): it
+      // spreads more gently and takes as much longer to settle
+      float age = (uTime - uDrops[i].z) * mix(1.0, ${POND_SLOW_PACE}, slow);
       // Long spent: nothing left to add, and the slot is usually still filled.
       if (age > 14.0) continue;
       vec2 raw = p - uDrops[i].xy;
@@ -89,6 +134,12 @@ export const POND_WAVES_GLSL = /* glsl */ `
       // Push the water's material coordinates along with the wave. This bends
       // existing currents and light ribbons instead of drawing atop them.
       field.yz += dir * (amp * .8 + dimple * .3) * strength;
+    }
+    {
+      vec2 dir;
+      vec2 held = holdWave(p, dir);
+      field.x += held.x * held.y * ${HOLD_WAVE_HEIGHT};
+      field.yz += dir * held.x * held.y * ${(HOLD_WAVE_HEIGHT * 10).toFixed(3)};
     }
     // A sheet laid on the water. The wave leaves from the whole edge at once,
     // so the front keeps the sheet's outline — a rounded rectangle easing to a
@@ -185,8 +236,8 @@ export const POND_WAVES_GLSL = /* glsl */ `
     // A light wandering chop. The pond is never glass, and this is the water a
     // new ripple has to spread across. Two octaves, so the surface never
     // settles into one repeating texture.
-    h += (noise(flow * 3.1 + WIND * uTime * .12) - .5) * .011;
-    h += (noise(flow * 6.3 + WIND * uTime * .2 + 11.0) - .5) * .0045;
+    h += (noise(flow * 1.9 + WIND * uTime * .12) - .5) * .011;
+    h += (noise(flow * 3.8 + WIND * uTime * .2 + 11.0) - .5) * .0045;
     return h;
   }
   float waterHeight(vec2 p) {
@@ -197,8 +248,8 @@ export const POND_WAVES_GLSL = /* glsl */ `
   // too small to survive the horizon, so the fragment adds it on top of the
   // swell where it can fade it with distance. Same flow, same wind.
   float grainAt(vec2 flow) {
-    return (noise(flow * 12.0 + WIND * uTime * .35) - .5) * .0009
-      + (noise(flow * 24.0 + WIND * uTime * .55 + 7.0) - .5) * .00035;
+    return (noise(flow * 7.0 + WIND * uTime * .35) - .5) * .0009
+      + (noise(flow * 14.0 + WIND * uTime * .55 + 7.0) - .5) * .00035;
   }
 `;
 
@@ -214,7 +265,7 @@ export const POND_SURFACE_GLSL = /* glsl */ `
     // reflection — follows from its shape. The grain fades before the horizon
     // can turn it into shimmer, and a ripple crest stirs it up while the
     // trough behind smooths it, so a ripple changes the texture it crosses.
-    float detail = 1.0 - smoothstep(.3, 1.1, length(fwidth(flow * 12.0)));
+    float detail = 1.0 - smoothstep(.3, 1.1, length(fwidth(flow * 7.0)));
     float stir = 1.0 + clamp(ripple.x * 40.0, -.7, 1.5);
     float grain = detail * stir;
     float h = swellFrom(ripple, p) + ripple.x + grainAt(flow) * grain;
@@ -257,7 +308,7 @@ export const POND_SURFACE_GLSL = /* glsl */ `
     vec2 drift = flow * vec2(.38, .65) + WIND * uTime * .06;
     float bend = noise(drift * .7) * 2.0 - 1.0;
     float ribbons = noise(vec2(drift.x * .7, drift.y * 2.4 + bend * 1.3));
-    vec2 fibersUV = vec2(flow.x * 1.8, flow.y * 24.0 + bend * 5.0 + WIND.y * uTime * .6);
+    vec2 fibersUV = vec2(flow.x * 1.1, flow.y * 14.0 + bend * 5.0 + WIND.y * uTime * .6);
     float fiberAA = 1.0 - smoothstep(.3, 1.3, length(fwidth(fibersUV)));
     float fibers = (noise(fibersUV) - .5) * fiberAA;
     // Constant scene-wide contrast. Ripples affect lighting only through
@@ -265,6 +316,33 @@ export const POND_SURFACE_GLSL = /* glsl */ `
     float surfaceTone = (ribbons - .5) * .022 + fibers * .006;
     color += vec3(surfaceTone);
     return color;
+  }
+  // The pond seen from above it: clear water. Where the eye looks down into
+  // it rather than across it, the surface lets the body through — a little
+  // deeper — and the shading of the swell reads sharper there; the haze takes
+  // only the far water, late and thin, so the folds stay legible out toward
+  // the horizon. All of it in the page's own grey (POND_PAPER, the landing's
+  // ground): the water keeps its light and shade, never a hue of its own.
+  vec3 pondAboveColor(vec2 p, vec3 color, vec3 n, vec3 eye) {
+    vec3 sky = vec3(.888, .902, .897);
+    float into = smoothstep(.04, .45, dot(n, eye));
+    vec3 body = sky * vec3(.80, .85, .845);
+    color = mix(color, body + (color - sky) * 1.25, into * .42);
+    float haze = 1.0 - exp(-max(0.0, -p.y - 18.0) * .011);
+    color = mix(color, sky, haze);
+    vec3 paper = vec3(${POND_PAPER.map(c => c.toFixed(4)).join(", ")});
+    const vec3 LUMA = vec3(.299, .587, .114);
+    // The water's own shade held close to the page: whatever falls below the
+    // paper keeps only ${POND_SHADE} of its depth; the light on it stays whole.
+    float l = dot(color, LUMA), lp = dot(paper, LUMA);
+    l = l < lp ? lp - (lp - l) * ${POND_SHADE} : l;
+    color = l * paper / lp;
+    // The water's own colour, faint: where the eye looks down into it, near at
+    // hand, the body shows a cool blue-green; out where it only mirrors the
+    // sky it is the page's grey. Read from the eye's angle alone, so it lies
+    // still under the waves, a gradient from the foot of the view to clear.
+    float down = smoothstep(.05, .42, eye.y);
+    return color * mix(vec3(1.0), vec3(${POND_NATURAL.map(c => c.toFixed(3)).join(", ")}), down);
   }
 `;
 
@@ -282,18 +360,17 @@ const vertexShader = /* glsl */ `
 const fragmentShader = /* glsl */ `
   ${POND_WAVES_GLSL}
   ${POND_SURFACE_GLSL}
+  ${POND_PIGMENT_GLSL}
   varying vec3 vWorld;
   void main() {
     vec2 p = vWorld.xz;
     vec2 flow;
     vec3 n = pondSurfaceNormal(p, flow);
     vec3 eye = normalize(cameraPosition - vWorld);
-    vec3 sky = vec3(.888, .902, .897);
-    vec3 color = pondSurfaceColor(p, flow, n, eye);
     // Keep distant folds legible long enough to establish scale, then lose
     // them gradually into the sky instead of ending the water nearby.
-    float haze = 1.0 - exp(-max(0.0, -p.y - 12.0) * .012);
-    color = mix(color, sky, haze);
+    vec3 color = pondAboveColor(p, pondSurfaceColor(p, flow, n, eye), n, eye);
+    color = pondPigment(p, n, eye, color);
     // Screen-space paper grain stays fine at the horizon as well as nearby.
     color += (hash(gl_FragCoord.xy) - .5) * .017;
     // Dissolve into the horizon long before any finite geometry edge.
@@ -301,9 +378,6 @@ const fragmentShader = /* glsl */ `
   }
 `;
 
-const RING_RADIUS = .6055;
-const HALO_REACH = .38;
-const HALO_WIDTH = .6;
 const onPond = (p: THREE.Vector3) => p.z > -100 && p.z < 18;
 const RING_FADE_IN = .72;
 const RING_FADE_FULL = .94;
@@ -311,123 +385,90 @@ const smoothunit = (edge0: number, edge1: number, x: number) => {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
 };
-// The ring floats on the pond instead of being painted onto it: it rides the
-// slow swell, rests clear of the surface, and feels a ripple crest only as the
-// air that crest pushes ahead of itself. A touch is the one thing that brings
-// it down to the water.
+// The cursor's mark rides the pond as one body (the names keep the ring it
+// once was).
 const RING_HEIGHT = 1.5;  // vertical scale applied to swell and crest together
-const RING_FLOAT = 0.084; // resting height above the water plane (~4px on screen)
-const RING_TOUCH = 0.005; // height while a touch holds it against the surface
-const RING_CREST = 0.65;  // how much of a crest's saturated lift reaches it
 const RING_TILT = 0.22;   // per-vertex sampling vs. one rigid body at the centre
 const RING_DRIFT = 0.12;  // how far the current carries it — as a whole, never a stretch
-// Quick down onto the water, a moment of contact, then a slower float back up.
+// Quick down into the water, a moment there, then a slower rise back.
 const TAP_DOWN = .07, TAP_HOLD = .025, TAP_UP = .34;
 // A hold only takes the ring over once it is genuinely under way — 120ms into
 // the 2s hold. A click shorter than that runs the envelope and bounces back on
 // its own. The threshold is low enough that the envelope is still 98% down when
 // the hold takes over, so the handoff cannot be seen.
 const HOLD_PIN = .06;
-const ringVertex = /* glsl */ `
+
+// The cursor's mark is a small glowing white sphere resting in the water
+// (2026-10-31): it does not float above it and casts no shade. It rides the
+// swell and the passing rings, its foot just under the surface, a soft light
+// round it; a press pushes it down into the water and holds it there until
+// it is let go.
+const SPHERE_RADIUS = .045;
+const sphereVertex = /* glsl */ `
+  ${POND_WAVES_GLSL}
+  uniform vec3 uCenter;
+  uniform float uTap;
+  uniform float uProgress;
+  varying vec3 vNormal;
+  varying vec3 vWorld;
+  void main() {
+    // the water under its centre, read once, so it moves as one body
+    vec3 centre = rippleField(uCenter.xz);
+    vec2 at = uCenter.xz + centre.yz * ${RING_DRIFT};
+    float water = swellFrom(centre, uCenter.xz) + centre.x;
+    // sits a little into the water; pressed, it is held most of the way under
+    float sit = ${SPHERE_RADIUS} * mix(.62, -.4, uTap);
+    vec3 world = vec3(at.x, water * ${RING_HEIGHT} + sit, at.y) + position * ${SPHERE_RADIUS};
+    vNormal = normalize(position);
+    vWorld = world;
+    gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+  }
+`;
+const sphereFragment = /* glsl */ `
+  uniform float uOpacity;
+  varying vec3 vNormal;
+  varying vec3 vWorld;
+  void main() {
+    vec3 n = normalize(vNormal);
+    vec3 v = normalize(cameraPosition - vWorld);
+    // its own light: evenly white, no shading on it
+    gl_FragColor = vec4(vec3(1.0), uOpacity);
+  }
+`;
+// The sphere's glow: a soft light round it, faced to the eye, dimming as a
+// press takes it under the water.
+const GLOW_REACH = SPHERE_RADIUS * 6;
+const glowVertex = /* glsl */ `
   ${POND_WAVES_GLSL}
   uniform vec3 uCenter;
   uniform float uTap;
   varying vec2 vLocal;
   void main() {
     vLocal = position.xy;
-    vec2 raw = uCenter.xz + vec2(position.x, -position.y);
-    // Everything the water does to the ring is read once, under its centre, and
-    // applied to every vertex alike. Sampling the current per vertex would push
-    // each one radially away from a ripple's origin and swell the circle; the
-    // ring is a fixed size and only ever moves as one piece.
     vec3 centre = rippleField(uCenter.xz);
-    vec2 xz = raw + centre.yz * ${RING_DRIFT};
-    vec3 field = rippleField(xz);
-    // Height still takes a little local sampling so it can tilt with the water.
-    float swell = mix(swellFrom(centre, uCenter.xz), swellFrom(field, xz), ${RING_TILT});
-    float crest = mix(centre.x, field.x, ${RING_TILT});
-    // A crest reaches the ring as the air it pushes ahead of itself rather than
-    // as buoyancy. The lift saturates, so resting at a ripple's centre raises
-    // the ring barely more than resting at its edge does.
-    float lift = crest / (1.0 + abs(crest) * 22.0) * ${RING_CREST};
-    // Resting clear of the water, brought down onto it by a touch.
-    float rest = mix(${RING_FLOAT}, ${RING_TOUCH}, uTap);
-    vec3 world = vec3(xz.x, rest + (swell + lift) * ${RING_HEIGHT}, xz.y);
-    gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
+    vec2 at = uCenter.xz + centre.yz * ${RING_DRIFT};
+    float water = swellFrom(centre, uCenter.xz) + centre.x;
+    float sit = ${SPHERE_RADIUS} * mix(.62, -.4, uTap);
+    vec4 view = viewMatrix * vec4(at.x, water * ${RING_HEIGHT} + sit, at.y, 1.0);
+    view.xy += position.xy;
+    gl_Position = projectionMatrix * view;
   }
 `;
-const ringFragment = /* glsl */ `
-  uniform float uProgress;
+const glowFragment = /* glsl */ `
   uniform float uOpacity;
+  uniform float uTap;
   uniform float uTime;
   varying vec2 vLocal;
   void main() {
     float r = length(vLocal);
-    float aa = fwidth(r) * 1.15;
-    float d = abs(r - ${RING_RADIUS});
-    // A white luminous core with two soft falloffs, all on the same floating
-    // surface. The generous geometry leaves room for the light to dissipate.
-    float core = exp(-pow(d / (.012 * ${HALO_WIDTH} + aa), 2.0));
-    float glow = exp(-pow(d / (.09 * ${HALO_WIDTH}), 2.0));
-    float aura = exp(-pow(d / (.2 * ${HALO_WIDTH}), 2.0));
-    float edge = 1.0 - smoothstep(.28, ${HALO_REACH}, d);
-    float sweep = mod(1.57079632679 - atan(vLocal.y, vLocal.x), 6.28318530718) / 6.28318530718;
-    float holding = step(.001, uProgress);
-    float arc = mix(1.0, mix(.28, 1.0, step(sweep, uProgress)), holding);
+    float glow = exp(-pow(r / ${(SPHERE_RADIUS * 1.7).toFixed(3)}, 2.0)) * .3 + exp(-pow(r / ${(SPHERE_RADIUS * 3.6).toFixed(3)}, 2.0)) * .12;
+    float edge = 1.0 - smoothstep(${(GLOW_REACH * .7).toFixed(3)}, ${GLOW_REACH.toFixed(3)}, r);
     float breath = .94 + .06 * sin(uTime * 1.4);
-    float alpha = (core * .92 + glow * .88 + aura * .42) * edge * arc * breath;
-    gl_FragColor = vec4(vec3(1.0), min(alpha, .98) * uOpacity);
+    gl_FragColor = vec4(vec3(1.0), glow * edge * breath * mix(1.0, .55, uTap) * uOpacity);
   }
 `;
 
-// The ring's shadow on the water. The light is above and a little behind, so
-// the shadow falls toward the eye (down the screen) and slightly right, as far
-// as the ring rides above the surface: at rest it sits apart from the ring,
-// soft and faint; a touch brings the ring down onto it, and the two meet sharp.
-const SHADOW_DX = .01;
-const SHADOW_DZ = .035;
-const ringShadowVertex = /* glsl */ `
-  ${POND_WAVES_GLSL}
-  uniform vec3 uCenter;
-  uniform float uTap;
-  varying vec2 vLocal;
-  void main() {
-    vLocal = position.xy;
-    vec2 raw = uCenter.xz + vec2(position.x, -position.y);
-    // carried with the ring, as one piece (see ringVertex)
-    vec3 centre = rippleField(uCenter.xz);
-    vec2 xz = raw + centre.yz * ${RING_DRIFT};
-    vec3 field = rippleField(xz);
-    float swell = mix(swellFrom(centre, uCenter.xz), swellFrom(field, xz), ${RING_TILT});
-    // how high the ring rides, as a share of its resting float
-    float rest = mix(${RING_FLOAT}, ${RING_TOUCH}, uTap) / ${RING_FLOAT};
-    xz += vec2(${SHADOW_DX}, ${SHADOW_DZ}) * rest;
-    vec3 world = vec3(xz.x, swell * ${RING_HEIGHT} + .002, xz.y);
-    gl_Position = projectionMatrix * viewMatrix * vec4(world, 1.0);
-  }
-`;
-const ringShadowFragment = /* glsl */ `
-  uniform float uProgress;
-  uniform float uOpacity;
-  uniform float uTap;
-  varying vec2 vLocal;
-  void main() {
-    float r = length(vLocal);
-    float d = abs(r - ${RING_RADIUS});
-    // the higher the ring, the wider and fainter its shade
-    float spread = mix(.07, .028, uTap) * ${HALO_WIDTH};
-    float shade = exp(-pow(d / spread, 2.0)) * .8 + exp(-pow(d / (spread * 2.6), 2.0)) * .35;
-    float edge = 1.0 - smoothstep(.23, ${HALO_REACH}, d);
-    // the shadow of what is drawn: while a hold fills the arc, the rest is faint
-    float sweep = mod(1.57079632679 - atan(vLocal.y, vLocal.x), 6.28318530718) / 6.28318530718;
-    float holding = step(.001, uProgress);
-    float arc = mix(1.0, mix(.28, 1.0, step(sweep, uProgress)), holding);
-    float alpha = shade * edge * arc * mix(.07, .1, uTap) * uOpacity;
-    gl_FragColor = vec4(vec3(.24, .28, .3), alpha);
-  }
-`;
-
-export interface PondWaveUniforms extends Record<string, THREE.IUniform> {
+export interface PondWaveUniforms extends PondPigmentUniforms {
   uTime: { value: number };
   uDrops: { value: THREE.Vector4[] };
   uTrails: { value: THREE.Vector4[] };
@@ -466,8 +507,8 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
   const trailIndex = useRef(0);
   const trailAnchor = useRef<TrailAnchor | null>(null);
   const seenTouch = useRef(-1);
-  const ring = useRef<THREE.Mesh>(null);
   const ringShadow = useRef<THREE.Mesh>(null);
+  const dot = useRef<THREE.Mesh>(null);
   const cursorFade = useRef(0);
   const tapAt = useRef(-99);
   const cursorLast = useMemo(() => new THREE.Vector3(0, .03, -4), []);
@@ -485,6 +526,7 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     uTrailTimes: { value: Array.from({ length: POND_TRAIL_SLOTS }, () => new THREE.Vector2(-99, 0)) },
     uSheetDrop: { value: new THREE.Vector4(0, 0, 0, 0) },
     uSheetShape: { value: new THREE.Vector4(1, 1, 1, 0) },
+    ...createPondPigmentUniforms(),
   }), []);
   const uniforms = sharedWaves ?? ownUniforms;
   const ringUniforms = useMemo(() => ({
@@ -497,6 +539,7 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     uTrailTimes: uniforms.uTrailTimes,
     uSheetDrop: uniforms.uSheetDrop,
     uSheetShape: uniforms.uSheetShape,
+    uHold: uniforms.uHold,
     uCenter: { value: new THREE.Vector3() },
     uTap: { value: 0 },
   }), [uniforms]);
@@ -534,7 +577,8 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
       tapAt.current = time.current;
       raycaster.setFromCamera(new THREE.Vector2(touch.x * 2 - 1, 1 - touch.y * 2), camera);
       if (raycaster.ray.intersectPlane(plane, point) && onPond(point)) {
-        uniforms.uDrops.value[1 + (touchIndex.current++ % (POND_DROP_SLOTS - 1))].set(point.x, point.z, time.current, (touch.strength ?? 1.5) * (touch.soft ? -1 : 1));
+        const strength = (touch.strength ?? 1.5) + (touch.slow ? POND_SLOW_DROP : 0);
+        uniforms.uDrops.value[1 + (touchIndex.current++ % (POND_DROP_SLOTS - 1))].set(point.x, point.z, time.current, strength * (touch.soft ? -1 : 1));
       }
     }
     const nearX = size.width < 600 ? 0 : POND_THOUGHTS[0].x;
@@ -550,20 +594,27 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
       label.style.transform = `translate(-50%, -100%) translate(${x}px, ${y}px) scale(${scale})`;
     });
     const cursor = cursorRef?.current;
-    const mark = ring.current;
     const hint = hintRef?.current;
     const progress = holdRef?.current ?? 0;
     ringUniforms.uProgress.value = progress;
-    // A hold under way pins the ring against the water until it is released; a
-    // plain click never reaches the threshold and floats straight back up.
-    if (progress > HOLD_PIN) tapAt.current = time.current - TAP_DOWN;
+    // While pressed the sphere is held down in the water, from the moment it
+    // reaches the bottom of its dip until the press lets go; then it rises.
+    if (progress > 0 && time.current - tapAt.current > TAP_DOWN) tapAt.current = time.current - TAP_DOWN;
+    // Held down, it goes on stirring the water: one continuous train of waves
+    // from where it is (holdWave), until it is let go, when what it sent out
+    // goes on spreading.
+    const held = uniforms.uHold.value;
+    if (progress > 0 && !reducedMotion) {
+      if (held.w < time.current) held.z = time.current;
+      held.set(cursorLast.x, cursorLast.z, held.z, 1e6);
+    } else if (held.w > time.current + 1000) held.w = time.current;
     const tapAge = time.current - tapAt.current;
     let tap = 0;
     if (tapAge >= 0 && tapAge < TAP_DOWN) { const t = tapAge / TAP_DOWN; tap = t * (2 - t); }
     else if (tapAge >= TAP_DOWN && tapAge < TAP_DOWN + TAP_HOLD) tap = 1;
     else if (tapAge >= 0) tap = 1 - smoothunit(TAP_DOWN + TAP_HOLD, TAP_DOWN + TAP_HOLD + TAP_UP, tapAge);
     // The clock is frozen under reduced motion, so the envelope cannot run.
-    ringUniforms.uTap.value = reducedMotion ? (progress > HOLD_PIN ? 1 : 0) : tap;
+    ringUniforms.uTap.value = reducedMotion ? (progress > 0 ? 1 : 0) : tap;
     let target = 0;
     let nearness = 0;
     let trailPoint: TrailPoint | null = null;
@@ -593,8 +644,8 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     const fade = cursorFade.current;
     ringUniforms.uOpacity.value = fade;
     ringUniforms.uCenter.value.copy(cursorLast);
-    if (mark) mark.visible = fade > .01;
     if (ringShadow.current) ringShadow.current.visible = fade > .01;
+    if (dot.current) dot.current.visible = fade > .01;
     if (hint) {
       const reveal = hintRevealRef?.current ?? 0;
       const show = arrival * reveal * fade;
@@ -605,7 +656,8 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
         const at = cursorLast;
         const dist = Math.hypot(camera.position.x - at.x, camera.position.y - at.y, camera.position.z - at.z);
         const howNear = nearness || Math.min(1, nearDist / dist);
-        const gap = .1 + .52 * howNear;
+        // beside the dot, a little off it (the ring it replaced was wider)
+        const gap = .07 + .26 * howNear;
         project.set(at.x + gap, .03, at.z + gap * .7).project(camera);
         hint.style.opacity = String(show);
         hint.style.filter = reducedMotion || reveal === 1 ? "none" : `blur(${(1 - reveal) * 6}px)`;
@@ -615,19 +667,21 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
   });
 
   return <>
+    <PondPigmentDrops waves={uniforms} cueRef={cueRef} active={promptRipples && lifeReady && !reducedMotion} narrow={size.width < 600} />
     {!sharedWaves && <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -900]}>
       <planeGeometry args={[2000, 2000]} />
       <shaderMaterial transparent vertexShader={vertexShader} fragmentShader={fragmentShader} uniforms={uniforms} />
     </mesh>}
     <mesh ref={ringShadow} visible={false} renderOrder={2} frustumCulled={false}>
-      <ringGeometry args={[RING_RADIUS - HALO_REACH, RING_RADIUS + HALO_REACH, 192, 16]} />
+      <circleGeometry args={[GLOW_REACH, 40]} />
       <shaderMaterial transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
-        vertexShader={ringShadowVertex} fragmentShader={ringShadowFragment} uniforms={ringUniforms} />
+        vertexShader={glowVertex} fragmentShader={glowFragment} uniforms={ringUniforms} />
     </mesh>
-    <mesh ref={ring} visible={false} renderOrder={3} frustumCulled={false}>
-      <ringGeometry args={[RING_RADIUS - HALO_REACH, RING_RADIUS + HALO_REACH, 192, 16]} />
-      <shaderMaterial transparent depthTest={false} depthWrite={false} side={THREE.DoubleSide}
-        vertexShader={ringVertex} fragmentShader={ringFragment} uniforms={ringUniforms} />
+    {/* depth-tested, so the water hides its foot */}
+    <mesh ref={dot} visible={false} renderOrder={3} frustumCulled={false}>
+      <sphereGeometry args={[1, 32, 16]} />
+      <shaderMaterial transparent depthWrite={false}
+        vertexShader={sphereVertex} fragmentShader={sphereFragment} uniforms={ringUniforms} />
     </mesh>
   </>;
 }
@@ -646,15 +700,16 @@ function StillPond({ onReady, cueRef }: Pick<PondProps, "onReady" | "cueRef">) {
     const tick = () => {
       if (ripple.current) {
         const cue = cueRef.current;
-        ripple.current.style.opacity = String(cue.ripple * Math.exp(-cue.age * .23));
-        ripple.current.style.transform = `perspective(500px) rotateX(68deg) scale(${.005 + cue.age * .16})`;
+        const age = Math.max(0, cue.age);
+        ripple.current.style.opacity = String(cue.ripple * Math.exp(-age * .23));
+        ripple.current.style.transform = `perspective(500px) rotateX(68deg) scale(${.005 + age * .16})`;
       }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [cueRef]);
-  return <div aria-hidden style={{ position: "absolute", inset: 0, background: "linear-gradient(#e2e6e2 28%, #d4dad7 49%, #b9c3c1 100%)" }}>
+  return <div aria-hidden style={{ position: "absolute", inset: 0, background: "linear-gradient(#e4e4e6 28%, #d8d8db 49%, #bfbfc3 100%)" }}>
     <div ref={ripple} style={{ position: "absolute", inset: "38% -30% -50%", transformOrigin: "50% 30%", transform: "perspective(500px) rotateX(68deg) scale(.005)", background: "radial-gradient(ellipse at 50% 30%, transparent 26%, #e6edeb22 29%, transparent 32%, transparent 35%, #e6edeb33 38%, transparent 41%, transparent 44%, #e6edeb55 47%, transparent 50%)" }} />
   </div>;
 }

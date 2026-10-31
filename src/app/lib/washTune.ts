@@ -49,7 +49,7 @@ export interface WashTune {
 
 export const WASH_TUNE_DEFAULT: WashTune = {
   fieldOpacity: 0.85,
-  reach: 1.25,
+  reach: 1.12,
   threshold: 0.18,
   join: 3.3,
   warp: 1,
@@ -64,7 +64,7 @@ export const WASH_TUNE_DEFAULT: WashTune = {
   saturation: 1.38,
   sharpness: 0.7,
 
-  brushPx: 52,
+  brushPx: 46,
   grip: 0.1,
   wipe: 0.45,
   curl: 0,

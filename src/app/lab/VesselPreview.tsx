@@ -118,8 +118,9 @@ export interface VesselTune {
   // refraction (the second glass look)
   envAbove: number; envBelow: number; horizon: number; horizonSoft: number;
   bend: number; glassSoft: number; bodyAlpha: number; thickDark: number; highlight: number;
-  // A saved feeling stains the glass from its foot up to half its height, without adding opacity.
-  memoryTintHue: number; memoryTintChroma: number; memoryTintAmount: number;
+  // A saved feeling stains the glass from its foot up to half its height in its picked colour
+  // (memoryTintLight/Chroma/Hue, OKLCH); memoryTintDepth deepens that tone right at the foot.
+  memoryTintHue: number; memoryTintChroma: number; memoryTintLight: number; memoryTintAmount: number; memoryTintDepth: number;
   /* …and its highlights carry that colour (memoryFlash 1, set with the memory's
      colour; 0 leaves them the flow's own), swelling into it every so often */
   memoryFlash: number; flashEvery: number; flashGain: number;
@@ -179,7 +180,7 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   mono: 0, negative: 0,
   envAbove: 1, envBelow: 0.84, horizon: 0.06, horizonSoft: 0.35,
   bend: 0.75, glassSoft: 0.64, bodyAlpha: 0.85, thickDark: 0.21, highlight: 0.34,
-  memoryTintHue: 0, memoryTintChroma: 0, memoryTintAmount: 0,
+  memoryTintHue: 0, memoryTintChroma: 0, memoryTintLight: .66, memoryTintAmount: 0, memoryTintDepth: 0,
   memoryFlash: 0, flashEvery: 4.5, flashGain: 1.1,
   keyAzimuth: -32, keyElevation: 64, keyIntensity: 1.08,
   flowGain: 1.21, flowSpeed: 0.8, flowSoft: 0.3, flowLift: 0.49, flowRise: 0.35, flowApart: 2.15,
@@ -917,6 +918,8 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform vec3 uMemoryTint;
   uniform float uMemoryTintAmount;
   uniform vec2 uTintSpan;
+  uniform vec3 uMemoryTintDeep;
+  uniform float uMemoryTintDepth;
   uniform vec3 uPatch[3];
   /* distance (each already scaled by the haze): the view through the glass smeared
      further, the rim lines and the gathering of alpha at the silhouette letting go,
@@ -1203,15 +1206,33 @@ const GLASS_COMMON_GLSL = /* glsl */ `
     }
     return clamp(breath, 0.0, 1.0) * uFrostStrength * (.7 + .3 * gNoise(vModel * 9.0 - uSeed));
   }
-  // A stain fixed to the glass that rises from its foot: the full colour at the
-  // lowest point, thinning in a straight line to nothing half-way up.
-  // uTintSpan is the glass's lowest and highest y in model space.
+  // A stain fixed to the glass that rises from its foot, in the memory's landing
+  // tone (uMemoryTint): a narrow deeper band of that tone (uMemoryTintDeep) held
+  // over the lowest 3% of the height, blending into the tone itself by 16%, and
+  // the tone thinning in a straight line to nothing half-way up. uTintSpan is
+  // the glass's lowest and highest y in model space. The tone is laid as a filter
+  // over what the glass shows (a pale ground becomes the tone), and tintAssert
+  // lifts the glass's alpha so it reads through the thin face.
+  float tintUp() {
+    return clamp((vModel.y - uTintSpan.x) / max(1e-3, uTintSpan.y - uTintSpan.x), 0.0, 1.0);
+  }
+  float tintRise() {
+    return clamp((.5 - tintUp()) / .47, 0.0, 1.0);
+  }
+  float tintFoot() {
+    if (uMemoryTintAmount <= 0.0) return 0.0;
+    return (1.0 - smoothstep(.03, .16, tintUp())) * uMemoryTintDepth;
+  }
+  float tintAssert() {
+    if (uMemoryTintAmount <= 0.0) return 0.0;
+    return max(tintFoot() * .6, tintRise() * uMemoryTintAmount * .3);
+  }
   vec3 feelingTint(vec3 color, float facing) {
     if (uMemoryTintAmount <= 0.0) return color;
-    float up = clamp((vModel.y - uTintSpan.x) / max(1e-3, uTintSpan.y - uTintSpan.x), 0.0, 1.0);
-    float coverage = clamp(1.0 - up * 2.0, 0.0, 1.0) * uMemoryTintAmount;
-    vec3 dye = uMemoryTint / max(.001, max(uMemoryTint.r, max(uMemoryTint.g, uMemoryTint.b)));
-    return color * mix(vec3(1.0), dye, coverage);
+    // the pale ground the palette's tones are seen on (linear)
+    const float GROUND = .83;
+    color *= mix(vec3(1.0), min(uMemoryTint / GROUND, vec3(1.1)), tintRise() * uMemoryTintAmount);
+    return mix(color, color * uMemoryTintDeep / GROUND, tintFoot());
   }
 `;
 
@@ -1233,6 +1254,7 @@ export const glassFragment = /* glsl */ `
     vec3 body = mix(vec3(.84, .87, .88), vec3(.87, .86, .85), uWarmth);
     vec3 color = feelingTint(mix(body, rimColor, fresnel), facing);
     float alpha = (.09 + .6 * fresnel * uRim) * thickness;
+    alpha = mix(alpha, 1.0, tintAssert());
     // at a distance the edge lets go: the alpha no longer gathers at the silhouette
     alpha = mix(alpha, .2 * thickness, uHazeEdge * .6);
 
@@ -1367,6 +1389,7 @@ export const glassRefractFragment = /* glsl */ `
     // the view is fully through the glass; what the alpha carries is how much the
     // glass itself asserts over the frame — more toward the edge, and in the feet
     float alpha = uBodyAlpha * mix(.35, 1.0, g * g) * uneven + uThickDark * .25 * foot + rimLine * .35 + mirror * .5;
+    alpha = mix(alpha, 1.0, tintAssert());
     // at a distance the edge lets go: the alpha no longer gathers at the silhouette,
     // so the outline is left to the mist outside it
     alpha = mix(alpha, uBodyAlpha * .5 * uneven, uHazeEdge * .6);
@@ -1702,6 +1725,8 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uMemoryTint: { value: new THREE.Color("#ffffff") },
     uMemoryTintAmount: { value: 0 },
     uTintSpan: { value: new THREE.Vector2(-1, 1) },
+    uMemoryTintDeep: { value: new THREE.Color("#ffffff") },
+    uMemoryTintDepth: { value: 0 },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
     uHazeWash: { value: 0 },
@@ -1828,8 +1853,8 @@ export function flowColors(stock: number, depth: number): { core: Rgb; a: Rgb; b
 
 /** The memory's colour as a light: its hue, a little deeper than the stain
  *  (still the homescreen's dusty range), brought to full brightness. */
-export function flashColor(hue: number, stainChroma: number): Rgb {
-  const hex = oklchToHex({ l: .86, c: Math.min(.13, Math.max(.06, (stainChroma / .65) * 1.6)), h: hue });
+export function flashColor(hue: number, toneChroma: number): Rgb {
+  const hex = oklchToHex({ l: .86, c: Math.min(.13, Math.max(.06, toneChroma * 1.6)), h: hue });
   const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
   const top = Math.max(c[0], c[1], c[2], 1e-3);
   return [c[0] / top, c[1] / top, c[2] / top];
@@ -1840,7 +1865,12 @@ export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   const { tune } = w;
   u.uMemoryTintAmount.value = tune.memoryTintAmount ?? 0;
   u.uTintSpan.value.set(w.span.lo, w.span.hi);
-  u.uMemoryTint.value.set(oklchToHex({ l: .86, c: tune.memoryTintChroma ?? 0, h: tune.memoryTintHue ?? 0 }));
+  u.uMemoryTintDepth.value = tune.memoryTintDepth ?? 0;
+  // the picked tone, and the same tone a little deeper for the band at the foot —
+  // about as deep as a landing wash's own deep edge, not past it
+  const tone = { l: tune.memoryTintLight ?? .66, c: tune.memoryTintChroma ?? 0, h: tune.memoryTintHue ?? 0 };
+  u.uMemoryTint.value.set(oklchToHex(tone));
+  u.uMemoryTintDeep.value.set(oklchToHex({ l: Math.max(.2, tone.l - .06), c: Math.min(.2, tone.c * 1.1), h: tone.h }));
   u.uHazePhoto.value = tune.haze * tune.hazePhoto;
   u.uHazeEdge.value = tune.haze * tune.hazeEdge;
   u.uHazeWash.value = tune.haze * tune.hazeWash;
@@ -2344,8 +2374,10 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
   // the memory's colour (the colour step's pick; a memory brings its own): a stain on the glass, and the highlights
   { group: "memory colour", knobs: [
     { key: "memoryTintHue", label: "hue °", min: 0, max: 360, step: 1 },
-    { key: "memoryTintChroma", label: "chroma", min: 0, max: 0.12, step: 0.001 },
+    { key: "memoryTintChroma", label: "chroma", min: 0, max: 0.15, step: 0.001 },
+    { key: "memoryTintLight", label: "lightness", min: 0.2, max: 0.95, step: 0.01 },
     { key: "memoryTintAmount", label: "stain  (0 none)", min: 0, max: 1, step: 0.01 },
+    { key: "memoryTintDepth", label: "deeper at the foot  (0 none)", min: 0, max: 1, step: 0.01 },
     { key: "memoryFlash", label: "in the highlights  (0 none)", min: 0, max: 1, step: 0.01 },
     { key: "flashEvery", label: "flash every  s", min: 1, max: 12, step: 0.1 },
     { key: "flashGain", label: "flash strength", min: 0, max: 3, step: 0.01 },

@@ -11,7 +11,8 @@ import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
 import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
-import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
+import { flowProgress, inkGrowth, inkWash, type InkArrival } from "../lib/landingTransition";
+import { INK_CUT_SCALE, captureInkMask, clearInkSeats, setInkSeat } from "../lib/inkCutouts";
 import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
 import { carouselFrame, carouselSeat, carouselContainsOffset, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
 import { useHeaderMenu } from "./HeaderMenu";
@@ -757,6 +758,36 @@ export function PuddleDiveGallery({
      this color; nothing is added to the surface below. */
   const washFadeMs = phase === "surfacing" ? dissolveMs : Math.round(resolveMs);
 
+  /* Through the ink entry each seat tells the landing where it will finally
+     sit, and keeps the outline of its vessel's first whole frame, so the
+     landing's washes can become flat cutouts of these vessels in place. */
+  const streamRef = useRef<HTMLDivElement>(null);
+  const inkSeatsRef = useRef<{ id: string; x: number; y: number; size: number; opacity: number }[]>([]);
+  inkSeatsRef.current = [];
+  const frameHooks = useRef(new Map<string, (canvas: HTMLCanvasElement) => void>());
+  const onFrameFor = (id: string) => {
+    let hook = frameHooks.current.get(id);
+    if (!hook) {
+      hook = (canvas) => captureInkMask(id, canvas);
+      frameHooks.current.set(id, hook);
+    }
+    return hook;
+  };
+  const inkEntering = !!inkArrival && !inkArrival.reducedMotion;
+  useLayoutEffect(() => {
+    if (inkEntering) clearInkSeats();
+    // the gallery mounts with the entry: a fresh set of seats and outlines each time
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useLayoutEffect(() => {
+    if (!inkEntering) return;
+    const box = streamRef.current?.getBoundingClientRect();
+    if (!box) return;
+    for (const seat of inkSeatsRef.current) {
+      setInkSeat(seat.id, { x: box.left + seat.x, y: box.top + seat.y, size: seat.size, opacity: seat.opacity });
+    }
+  });
+
   /* The rim, apex outward. Only the focused memory exists while the dolly is
      still running; everything on the dome leaves together when it reverses. */
   const slots: { offset: number; item: DiveGalleryItem }[] = [];
@@ -921,7 +952,7 @@ export function PuddleDiveGallery({
       {/* The chronological stream. Stable memory keys let the entire path
           advance without replacing its artifacts. Isolate its depth stack
           so foreground memories cannot cover the caption or navigation. */}
-      <div className="absolute inset-0" data-pond-departure={pondDeparture}
+      <div ref={streamRef} className="absolute inset-0" data-pond-departure={pondDeparture}
         data-pond-tilt={pondRimPose(pondDeparture, !!reducedMotion).tilt * 180 / Math.PI}
         style={{ opacity: 1, isolation: "isolate" }}>
         {slots.map(({ offset, item: slotItem }) => {
@@ -936,9 +967,12 @@ export function PuddleDiveGallery({
             COLOR_PALETTE[slotItem.colorIndex % COLOR_PALETTE.length];
           /* handed over rather than arriving: it is already exactly here */
           const carried = carriedIds.has(slotItem.id) && phase === "gallery";
-          const entryScale = inkArrival && !inkArrival.reducedMotion
-            ? INK_POINTER_SIZE / geo.size + (1 - INK_POINTER_SIZE / geo.size) * growth
-            : 1;
+          // the vessel grows on from the size its flat cutout formed at
+          const entryScale = inkEntering ? INK_CUT_SCALE + (1 - INK_CUT_SCALE) * growth : 1;
+          if (inkEntering) {
+            inkSeatsRef.current.push({ id: slotItem.id, x: seat.x, y: seat.y,
+              size: geo.size * depth.scale * seat.scale, opacity: depth.opacity });
+          }
           /* Naming year: neighbours gather with a real CSS transition, not a
              keyframe that can miss the first paint and hard-cut the canvases in. */
           const gather = !focused && !waterEffect && !inkArrival;
@@ -989,11 +1023,11 @@ export function PuddleDiveGallery({
                   opacity: gather
                     ? gatherHidden ? 0 : 1
                     : inkArrival
-                      // Keyed to the form's own size, not to the clock: it stays
-                      // out of sight until it is 40% grown, then fades in over
-                      // the next third. Opacity used to finish at 20% of the
-                      // growth, so the artifact simply appeared at dot size.
-                      ? flowProgress(entryScale, 0.4, 0.72)
+                      // The cutout is already here at half size: the vessel comes
+                      // up through it over most of the growth, while the cutout
+                      // lets go across all of it (BlobScene), so the two overlap
+                      // rather than swap. Reduced motion keeps the old fade by size.
+                      ? inkEntering ? flowProgress(growth, 0, 0.75) : flowProgress(entryScale, 0.4, 0.72)
                       : phase === "diving" ? 0 : undefined,
                   filter: gather ? (gatherHidden ? "blur(24px)" : "blur(0px)") : undefined,
                   transform: gather
@@ -1044,6 +1078,7 @@ export function PuddleDiveGallery({
                     haze: depth.haze,
                     blurPx: depth.blurPx,
                     offset,
+                    onFrame: onFrameFor(slotItem.id),
                   }) : <SceneViewer
                     measureUnscaled
                     form={slotItem.shape.form}

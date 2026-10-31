@@ -56,3 +56,29 @@ export function uvFromHomePalette(color: Oklch) {
   }
   return best;
 }
+
+/*
+ * The landing's wash tones: MEMORY_COLORS' slots as regions of this field and
+ * how far down it (0 the pale top, 1 the deep, strengthened bottom). Cloud has
+ * no region of its own: it is mist's pale top. The second slate is the field's
+ * purple, a little quieter (`chroma` scales it). The landing paints its washes
+ * from these.
+ */
+export const LANDING_TONES: { stop: (typeof HOME_FIELD_STOPS)[number]; v: number; chroma: number }[] = [
+  { stop: "slate", v: 1, chroma: 1 },
+  { stop: "mist", v: 0, chroma: 1 },
+  { stop: "mist", v: 1, chroma: 1 },
+  { stop: "sand", v: 1, chroma: 1 },
+  { stop: "sky", v: 1, chroma: 1 },
+  { stop: "rose", v: 1, chroma: 1 },
+  { stop: "sage", v: 1, chroma: 1 },
+  { stop: "ocean", v: 1, chroma: 1 },
+  { stop: "purple", v: 1, chroma: .8 },
+  { stop: "night", v: 1, chroma: 1 },
+];
+
+/** A landing tone as a colour. */
+export function landingTone(tone: (typeof LANDING_TONES)[number]): Oklch {
+  const field = sampleHomePalette(HOME_FIELD_STOPS.indexOf(tone.stop) / (HOME_FIELD_STOPS.length - 1), tone.v);
+  return { ...field, c: field.c * tone.chroma };
+}

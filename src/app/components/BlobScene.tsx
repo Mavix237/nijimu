@@ -9,14 +9,15 @@ import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { HOME_FIELD_STOPS, sampleHomePalette } from "../lib/homePaletteField";
-import { oklchToHex } from "../lib/oklch";
-import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival } from "../lib/landingTransition";
+import { LANDING_TONES, landingTone } from "../lib/homePaletteField";
+import { oklchToHex, type Oklch } from "../lib/oklch";
+import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, smoothProgress, type InkArrival } from "../lib/landingTransition";
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
 import { carouselSeat, carouselContainsOffset, inkUnfoldSeat } from "../lib/carouselLayout";
 import { GooeyBlobCanvas } from "./GooeyBlobCanvas";
-import { captionCharLook, captionPresence, createCaptionWaves, type CaptionShow } from "../lib/captionWaves";
-import { WatercolorField, type WashBlob } from "./WatercolorField";
+import { CAPTION_WAVES, captionCharLook, captionPresence, createCaptionWaves, type CaptionShow } from "../lib/captionWaves";
+import { WatercolorField, type WashBlob, type WashCuts } from "./WatercolorField";
+import { INK_CUT_SCALE, hasInkSeats, inkSeat } from "../lib/inkCutouts";
 import { WashTunePanel } from "./WashTunePanel";
 import { initialWashTune } from "../lib/washTune";
 
@@ -37,8 +38,15 @@ const BLOB_CAPTION_SIZE =
   "clamp(13px, calc(13px + 2 * ((100vw - 390px) / (1024 - 390))), 15px)";
 /** Radiating ring — kept as a painted width so scale() cannot fatten it. */
 const BLOB_RING_STROKE = 0.6;
-/** Room for the drifting caption's glyphs and soft edges at the viewport rim. */
-const LANDING_CAPTION_INSET = 20;
+/** The safe zone the drifting captions (text and dot) keep from the screen's
+    edges: 6% of the width across and 8% of the height up and down, never under
+    28px (phones) nor over 72px. The CSS twin caps a caption's width so a long
+    title wraps inside the same margins. */
+const LANDING_CAPTION_SAFE = { x: .06, y: .08, min: 28, max: 72 } as const;
+const captionSafe = (size: number, share: number) =>
+  Math.min(LANDING_CAPTION_SAFE.max, Math.max(LANDING_CAPTION_SAFE.min, size * share));
+const LANDING_CAPTION_MAX_WIDTH =
+  `calc(100vw - 2 * clamp(${LANDING_CAPTION_SAFE.min}px, ${LANDING_CAPTION_SAFE.x * 100}vw, ${LANDING_CAPTION_SAFE.max}px))`;
 
 
 /* ───────── types ───────── */
@@ -71,30 +79,15 @@ interface BlobData {
 
 /* ───────── constants ───────── */
 /*
- * The washes wear the colour step's tones (homePaletteField), not the raw
- * home palette, so the landing reads as colourful as the picker. Each entry
- * is MEMORY_COLORS' slot, as a region of that field and how far down it (0 the
- * pale top, 1 the deep, strengthened bottom). Cloud has no region of its own:
- * it is mist's pale top. The second slate is the field's purple, a little
- * quieter here (the optional last value scales its chroma).
+ * The washes wear the colour step's tones (LANDING_TONES in homePaletteField,
+ * one per MEMORY_COLORS slot), not the raw home palette, so the landing reads
+ * as colourful as the picker. WASH_AT is where each wash's light sits.
  */
-const WASH_TONES: [stop: (typeof HOME_FIELD_STOPS)[number], v: number, at: string, chroma?: number][] = [
-  ["slate", 1, "30% 30%"],
-  ["mist", 0, "40% 40%"],
-  ["mist", 1, "60% 60%"],
-  ["sand", 1, "50% 50%"],
-  ["sky", 1, "35% 45%"],
-  ["rose", 1, "55% 35%"],
-  ["sage", 1, "45% 55%"],
-  ["ocean", 1, "40% 60%"],
-  ["purple", 1, "50% 40%", 0.8],
-  ["night", 1, "60% 40%"],
-];
-const COLORS = WASH_TONES.map(([stop, v, at, chroma = 1]) => {
-  const field = sampleHomePalette(HOME_FIELD_STOPS.indexOf(stop) / (HOME_FIELD_STOPS.length - 1), v);
-  const lit = { ...field, c: field.c * chroma };
+const WASH_AT = ["30% 30%", "40% 40%", "60% 60%", "50% 50%", "35% 45%", "55% 35%", "45% 55%", "40% 60%", "50% 40%", "60% 40%"];
+const COLORS = LANDING_TONES.map((tone, i) => {
+  const lit = landingTone(tone);
   const deep = { ...lit, l: Math.max(0.2, lit.l - 0.07) };
-  return `radial-gradient(ellipse at ${at}, ${oklchToHex(lit)}, ${oklchToHex(deep)})`;
+  return `radial-gradient(ellipse at ${WASH_AT[i]}, ${oklchToHex(lit)}, ${oklchToHex(deep)})`;
 });
 
 /*
@@ -150,8 +143,20 @@ function computeGalleryOrder(events: { year: string }[]) {
 /* ───────── helpers ───────── */
 /** Each blob's box is this much larger than it used to be: the washes are broad. */
 const BLOB_SPREAD = 1.3;
+/** How long a wash not bound for the gallery takes to close on Enter, and over how long their starts are spread. */
+const CLOSE_MS = 1400;
+const CLOSE_SPREAD_MS = 600;
+/** How long a wash bound for the gallery takes to drift onto its seat, and the share of the seat box it gathers to (about the vessel's own size). */
+const SEAT_DRIFT_MS = 1500;
+const SEAT_GATHER = 0.55;
+/** How far into its drift a wash begins to fill its cutout: just as it settles. */
+const SEAT_FILL_FROM = 0.85;
 /** Nearest two wash centres may sit, in % of the field. */
 const BLOB_MIN_GAP = 12;
+/** Share of washes centred on the frame's edge, about half outside it, so the field reaches past the screen. */
+const BLOB_EDGE_SHARE = 0.35;
+/** How far an edge wash's centre may stray from the edge line, in % of the field. */
+const BLOB_EDGE_DRIFT = 4;
 /** The wash's body, as a share of its box's half-width (WatercolorField's reach and edge). */
 const WASH_BODY = 0.7;
 /** The tune panel shows in development, or anywhere with ?tune on the URL. */
@@ -178,9 +183,19 @@ function generateBlobs(
   saved: SavedMemory[],
   isMobile: boolean,
 ): BlobData[] {
+  /** Which edge each wash sits on (left, right, top, bottom), or -1 inside the frame. */
+  const edges = events.map(() => (Math.random() < BLOB_EDGE_SHARE ? Math.floor(Math.random() * 4) : -1));
   const raw = Array.from({ length: events.length }, (_, i) => {
     let x, y;
-    if (isMobile) {
+    const edge = edges[i];
+    if (edge >= 0) {
+      // centred on the edge line, anywhere along it
+      const along = 5 + Math.random() * 90;
+      const off = (Math.random() * 2 - 1) * BLOB_EDGE_DRIFT;
+      x = edge === 0 ? off : edge === 1 ? 100 + off : along;
+      // y is shifted down 10 below, as the inner washes are
+      y = edge === 2 ? off - 10 : edge === 3 ? 90 + off : along - 10;
+    } else if (isMobile) {
       // Mobile: blobs spread over most of the field, a little in from the
       // edges so neighbours overlap and pool rather than sit apart
       x = 8 + Math.random() * 84;
@@ -245,10 +260,19 @@ function generateBlobs(
         b.x += dx * push; b.y += dy * push;
       }
     }
-    for (const b of raw) {
-      b.x = clamp(b.x, xMin, xMax);
-      b.y = clamp(b.y, 20, 90);
-    }
+    raw.forEach((b, i) => {
+      const edge = edges[i];
+      if (edge < 0) {
+        b.x = clamp(b.x, xMin, xMax);
+        b.y = clamp(b.y, 20, 90);
+        return;
+      }
+      // an edge wash may slide along its edge, but stays on it
+      b.x = edge === 0 ? clamp(b.x, -BLOB_EDGE_DRIFT, BLOB_EDGE_DRIFT)
+        : edge === 1 ? clamp(b.x, 100 - BLOB_EDGE_DRIFT, 100 + BLOB_EDGE_DRIFT) : clamp(b.x, 0, 100);
+      b.y = edge === 2 ? clamp(b.y, -BLOB_EDGE_DRIFT, BLOB_EDGE_DRIFT)
+        : edge === 3 ? clamp(b.y, 100 - BLOB_EDGE_DRIFT, 100 + BLOB_EDGE_DRIFT) : clamp(b.y, 0, 100);
+    });
   }
   const cx = raw.reduce((s, b) => s + b.x, 0) / raw.length;
   const cy = raw.reduce((s, b) => s + b.y, 0) / raw.length;
@@ -365,6 +389,17 @@ function textScale(idx: number): number {
   return 0.88;
 }
 
+/*
+ * The landing's first arrival: once the washes have nearly finished opening
+ * (WatercolorField's onSettling), the line and Enter grow up to their size as
+ * they fade in, settling softly at the end; the captions' first wave types
+ * in once they have (captionsFrom). Once per page load — a return to
+ * the landing from inside the app has its own reveal. Without washes they
+ * arrive at once.
+ */
+const LANDING_INTRO = { delayMs: 120, durationMs: 1300, from: 0.88, ease: "cubic-bezier(.22, 1, .36, 1)" } as const;
+let landingIntroPlayed = false;
+
 /* ═══════════════════════════════════════════════
    COMPONENT
    ═══════════════════════════════════════════════ */
@@ -425,6 +460,12 @@ export function BlobScene({
   const onWashReady = useCallback((ok: boolean) => setWashState(ok ? "on" : "off"), []);
   /** How far each wash has arrived; its dot and caption come with it. */
   const washPresence = useRef<number[]>([]);
+  /** The ink entry's hold on the washes: each becomes a flat cutout of its gallery vessel. */
+  const washCuts = useRef<WashCuts>({ on: false, boxes: [], fill: [], drain: [], fade: [], open: [], paint: [], tint: [], masks: [], spans: [] });
+  /** When (entry ms) each wash first had a gallery seat to go to; its drift is timed from there. */
+  const cutSeen = useRef(new Map<number, number>());
+  /** When (entry ms) each wash was first known to have no seat on screen; its close is timed from there. */
+  const closeSeen = useRef(new Map<number, number>());
   const captionWords = useRef<number[]>([]);
   const [ambientIn, setAmbientIn] = useState(false);
   useEffect(() => {
@@ -433,6 +474,18 @@ export function BlobScene({
     const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => setAmbientIn(true)); });
     return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
   }, []);
+  /* Each memory's vessel colour — its colour pick, which stains the glass from
+     the foot — as wash paint (lit and deep rgb), so a wash bound for the
+     gallery arrives in its vessel's own colour. */
+  const vesselPaint = useMemo(() => events.map((e, i) => {
+    const pick = e.feeling ?? (i >= LIFE_EVENTS.length ? savedMemories[i - LIFE_EVENTS.length]?.look?.oklch : undefined);
+    if (!pick) return null;
+    const rgb = (ok: Oklch) => {
+      const { r, g, b } = parseHex(oklchToHex(ok));
+      return [r / 255, g / 255, b / 255];
+    };
+    return [...rgb(pick), ...rgb({ ...pick, l: Math.max(0.2, pick.l - 0.07) })];
+  }), [events, savedMemories]);
   const washBlobs = useMemo<WashBlob[]>(() => blobs.map((b) => {
     const [lit, deep] = (b.color.match(/#[0-9a-f]{6}/gi) ?? ["#9496a6", "#7a7c8c"]).map((hex) => {
       const { r, g, b: bl } = parseHex(hex);
@@ -473,6 +526,12 @@ export function BlobScene({
   const returnReveal = classicChrome && (returnPhase === "holding" || returnPhase === "landing");
   const revealArmed = returnPhase === "landing";
   const [fieldShown, setFieldShown] = useState(!returnReveal);
+  const [landingIntro] = useState(() => classicChrome && !returnReveal && !landingIntroPlayed);
+  const [washesSettled, setWashesSettled] = useState(false);
+  const onWashesSettling = useCallback(() => setWashesSettled(true), []);
+  /** The intro is waiting on the washes: the copy is held hidden and Enter cannot be pressed. */
+  const introWaiting = landingIntro && washState !== "off" && !washesSettled;
+  useEffect(() => { if (classicChrome) landingIntroPlayed = true; }, [classicChrome]);
   const [headerShown, setHeaderShown] = useState(!returnReveal);
   useEffect(() => {
     if (!returnReveal) {
@@ -517,11 +576,18 @@ export function BlobScene({
   const washTuneRef = useRef(washTune);
   washTuneRef.current = washTune;
   const [captionReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
-  const [captionWaves] = useState(() => createCaptionWaves(
+  /* The captions' clock: from mount, or — on the landing's first arrival — so
+     the first wave types in just as the centre block has finished appearing. */
+  const [captionsFrom, setCaptionsFrom] = useState<number | null>(() => (landingIntro ? null : performance.now()));
+  useEffect(() => {
+    if (captionsFrom !== null || introWaiting) return;
+    setCaptionsFrom(performance.now() + LANDING_INTRO.delayMs + LANDING_INTRO.durationMs - CAPTION_WAVES.firstAt);
+  }, [captionsFrom, introWaiting]);
+  const captionWaves = useMemo(() => captionsFrom === null ? null : createCaptionWaves(
     events.map((e) => e.year + e.event + (e.year === "2026" ? "..." : "")),
-    performance.now(),
+    captionsFrom,
     captionReduced,
-  ));
+  ), [captionsFrom]);
   const [captionNow, setCaptionNow] = useState(() => performance.now());
   /** Which captions a wave is showing; the rest take no part in the overlap blur. */
   const captionShownRef = useRef<boolean[]>([]);
@@ -594,6 +660,11 @@ export function BlobScene({
   const entryShrink = landingArrival && !entryReduced ? flowProgress(entryTime, INK_ENTRY.labelsEnd, INK_ENTRY.shrinkEnd) : 0;
   const entryPaper = landingArrival ? 1 - flowProgress(entryTime, entryReduced ? 320 : INK_ENTRY.pathHoldEnd,
     entryReduced ? INK_ENTRY.reducedEnd : INK_ENTRY.growEnd) : 1;
+  /* The vignette is a faint gradient the grain dithers: left without it, it
+     bands into rings. Through the entry it clears first while the grain holds,
+     and the grain lets go only once it has gone. */
+  const entryVignette = smoothProgress(entryPaper, 0.3, 1);
+  const entryGrain = smoothProgress(entryPaper, 0, 0.3);
 
   /* ─── sizing ─── */
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
@@ -635,6 +706,9 @@ export function BlobScene({
   // their computed transform and shape preserves the original first frame.
   useLayoutEffect(() => {
     if (!landingArrival) {
+      washCuts.current.on = false;
+      cutSeen.current.clear();
+      closeSeen.current.clear();
       if (entryCapture.current) {
         entryCapture.current.forEach((captured, i) => {
           if (blobEls.current[i]) blobEls.current[i]!.style.cssText = captured.inline;
@@ -665,6 +739,17 @@ export function BlobScene({
     const gather = entryReduced ? 0 : flowProgress(entryTime, INK_ENTRY.shrinkEnd, INK_ENTRY.pathEnd);
     const unfold = entryReduced ? 0 : flowProgress(entryTime, INK_ENTRY.pathHoldEnd, INK_ENTRY.unfoldEnd);
     const growth = inkGrowth(landingArrival);
+    /* With the field painting, there are no dots and the washes keep living.
+       Each memory the gallery will show has a mask waiting at its seat — its
+       vessel's outline at INK_CUT_SCALE of the seat. Its wash drifts there and
+       fills the mask with its own paint from the foot up, draining into it,
+       nearest the focus first; the other washes fade where they lie, so the
+       screen holds as many as the gallery does. The vessel then grows up
+       through its cutout, which grows with it and lets go as it arrives. */
+    const cutting = washOn && !entryReduced;
+    const cuts = washCuts.current;
+    cuts.on = cutting;
+    const letGo = 1 - flowProgress(growth, 0.05, 1);
     entryCapture.current.forEach((captured, i) => {
       const el = blobEls.current[i];
       if (!el) return;
@@ -681,6 +766,59 @@ export function BlobScene({
       const pointerScale = lerp(1, path.scale, gather);
       const width = lerp(captured.width, INK_POINTER_SIZE * pointerScale, entryShrink);
       const height = lerp(captured.height, INK_POINTER_SIZE * pointerScale, entryShrink);
+      if (cutting) {
+        const cut = inkSeat(events[i].id);
+        cuts.boxes[i * 3 + 2] = 0;
+        cuts.masks[i] = null;
+        cuts.spans[i] = null;
+        cuts.fill[i] = 0;
+        cuts.drain[i] = 0;
+        cuts.open[i] = 1;
+        cuts.paint[i] = null;
+        cuts.tint[i] = 0;
+        const half = cut ? cut.size / 2 : 0;
+        const onScreen = !!cut && cut.x + half > 0 && cut.x - half < vw && cut.y + half > 0 && cut.y - half < vh;
+        // the gallery seats only the memories near the focus: once it has placed
+        // any, one with no seat is not among them
+        const extra = cut ? !becomesArtifact || !onScreen || cut.opacity < 0.08 : !carouselContainsOffset(offset) || hasInkSeats();
+        if (extra) {
+          // not among the vessels on screen: its opening run backwards where it
+          // lies, a few at a time, all gone before the first cutout fills (timed
+          // from when it was known, so a late answer never snaps it away)
+          if (!closeSeen.current.has(i)) closeSeen.current.set(i, entryTime);
+          const start = Math.max(INK_ENTRY.descEnd + (blobs[i].seed / 10) * CLOSE_SPREAD_MS, closeSeen.current.get(i)!);
+          cuts.fade[i] = 1;
+          cuts.open[i] = 1 - flowProgress(entryTime, start, start + CLOSE_MS);
+          return;
+        }
+        // the gallery has not placed its seats yet: leave the wash as it is
+        if (!cut) { cuts.fade[i] = 1; return; }
+        if (!cutSeen.current.has(i)) cutSeen.current.set(i, entryTime);
+        const from = Math.max(INK_ENTRY.headerEnd, cutSeen.current.get(i)!);
+        const travel = flowProgress(entryTime, from, from + SEAT_DRIFT_MS);
+        // the fill begins as the wash settles onto its seat, with no pause between
+        const fill = flowProgress(entryTime, from + SEAT_DRIFT_MS * SEAT_FILL_FROM, INK_ENTRY.unfoldEnd - 300);
+        const box = cut.size * lerp(INK_CUT_SCALE, 1, growth);
+        // the wash drifts onto its seat, gathering to about its vessel's own size
+        const cx = lerp(captured.x, cut.x, travel), cy = lerp(captured.y, cut.y, travel);
+        const side = lerp(captured.width, box * SEAT_GATHER, travel);
+        el.style.animation = "none";
+        el.style.scale = "1";
+        el.style.left = `${cx - cr.left}px`; el.style.top = `${cy - cr.top}px`;
+        el.style.width = `${side}px`; el.style.height = `${side}px`;
+        el.style.transform = `matrix(${lerp(captured.a, 1, travel)}, ${lerp(captured.b, 0, travel)}, ${lerp(captured.c, 0, travel)}, ${lerp(captured.d, 1, travel)}, ${-side / 2}, ${-side / 2})`;
+        cuts.boxes[i * 3] = cut.x; cuts.boxes[i * 3 + 1] = cut.y; cuts.boxes[i * 3 + 2] = box / 2;
+        cuts.masks[i] = cut.mask;
+        cuts.spans[i] = cut.span;
+        cuts.fill[i] = fill;
+        // spent by the time the paint is part way up, so no wash lingers over its cutout
+        cuts.drain[i] = flowProgress(fill, 0, 0.6);
+        cuts.fade[i] = lerp(1, cut.opacity, travel) * letGo;
+        // its colour runs into its vessel's on the way
+        cuts.paint[i] = vesselPaint[i];
+        cuts.tint[i] = travel;
+        return;
+      }
       el.style.animation = "none";
       el.style.scale = "1";
       if (lite) {
@@ -706,7 +844,7 @@ export function BlobScene({
       el.style.opacity = `${lerp(captured.opacity, 1, entryShrink) * lerp(1, becomesArtifact ? seat.opacity : 1, unfold) * (becomesArtifact || entryReduced ? 1 - flowProgress(growth, 0.01, entryReduced ? 1 : 0.24) : 1)}`;
       if (entryShrink > 0.98) el.style.background = blobs[i].color.match(/#[0-9a-f]{6}/i)?.[0] ?? MEMORY_COLORS[0];
     });
-  }, [landingArrival, entryTime, entryShrink, entryReduced, gallerySlot, landingFocusSlot, blobs, scale, vw, vh]);
+  }, [landingArrival, entryTime, entryShrink, entryReduced, gallerySlot, landingFocusSlot, blobs, events, vesselPaint, washOn, scale, vw, vh]);
 
   /* ─── initial pan offset (center the canvas) ─── */
   useEffect(() => {
@@ -1043,15 +1181,16 @@ export function BlobScene({
         const { width, height } = caption.getBoundingClientRect();
         const left = a.anchorX - 8 - (a.textAlign === "right" ? width : 0);
         const top = a.anchorY - 4;
-        const inset = LANDING_CAPTION_INSET;
-        const shiftX = clamp(left, inset, Math.max(inset, cr.width - inset - width)) - left;
-        const shiftY = clamp(top, inset, Math.max(inset, cr.height - inset - height)) - top;
+        const insetX = captionSafe(cr.width, LANDING_CAPTION_SAFE.x);
+        const insetY = captionSafe(cr.height, LANDING_CAPTION_SAFE.y);
+        const shiftX = clamp(left, insetX, Math.max(insetX, cr.width - insetX - width)) - left;
+        const shiftY = clamp(top, insetY, Math.max(insetY, cr.height - insetY - height)) - top;
         return {
           ...a,
           anchorX: a.anchorX + shiftX,
           anchorY: a.anchorY + shiftY,
-          dotX: clamp(dotX + shiftX, inset, cr.width - inset),
-          dotY: clamp(dotY + shiftY, inset, cr.height - inset),
+          dotX: clamp(dotX + shiftX, insetX, cr.width - insetX),
+          dotY: clamp(dotY + shiftY, insetY, cr.height - insetY),
           fitted: true,
         };
       });
@@ -1414,7 +1553,7 @@ export function BlobScene({
   const labelsFade = clamp(1 - morphVal * 5, 0, 1) * entryLabels;
   // Only the legacy blend field pans; landing marks stay in screen coordinates.
   const labelShift = !classicChrome && morphVal < 0.05 ? `translate(${panState.x}px, ${panState.y}px)` : undefined;
-  const captionShows = classicChrome ? captionWaves.at(captionNow) : [];
+  const captionShows = classicChrome && captionWaves ? captionWaves.at(captionNow) : [];
   const showOf = new Map(captionShows.map((s) => [s.idx, s]));
   captionShownRef.current = blobs.map((_, i) => showOf.has(i));
   captionWords.current = blobs.map((_, i) => captionPresence(showOf.get(i), captionNow, captionReduced));
@@ -1549,7 +1688,7 @@ export function BlobScene({
             padding: "4px 8px",
             margin: "-4px -8px",
             width: classicChrome ? "max-content" : undefined,
-            maxWidth: classicChrome ? `calc(100vw - ${LANDING_CAPTION_INSET * 2}px)` : undefined,
+            maxWidth: classicChrome ? LANDING_CAPTION_MAX_WIDTH : undefined,
             boxSizing: classicChrome ? "border-box" : undefined,
             color: captionColor,
             pointerEvents: buried || !shown ? "none" : "auto",
@@ -1746,7 +1885,7 @@ export function BlobScene({
         {classicChrome && (
           <WatercolorField width={canvasWidth} height={canvasHeight} blobs={washBlobs}
             blobEls={blobEls} containerRef={containerRef} tune={washTune}
-            resolution={fieldResolution} presenceRef={washPresence} wordsRef={captionWords} onReady={onWashReady} />
+            resolution={fieldResolution} presenceRef={washPresence} wordsRef={captionWords} cutsRef={washCuts} onReady={onWashReady} onSettling={onWashesSettling} />
         )}
 
         {/* ═══ CONNECTION LINES (SVG overlay) ═══ */}
@@ -1797,10 +1936,10 @@ export function BlobScene({
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.48]"
-        style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryPaper : undefined }}
+        style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
       />
       <div className="absolute inset-0 pointer-events-none" style={{
-        opacity: entryPaper,
+        opacity: entryVignette,
         background: classicChrome
           ? "radial-gradient(ellipse at center, transparent 22%, rgba(0,0,0,0.2) 100%)"
           : "radial-gradient(ellipse at center, transparent 32%, rgba(0,0,0,0.14) 100%)",
@@ -2022,6 +2161,10 @@ export function BlobScene({
                 alignItems: "stretch",
                 gap: 28,
                 width: "fit-content",
+                opacity: introWaiting ? 0 : undefined,
+                animation: landingIntro && !introWaiting
+                  ? `landingIntro ${LANDING_INTRO.durationMs}ms ${LANDING_INTRO.ease} ${LANDING_INTRO.delayMs}ms both`
+                  : undefined,
               }}
             >
               <p
@@ -2048,7 +2191,7 @@ export function BlobScene({
               <button
                 type="button"
                 className="landing-enter-btn"
-                disabled={!!landingArrival}
+                disabled={!!landingArrival || introWaiting}
                 onClick={(e) => {
                   e.stopPropagation();
                   onNewMemory();
@@ -2065,7 +2208,7 @@ export function BlobScene({
                   appearance: "none",
                   WebkitAppearance: "none",
                   cursor: "pointer",
-                  pointerEvents: landingArrival || (returnReveal && !headerShown) ? "none" : "auto",
+                  pointerEvents: landingArrival || introWaiting || (returnReveal && !headerShown) ? "none" : "auto",
                   color: headerOnDark ? HEADER_LIGHT.mark : HEADER_INK.mark,
                   fontSize: "clamp(12px, calc(12px + (16 - 12) * ((100vw - 390px) / (1024 - 390))), 16px)",
                   lineHeight: 1.5,
@@ -2150,6 +2293,16 @@ export function BlobScene({
 
       {/* ═══ KEYFRAMES ═══ */}
       <style>{`
+        @keyframes landingIntro {
+          from { opacity: 0; transform: scale(${LANDING_INTRO.from}); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes landingIntro {
+            from { opacity: 0; transform: none; }
+            to { opacity: 1; transform: none; }
+          }
+        }
         @keyframes blobFloat0 {
           0%, 100% { transform: translate(-50%, -50%) rotate(0deg) translateX(0) translateY(0); }
           25% { transform: translate(-50%, -50%) rotate(15deg) translateX(40px) translateY(-60px); }

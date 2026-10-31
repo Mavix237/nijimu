@@ -628,6 +628,7 @@ export function VesselGalleryProvider({
         blurPx={seat.blurPx}
         maxViewportWidth={GALLERY_VESSEL_MAX_WIDTH / (vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1))}
         onPick={pickRef.current ? pick : undefined}
+        onReady={seat.onFrame}
       />
     );
   }, [tuneFor, field]);

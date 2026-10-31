@@ -41,7 +41,8 @@ import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE, UNDER
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
-import { PondWater, type PondProps, POND_WAVES_GLSL, POND_SURFACE_GLSL } from "../components/PerspectivePond";
+import { PondWater, type PondProps, POND_BACKDROP, POND_WAVES_GLSL, POND_SURFACE_GLSL } from "../components/PerspectivePond";
+import { POND_PIGMENT_GLSL, createPondPigmentUniforms } from "../lib/pondPigment";
 import { PAGE_HEADER_MARK, PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
 import { PillButton } from "../components/PillButton";
@@ -464,6 +465,7 @@ const waterVertex = /* glsl */ `
 const waterFragment = /* glsl */ `
   ${POND_WAVES_GLSL}
   ${POND_SURFACE_GLSL}
+  ${POND_PIGMENT_GLSL}
   ${VOLUME_GLSL}
   ${CEILING_GLSL}
   varying vec3 vWorld;
@@ -473,9 +475,8 @@ const waterFragment = /* glsl */ `
     vec3 n = pondSurfaceNormal(p, flow);
     vec3 eye = normalize(cameraPosition - vWorld);
     vec3 sky = vec3(.888, .902, .897);
-    vec3 above = pondSurfaceColor(p, flow, n, eye);
-    float haze = 1.0 - exp(-max(0.0, -p.y - 8.0) * .028);
-    above = mix(above, sky, haze);
+    vec3 above = pondAboveColor(p, pondSurfaceColor(p, flow, n, eye), n, eye);
+    above = pondPigment(p, n, eye, above);
     above += (hash(gl_FragCoord.xy) - .5) * .017;
     float aboveAlpha = 1.0 - smoothstep(140.0, 400.0, -p.y);
     // Above the crossing the frame is the pond, and nothing else.
@@ -1062,6 +1063,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     uTrailTimes: { value: Array.from({ length: POND_TRAIL_SLOTS }, () => new THREE.Vector2(-99, 0)) },
     uSheetDrop: { value: new THREE.Vector4(0, 0, 0, 0) },
     uSheetShape: { value: new THREE.Vector4(1, 1, 1, 0) },
+    ...createPondPigmentUniforms(),
   }));
   const illumination = useKept(() => ({
     uAscentIncident: { value: 0 },
@@ -1167,6 +1169,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     // the stain comes in with the colour step and stays on the glass after it: the water lets
     // the colour go on release, the memory keeps it
     vesselTune.memoryTintAmount *= smooth.current.stain;
+    vesselTune.memoryTintDepth *= smooth.current.stain;
     vesselTune.memoryFlash *= smooth.current.stain;
     const seed = filmUniforms.uSeed.value;
     const air = [fog.r, fog.g, fog.b] as const;
@@ -2962,7 +2965,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   return (
     <main ref={hostRef} style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
       pointerEvents: leaving ? "none" : undefined,
-      background: resume ? SINK_WASH : "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}
+      background: resume ? SINK_WASH : POND_BACKDROP }}
       onPointerMove={pointerAsHand}
       onPointerLeave={pointerOut}>
       <MemoryPondPage {...pondEntry} active={invitation && (pondEntry?.active ?? true)}

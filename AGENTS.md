@@ -4,13 +4,114 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Pigment drops on the pond (2026-10-31)
+
+The pond's prompt ripples are no longer spontaneous: each is made by a drop
+of the landing's paint (`POND_PIGMENTS`: `LANDING_TONES` without cloud, a
+fixed walk per visit) landing on the prompt's place
+(`components/PondPigmentDrops.tsx`, mounted by `PondWater`). The drop is
+drawn flat in screen space, as the landing's cutouts are: a slim teardrop of
+the paint's deeper tone (`POND_PIGMENT_DEEPS`, the vessels' foot-band tone;
+narrow foot, straight sides), no light, a soft wandering
+edge, sized as a drop would be where it lands, a little soft-focused (`uSoft`, ~.8 px + .22 of its size) and
+motion-blurred back along its way by its speed (`SHUTTER_S` .025 s, 12
+taps, a soft gain keeping its body whole). It does not vanish at the
+surface: for `POND_DROP_SINK_S` (1.1 s) it is seen going down to the ink's
+head — placed where the shader draws that head, down the refracted ray,
+let hang — checked by the water at once (it rounds, its smear goes),
+swelling, softening and thinning while the ink comes up round it. The ink
+starts from the drop's own size; `inkHead`/`inkSpread` (a quick plunge, then
+the slow sink) are written once in TS and printed into the shader, so the
+two meet. It comes in on a slant, `POND_DROP_ANGLE_DEG` (−18: 18° anticlockwise
+from the top of the screen) — down from above, leaning in a little from the
+left — from off screen, at one even speed (`dropTravel`).
+It lands as the cue's ripple begins: the cue's clock starts at
+`-POND_DROP_FALL_S` (1.5 s) so the first drop has fallen, `pondPromptCue`
+takes negative elapsed (age counts down to the landing) and reports `cycle`.
+The landing leaves ink (`lib/pondPigment.ts`, `POND_PIGMENT_GLSL`, applied in
+the above-water branch of the descent's `waterFragment` and in
+`PerspectivePond`'s own shader): a surface bloom and, seen through the
+refracting surface, five upright slices of a plume — a head rolling into two
+curls, the column behind it, tendrils, and two strands of threads drifted
+apart so the trace folds over itself. Every strand, slice and plume is laid
+over the water as multiply, so overlaps within a plume and between plumes go
+deeper and mix; deeper ink pales toward clear (`inkDepthTone`). The ink
+wears the landing washes' paper tooth (`POND_INK_GRAIN` 2.2 at
+`POND_INK_GRAIN_PX` .62 px, a little finer than theirs, the same three turned octaves of screen-space
+noise as WatercolorField's look, lifting and thinning its cover), and it
+blurs as it fades (`soften`: its shapes widen keeping their weight, its
+threads run together) — only late in its life: with time from 50% to 92%
+of it, and, from 40–65% of it on, where it has sunk to just above where it
+thins away. A young plume stays sharp all the way down. The ink is the
+paint thinned in the water, a lighter, quieter tone of it
+(`POND_PIGMENT_LIGHTS`: l +.2, chroma ×.7). It opens wide
+but stays in frame (`POND_INK_SCALE` 2.5, spread to ~.75 model units; the
+shader's bounds sit well past the curls and the late blur so no edge is cut) and sinks steadily through
+its life, thinning away between depths `POND_INK_FADE` (1.3–2.15 model units); the surface's slope bends it, more the
+deeper it lies, and the water is let be clearer over it than its own fresnel
+(`clear`), so the trace can be followed. It hangs `POND_INK_HANG` (1.6×) deeper on
+screen than true for the nearest prompt (`POND_INK_HANG_NEAR` 14 from the
+eye), and farther plumes longer by (distance / 14)^1.3 up to 1.8×
+(`inkHang`), since the same depth looks shorter the farther off it is: every
+plume goes about as far down the screen, ending near its foot. A longer hang
+draws the threads finer down the slice (`stretch`), so it shows more of them
+rather than smearing them so it reads falling from this low eye; four round-robin
+slots (`uInk`/`uInkTint`), `POND_INK_LIFE_S` 20 s at most. Each landing stains
+the water up the screen, after the vessels' tint (`uPondTone`,
+`uPondToneDeep`): one gradient with no band, a filter strongest at the foot
+of the screen (`POND_TONE_STAIN` .18, faint) in the paint's deeper tone (l −.1,
+chroma ×1.25, `POND_PIGMENT_DEEPS`), easing into the tone itself and
+thinning smoothly to clear by 55% of the height. The tint holds until the
+next drop has landed and spread, then crossfades to that drop's: it waits
+`POND_TONE_DELAY_S` (2.6 s) after the landing and crosses over
+`POND_TONE_CROSSFADE_S` (3 s, `pondToneCrossfade`; the first one simply
+comes in), so one colour
+replaces the last and they never accumulate. The rings glow white on their
+crests, the light gathered in broad soft swells round each ring rather than
+broken glints, with a shade in their troughs (`rippleLight`), for touches too
+(voice pulses at .45). The cursor's mark is no longer a ring: a small glowing
+white sphere (`sphereVertex`/`sphereFragment`, radius `SPHERE_RADIUS` .045)
+resting in the water — not floating, no shade — riding the swell and passing
+rings as one body, its foot under the surface (depth-tested), with a soft
+eye-facing glow round it (`glowVertex`/`glowFragment`). It is evenly white,
+unshaded. A press pushes it most of the way under and holds it there until
+let go (`uTap` pinned while `holdRef` > 0), its glow dimmed, and while held
+it goes on stirring the water as one continuous train, not ring by ring:
+`holdWave` in `POND_WAVES_GLSL`, driven by `uHold` (x, z, when the hold
+began, when it was let go — far ahead while held): each point carries the
+wave sent out when it was reached (`HOLD_WAVE_SPEED` .6, `HOLD_WAVE_LENGTH`
+.34, `HOLD_WAVE_HEIGHT` .032), so it spreads evenly and goes on outward after
+release; `rippleLight` lights it too. Its glow is faint (.3/.12); "Hold to
+begin" sits beside it. A press on the pond is a gentle, slow ripple: strength .7,
+marked slow (`PondTouch.slow`, encoded as strength + `POND_SLOW_DROP` 10 in
+`uDrops`), so `rippleField` and `rippleLight` run its train on a clock at
+`POND_SLOW_PACE` (.65) of the pond's. Prompt drops and
+voice pulses keep their pace. All of it is gated by `uPondLife`,
+which `PondPigmentDrops` raises while mounted and zeroes on unmount, so the
+descent's later shots are unchanged. Reduced motion keeps the earlier still
+ripple, no drops, ink or tone.
+The water seen from above wears the page's grey, not the old grey-green:
+`pondAboveColor` keeps its light and shade but takes `POND_PAPER` (the
+landing's #e4e4e6) as its colour and keeps only `POND_SHADE` (.45) of
+whatever darkening falls below it (its highlights whole), and the page behind the pond (`MemoryPondPage`,
+the descent host, the still fallback) is `POND_BACKDROP`, the same grey.
+Over that grey the water keeps a faint natural tint of its own
+(`POND_NATURAL`, a cool blue-green multiply): full where the eye looks down
+into it near at hand, clear where it only mirrors the sky, read from the
+eye's angle so it lies still under the waves. The
+water under the surface keeps its own palette. The surface's wrinkles
+(chop, grain, light fibres in `POND_WAVES_GLSL`/`POND_SURFACE_GLSL`) run at
+about .6 of their former frequency, for the whole pond.
+
 ## Fixed landing field (2026-10-30)
 
 The landing (`BlobScene` with `classicChrome`) uses a viewport-sized field and
 caption layers. Dragging, touch gestures and wheel input do not pan it; its
 blobs and captions retain their ambient animation. Legacy blend previews keep
 their existing larger field and movement controls.
-Landing caption boxes are measured against the viewport with a 20px inset;
+Landing caption boxes are measured against the viewport with a safe zone
+(`LANDING_CAPTION_SAFE`: 6% of the width at the sides, 8% of the height top
+and bottom, 28–72px; was a flat 20px);
 long titles wrap, and their text and dots shift inward as the washes drift.
 
 The landing's washes (`WatercolorField`, tuned live by the "tune" panel,
@@ -18,12 +119,44 @@ The landing's washes (`WatercolorField`, tuned live by the "tune" panel,
 wear the colour step's tones: `WASH_TONES` in `BlobScene` samples
 `lib/homePaletteField.ts` per `MEMORY_COLORS` slot (cloud is mist's pale top;
 the second slate is the field's purple at .8 chroma). A cursor stroke thins
-the paint under it (`wipe`, "paper drawn in", 1.3× the brush) so clear paper
+the paint under it (`wipe`, "paper drawn in", 1.05× the brush, in streaks
+continuous along the stroke) so clear paper
 is carried into the washes; tide lines are drawn only near a wash's resting
 rim, never where stirred paint thins inside one. Paint stirred while the
 washes open follows them with a 0.3 s lag (`GROW_RELAX_S`) instead of snapping
 back when the stirring stops. Wash centres keep `BLOB_MIN_GAP` (12% of the
-field) apart, so fewer pool into one field.
+field) apart, so fewer pool into one field. About a third
+(`BLOB_EDGE_SHARE`) are centred on the frame's edge, roughly half outside it.
+
+Enter's ink entry no longer turns the washes into dots, and the washes keep
+living through it (flowing, joining, stirred by the cursor; the paint only
+returns faster, `ENTRY_RELAX_S`). Each memory the gallery shows on screen has
+a mask waiting at its seat — its vessel's outline at `INK_CUT_SCALE` (.5) of
+the seat, softened and wandering like a wash's edge — and its wash drifts
+there and fills it with its own paint from the foot up, an uneven wet front,
+draining into it as it does, nearest the focus first; the other washes close
+where they lie the way they opened (`WashCuts.open`: a round one shrinks away,
+a free one fades through its ink; `CLOSE_MS`, staggered over `CLOSE_SPREAD_MS`,
+all gone before the first fill), so the screen holds as many as the gallery. A seated wash
+runs into its vessel's own colour as it drifts (the memory's colour pick,
+which stains the glass: `feeling` or `look.oklch`; `WashCuts.paint`/`tint`),
+and its cutout keeps its colour to a band low down (from about .45 of its
+height, deepest toward the foot), washed out above it as the glass is; its border is mostly spared that
+fade, so the outline reads all the way round. A
+wash with no seat once the gallery has placed any (it seats only those near
+the focus) is one of these. A seated wash drifts there in `SEAT_DRIFT_MS`,
+gathering to `SEAT_GATHER` of its box; its fill begins as it settles
+(`SEAT_FILL_FROM` of the drift), and it is spent by the time its paint is .6
+of the way up. A cutout's edge is firmer than its wash's, with pigment pooled
+at the border and a stronger tide line, so the outline reads. The fill pools
+deeper at the border in blotches, is denser low and clearer through its top
+half, as the vessels are (`WashCuts`, uCut/uCutB/uAtlas in the wash shader).
+The gallery tells the landing where each seat will finally sit and keeps the
+outline of its vessel's first whole frame (`lib/inkCutouts.ts`, via
+`ArtifactSeat.onFrame` → `VesselArtifact.onReady`); a mask with no outline yet
+is a soft disc that eases into it. The vessel grows from its cutout's size,
+fading in over 0–75% of the growth while the cutout fades across all of it.
+Reduced motion and the no-WebGL fallback keep the earlier dot entry.
 
 ## Gallery artifact width cap (2026-10-30)
 
@@ -165,6 +298,11 @@ The pond, descent's top surface, and the overhead surface during the colour →
 naming rise share `pondSurfaceNormal` and `pondSurfaceColor`: ripple/swell/grain
 normals, wind-driven ribbons, clouds and the low sun. The overhead view mirrors
 the eye across the water and reuses the same world coordinates and clock.
+Seen from above (the pond, and the descent before the eye goes under) the
+water also passes through `pondAboveColor` (2026-10-31, "clearer"): where the
+eye looks down into it the body shows through a shade deeper with the swell's
+shading 1.25× sharper, and the distance haze begins 18 units out at .011
+(the live pond's was 8 units at .028, a fog over most of the view).
 Its former independent `ceilingHeight` and extra surface caustic pattern are
 removed. `underwaterBodyColor` supplies the same near-surface colour gradient
 to the surface plane and full-frame volume. The overhead texture feathers into the same background over grazing views,
@@ -1818,17 +1956,23 @@ form/m2, morph, photo, color, distance, transcript and original assessment. It d
 not reopen the older `/record/shape/feeling` route or reassess the handled memory.
 
 
-**Partial feeling tint (2026-10-10; gradient 2026-10-30).** `vesselTint.ts` maps
-the saved OKLCH pick into a faint glass stain (`MEMORY_STAIN` .36, chroma × .65).
-The shared glass shader (`feelingTint`) lays it as a linear gradient up the
-vessel: full at the glass's lowest point, clear by half its height, measured
-from each glass's own lo/hi (`GlassWrite.span` → `uTintSpan`; the descent
-re-measures its morphing glass in `followWall`). It uses transmission colour
-without adding alpha or whitening the photo. One strength serves the colour
-step, naming and the gallery — naming's former rim-only override
-(`NAMING_STAIN`, `memoryTintSpread`) is gone, so the colour step shows the tint
-the vessel arrives with. Descent reduces the uniform room cast from .4 to .06;
-naming/gallery use their neutral room plus this same stain. Standalone vessel
+**Partial feeling tint (2026-10-10; gradient 2026-10-30; continuous 2026-10-31).**
+`vesselTint.ts` stains the glass with the saved OKLCH pick itself
+(`memoryTintLight/Chroma/Hue`) — every point of the colour field
+(`sampleHomePalette`, the landing's palette) is its own shade; it no longer
+snaps to the ten `LANDING_TONES`. The descent's frame loop reads the pick each
+frame, and the field writes it on every pointer move, so the glass follows a
+drag across the field as it moves. The shared
+glass shader (`feelingTint`) holds a deeper band of that tone (l −.1, chroma
+×1.25; `MEMORY_FOOT` .75) over the lowest 3% of the height, blends it into the
+tone itself by 16%, and fades the tone linearly to clear by half the height
+(`MEMORY_STAIN` .6). The tone is a filter over what the glass shows (a pale
+ground reads as the tone), and `tintAssert` lifts the glass's alpha so it shows
+through the thin face. Heights come from each glass's own lo/hi
+(`GlassWrite.span` → `uTintSpan`; the descent re-measures its morphing glass
+in `followWall`). One strength serves the colour step, naming and the gallery.
+Descent reduces the uniform room cast from .4 to .06; naming/gallery use their
+neutral room plus this same stain. Standalone vessel
 studies default to zero stain. Rhythm now uses the thumb–index
 aperture interaction described above, superseding the earlier gesture proposals.
 

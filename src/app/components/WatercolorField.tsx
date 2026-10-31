@@ -17,6 +17,30 @@ import type { WashTune } from "../lib/washTune";
  * float render targets the washes are painted directly and do not stir.
  */
 
+/**
+ * The ink entry's cutouts (BlobScene writes it every frame). While `on`, each
+ * wash bound for the gallery has a mask waiting at its vessel's seat — the
+ * vessel's outline (`masks`, white inside; a soft disc until one arrives) in a
+ * box (`boxes`, centre x, y and half-side in container px, half 0 for none).
+ * The wash keeps living and fills its mask with its own paint from the foot
+ * up (`fill`), draining into it as it does (`drain`); `fade` lets a wash go.
+ */
+export interface WashCuts {
+  on: boolean;
+  boxes: number[];
+  fill: number[];
+  drain: number[];
+  fade: number[];
+  /** How far a wash is still open, 1 to 0: one not bound for the gallery closes the way it opened. */
+  open: number[];
+  /** The vessel's own paint for a wash bound for it (lit and deep rgb, 0–1), and how far the wash has taken it on. */
+  paint: (number[] | null)[];
+  tint: number[];
+  masks: (HTMLCanvasElement | null)[];
+  /** Each outline's top and bottom down its box, 0…1. */
+  spans: ([number, number] | null)[];
+}
+
 export interface WashBlob {
   /** Pigment and its deeper tone, 0–1 rgb. */
   color: [number, number, number];
@@ -28,6 +52,14 @@ export interface WashBlob {
 }
 
 const MAX = 24;
+/** The cutouts' outlines share one texture, a tile per wash. */
+const ATLAS_COLS = 6, ATLAS_ROWS = 4, ATLAS_TILE = 128;
+/** A cutout's outline eases in over this when it arrives late, rather than snapping from the disc. */
+const MASK_EASE_MS = 350;
+/** The soft disc's top and bottom down its box, before an outline arrives. */
+const DISC_SPAN: [number, number] = [0.12, 0.88];
+/** Through the ink entry the paint returns this quickly (s), so it follows the washes to their seats while still flowing. */
+const ENTRY_RELAX_S = 0.3;
 const FRAME_MS = 1000 / 30;
 /** While the paint is moving it is painted at full rate. */
 const STIR_FRAME_MS = 1000 / 60;
@@ -53,6 +85,8 @@ const REVEAL = { second: 650, restFrom: 1500, lastStart: 3800, jitter: 200, grow
  */
 const FREE_REVEAL = { reachFrom: 0.72, growLonger: 0.35, fadeLonger: 0.9 };
 const revealSpan = REVEAL.lastStart + REVEAL.jitter + REVEAL.growMs * (1 + FREE_REVEAL.growLonger);
+/** The share of the opening after which the field counts as nearly painted (`onSettling`). */
+const REVEAL_NEAR = 0.8;
 /** 1 for a free, elongated wash, 0 for a complete round one. */
 const freeness = (comp: number) => {
   const x = Math.min(1, Math.max(0, (0.75 - comp) / 0.4));
@@ -131,6 +165,11 @@ uniform float uShow[MAX];
 /** Each wash's own tide line: deeper while its memory's words are on show. */
 uniform float uTide[MAX];
 uniform float uJoin, uWarp, uMorph;
+/** The ink entry's cutouts: centre and half-side of the box (container px; half 0 for none), and how full it is. */
+uniform vec4 uCut[MAX];
+/** How far the wash has drained into it, how far its outline has come in, and the outline's top and foot down the box. */
+uniform vec4 uCutB[MAX];
+uniform sampler2D uAtlas;
 bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, out float vis, out float tide) {
   D = 0.; comp = 0.; pig = vec3(0.); pigDeep = vec3(0.); vis = 0.; tide = 0.;
   float sumW = 0., compW = 0., cw = 0., visW = 0., tideW = 0.;
@@ -140,7 +179,7 @@ bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, o
     vec4 b = uBlob[i];
     vec4 l = uLook[i];
     vec2 d = (p - b.xy) / b.z;
-    if (dot(d, d) > 2.8) continue;
+    if (dot(d, d) > 2.8 && uCut[i].z <= 0.) continue;
     float bc = l.a, s = b.w;
     float t = uTime * uMorph * (.03 + .025 * fract(s * 7.13));
     // the body turns and stretches slowly, so no wash keeps one outline
@@ -154,12 +193,48 @@ bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, o
     float dist = length(q + w * mix(.85, .24, bc) * uWarp + vec2(streak, streak * .25));
     // uDeep.a carries the blob's own opacity
     float dens = pow(smoothstep(1.05, 0., dist), mix(1.7, 1., bc)) * mix(.58, 1.05, bc) * uDeep[i].a;
+    float show = uShow[i];
+    float tideI = uTide[i];
+    if (uCut[i].z > 0.) {
+      vec4 cb = uCutB[i];
+      vec2 lc = (p - uCut[i].xy) / (2. * uCut[i].z) + .5;
+      // the mask's outline wanders a little, as a wash's own edge does
+      vec2 wob = vec2(fbm(lc * 3.1 + vec2(s * 4.3, uTime * .05)), fbm(lc * 3.1 + vec2(uTime * .05, s * 6.1) + 2.7)) - .5;
+      vec2 lw = lc + wob * .06;
+      float inside = step(0., lw.x) * step(lw.x, 1.) * step(0., lw.y) * step(lw.y, 1.);
+      vec2 cell = vec2(mod(float(i), ${ATLAS_COLS}.), floor(float(i) / ${ATLAS_COLS}.));
+      float outline = TEX(uAtlas, (cell + clamp(lw, .004, .996)) / vec2(${ATLAS_COLS}., ${ATLAS_ROWS}.)).r * inside;
+      float disc = smoothstep(.46, .24, length(lw - .5));
+      float shape = mix(disc, outline, cb.y);
+      // down the outline itself, 0 at its top and 1 at its foot
+      float down = clamp((lc.y - cb.z) / max(cb.w - cb.z, .05), 0., 1.);
+      // the paint rises from the foot, its front uneven and wet
+      float front = 1.08 - uCut[i].w * 1.25 + (fbm(vec2(lc.x * 4.2 + s * 2.3, uTime * .25)) - .5) * .18;
+      float filled = smoothstep(front - .07, front + .07, down);
+      // pooling deeper at the border as it dries, in blotches; denser low, as the vessels hold their photo low
+      float blotch = fbm(lc * 4.5 + s * 7.1 + uTime * .02);
+      float rim = 1. - smoothstep(.45, .92, shape);
+      // the colour keeps low, but the border holds most of its weight all the way round
+      float low = mix(mix(.55, 1.12, smoothstep(.5, .95, down)), 1., rim * .7);
+      float level = mix(.58, 1.05, bc) * (.72 + .38 * blotch + rim * (.7 + .8 * blotch)) * low;
+      float fillD = shape * filled * level * uDeep[i].a;
+      // the wash itself drains into the cutout as it fills
+      dens *= 1. - cb.x;
+      float share = fillD / max(dens + fillD, 1e-4);
+      dens = max(dens, fillD);
+      // the cutout's colour keeps to a band low down, as the vessels' stain does,
+      // and is washed out above it, as their glass is clear
+      show *= mix(1., mix(.08, 1., smoothstep(.45, .85, down)), share * (1. - rim * .75));
+      // a wash keeps its own edge, firmer in the cutout, with a stronger tide line so the outline reads
+      bc = mix(bc, max(bc, .8), share);
+      tideI = mix(tideI, tideI * 1.8 + .7, share);
+    }
     // a p-norm, not a sum: washes join where both are wet, not through their faint tails
     D += pow(dens, uJoin);
     sumW += dens;
     compW += bc * dens;
-    visW += uShow[i] * dens;
-    tideW += uTide[i] * dens;
+    visW += show * dens;
+    tideW += tideI * dens;
     float w2 = dens * dens;
     cw += w2;
     col += l.rgb * w2;
@@ -219,6 +294,7 @@ void main() { vUv = aPos * .5 + .5; gl_Position = vec4(aPos, 0., 1.); }
 const FRAG1 = `
 precision highp float;
 varying vec2 vUv;
+#define TEX texture2D
 ${DECL}${NOISE}${WASH}${LOOK}
 void main() {
   vec2 p = vec2(vUv.x, 1. - vUv.y) * uRes;
@@ -250,7 +326,9 @@ vec2 nT() { return vUv + vec2(0., uTexel.y); }
 `;
 
 /** The washes as they would lie undisturbed: (pigment·D, D), (deep·D, character·D) and (shown·D, tide·D). */
-const TARGET3 = `${H3}${DECL}${NOISE}${WASH}
+const TARGET3 = `${H3}
+#define TEX texture
+${DECL}${NOISE}${WASH}
 layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
 layout(location = 2) out vec4 o2;
@@ -389,14 +467,15 @@ void main() {
     vec2 a = uSeg[k].xy, ab = uSeg[k].zw - a;
     float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-4), 0., 1.);
     vec2 d = p - (a + ab * t);
-    float r = uRadius * 1.3;
+    float r = uRadius * 1.05;
     float g = exp(-dot(d, d) / (r * r));
-    // streaks run along the stroke: noise across it, stretched along it
+    // streaks run along the stroke: noise across it, stretched along it, one
+    // pattern for the whole stroke so the trace does not break between segments
     vec2 dir = ab / max(length(ab), 1e-3);
     vec2 q = vec2(dot(p, dir) * .01, dot(p, vec2(-dir.y, dir.x)) * .035);
-    float streak = smoothstep(.3, .75, fbm(q + float(k) * 3.1));
-    float pace = smoothstep(60., 900., uSegSpeed[k]);
-    keep *= 1. - clamp(uWipe * g * pace * (.35 + .65 * streak), 0., 1.);
+    float streak = smoothstep(.3, .75, fbm(q));
+    float pace = smoothstep(30., 600., uSegSpeed[k]);
+    keep *= 1. - clamp(uWipe * g * pace * (.6 + .4 * streak), 0., 1.);
   }
   o0 = mix(texture(uA, back) * keep, texture(uTA, vUv), uRelax);
   o1 = mix(texture(uB, back) * keep, texture(uTB, vUv), uRelax);
@@ -514,7 +593,9 @@ export function WatercolorField({
   resolution,
   presenceRef,
   wordsRef,
+  cutsRef,
   onReady,
+  onSettling,
 }: {
   width: number;
   height: number;
@@ -529,8 +610,12 @@ export function WatercolorField({
   presenceRef?: React.MutableRefObject<number[]>;
   /** Read every frame: how present each wash's caption is, 0…1; its tide line deepens with it. */
   wordsRef?: React.MutableRefObject<number[]>;
+  /** Read every frame: the ink entry's cutouts, and its hold on the paint. */
+  cutsRef?: React.MutableRefObject<WashCuts>;
   /** Whether the field could be painted; without it the blob elements stay visible. */
   onReady: (ok: boolean) => void;
+  /** Once, when the washes' opening is nearly done (REVEAL_NEAR of it). */
+  onSettling?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const blobsRef = useRef(blobs);
@@ -539,6 +624,8 @@ export function WatercolorField({
   tuneRef.current = tune;
   const readyRef = useRef(onReady);
   readyRef.current = onReady;
+  const settlingRef = useRef(onSettling);
+  settlingRef.current = onSettling;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -562,12 +649,40 @@ export function WatercolorField({
     const uShow = new Float32Array(MAX).fill(1);
     const uTide = new Float32Array(MAX).fill(tuneRef.current.edge);
     const lift = new Float32Array(MAX);
+    const cutData = new Float32Array(MAX * 4);
+    const cutDataB = new Float32Array(MAX * 4);
+    /* The cutouts' outlines, a tile each, drawn into one canvas and sent up
+       whole when one changes (a handful of times per entry). */
+    const atlas = document.createElement("canvas");
+    atlas.width = ATLAS_COLS * ATLAS_TILE;
+    atlas.height = ATLAS_ROWS * ATLAS_TILE;
+    const atlasG = atlas.getContext("2d");
+    const atlasMasks: (HTMLCanvasElement | null)[] = new Array(MAX).fill(null);
+    const maskSince = new Float64Array(MAX);
+    let atlasDirty = true;
+    const atlasTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     let liftAt = -1;
     let openedAt = -1;
+    let settled = false;
     let startsAt: number[] = [];
     const opening = (now: number) => {
       if (openedAt < 0) openedAt = now;
       return now - openedAt;
+    };
+    /* A wash bound for a vessel runs into that vessel's own colour on its way. */
+    const lit = [0, 0, 0], dark = [0, 0, 0];
+    const paintOf = (i: number, b: WashBlob, cuts: WashCuts | null) => {
+      const own = cuts?.paint[i];
+      const k = own ? cuts!.tint[i] ?? 0 : 0;
+      for (let c = 0; c < 3; c++) {
+        lit[c] = b.color[c] + ((own?.[c] ?? 0) - b.color[c]) * k;
+        dark[c] = b.deep[c] + ((own?.[c + 3] ?? 0) - b.deep[c]) * k;
+      }
     };
     const readBlobs = (now: number) => {
       const ct = containerRef.current;
@@ -577,12 +692,17 @@ export function WatercolorField({
       const n = Math.min(MAX, list.length);
       const full = tuneRef.current.reach;
       const since = opening(now);
+      if (!settled && since >= revealSpan * REVEAL_NEAR) {
+        settled = true;
+        settlingRef.current?.();
+      }
       const rects: (DOMRect | null)[] = [];
       for (let i = 0; i < n; i++) rects.push(blobEls.current[i]?.getBoundingClientRect() ?? null);
       if (startsAt.length !== n) startsAt = revealOrder(rects);
       const shown = presenceRef?.current;
       const words = wordsRef?.current;
       const { edge, edgeShown } = tuneRef.current;
+      const cuts = cutsRef?.current.on ? cutsRef.current : null;
       const ease = liftAt < 0 ? 1 : 1 - Math.exp(-(now - liftAt) / TIDE_EASE_MS);
       liftAt = now;
       for (let i = 0; i < n; i++) {
@@ -594,22 +714,53 @@ export function WatercolorField({
         const f = freeness(b.comp);
         const t = since - startsAt[i];
         const fadeMs = REVEAL.fadeMs * (1 + FREE_REVEAL.fadeLonger * f);
-        const grown = openEase(t / (REVEAL.growMs * (1 + FREE_REVEAL.growLonger * f)));
-        const inked = openEase(t / fadeMs);
+        // a wash closing for the ink entry runs its opening backwards: a round one
+        // shrinks away as its ink fades, a free one fades out through its ink
+        const closing = cuts ? openEase(cuts.open[i] ?? 1) : 1;
+        const grown = Math.min(closing, openEase(t / (REVEAL.growMs * (1 + FREE_REVEAL.growLonger * f))));
+        const inked = Math.min(closing, openEase(t / fadeMs));
         // a round wash's density rises with its fade; a free one's is set early and its ink does the arriving
-        const body = inked + (openEase(t / (fadeMs * 0.45)) - inked) * f;
+        const body = inked + (Math.min(closing, openEase(t / (fadeMs * 0.45))) - inked) * f;
         const show = 1 + (inked - 1) * f;
         if (shown) shown[i] = inked;
         uShow[i] = show;
-        if (!el || !r || inked <= 0) { blobData[i * 4 + 2] = 0.0001; deepData[i * 4 + 3] = 0; continue; }
+        cutData[i * 4 + 2] = 0;
+        const mask = cuts?.masks[i] ?? null;
+        if (mask !== atlasMasks[i]) {
+          atlasMasks[i] = mask;
+          maskSince[i] = now;
+          if (atlasG) {
+            const x = (i % ATLAS_COLS) * ATLAS_TILE, y = Math.floor(i / ATLAS_COLS) * ATLAS_TILE;
+            atlasG.clearRect(x, y, ATLAS_TILE, ATLAS_TILE);
+            if (mask) atlasG.drawImage(mask, x, y, ATLAS_TILE, ATLAS_TILE);
+          }
+          atlasDirty = true;
+        }
+        const maskOn = mask ? Math.min(1, (now - maskSince[i]) / MASK_EASE_MS) : 0;
+        const half = cuts ? cuts.boxes[i * 3 + 2] ?? 0 : 0;
+        if (cuts && half > 0) {
+          // the soft disc spans most of its box; an outline its own rows
+          const span = cuts.spans[i] ?? DISC_SPAN;
+          cutData.set([cuts.boxes[i * 3] - cr.left, cuts.boxes[i * 3 + 1] - cr.top, half, cuts.fill[i] ?? 0], i * 4);
+          cutDataB.set([cuts.drain[i] ?? 0, maskOn,
+            DISC_SPAN[0] + (span[0] - DISC_SPAN[0]) * maskOn, DISC_SPAN[1] + (span[1] - DISC_SPAN[1]) * maskOn], i * 4);
+          // the cutout holds the wash's paint even once the wash itself is spent
+          paintOf(i, b, cuts);
+          lookData.set([lit[0], lit[1], lit[2], b.comp], i * 4);
+          blobData[i * 4 + 3] = b.seed;
+          deepData.set([dark[0], dark[1], dark[2], b.opacity * (cuts.fade[i] ?? 1)], i * 4);
+        }
+        if (!el || !r || inked <= 0) { blobData[i * 4 + 2] = 0.0001; if (half <= 0) deepData[i * 4 + 3] = 0; continue; }
         const from = OPEN_REACH + (FREE_REVEAL.reachFrom - OPEN_REACH) * f;
         const reach = (from + (1 - from) * grown) * full;
         const s = parseFloat(getComputedStyle(el).scale) || 1;
         const radius = (el.offsetWidth / 2) * s * reach;
-        if (radius < 1) { blobData[i * 4 + 2] = 0.0001; deepData[i * 4 + 3] = 0; continue; }
-        blobData.set([r.left + r.width / 2 - cr.left, r.top + r.height / 2 - cr.top, radius, b.seed], i * 4);
-        lookData.set([...b.color, b.comp], i * 4);
-        deepData.set([...b.deep, b.opacity * body], i * 4);
+        if (radius < 1) { blobData[i * 4 + 2] = 0.0001; if (half <= 0) deepData[i * 4 + 3] = 0; continue; }
+        const cx = r.left + r.width / 2 - cr.left, cy = r.top + r.height / 2 - cr.top;
+        blobData.set([cx, cy, radius, b.seed], i * 4);
+        paintOf(i, b, cuts);
+        lookData.set([lit[0], lit[1], lit[2], b.comp], i * 4);
+        deepData.set([dark[0], dark[1], dark[2], b.opacity * body * (cuts ? cuts.fade[i] ?? 1 : 1)], i * 4);
       }
       return n;
     };
@@ -622,6 +773,16 @@ export function WatercolorField({
       gl.uniform4fv(p.u("uDeep"), deepData);
       gl.uniform1fv(p.u("uShow"), uShow);
       gl.uniform1fv(p.u("uTide"), uTide);
+      gl.uniform4fv(p.u("uCut"), cutData);
+      gl.uniform4fv(p.u("uCutB"), cutDataB);
+      // a unit of its own, clear of the passes' textures
+      gl.activeTexture(gl.TEXTURE0 + 7);
+      gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+      if (atlasDirty) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlas);
+        atlasDirty = false;
+      }
+      gl.uniform1i(p.u("uAtlas"), 7);
       const t = tuneRef.current;
       gl.uniform1f(p.u("uJoin"), t.join);
       gl.uniform1f(p.u("uWarp"), t.warp);
@@ -825,8 +986,10 @@ export function WatercolorField({
       let lastT = performance.now();
       const draw = (now: number) => {
         raf = requestAnimationFrame(draw);
+        // through the ink entry the paint keeps flowing, but returns quickly so it can follow the washes to their seats
+        const entering = !!cutsRef?.current.on;
         const stirring = now - lastStroke < tuneRef.current.velFadeS * SETTLE_LIVES * 1000;
-        if (document.hidden || now - last < (stirring || flowing ? STIR_FRAME_MS : FRAME_MS) - 1) return;
+        if (document.hidden || now - last < (stirring || flowing || entering ? STIR_FRAME_MS : FRAME_MS) - 1) return;
         last = now;
         const dt = Math.min(1 / 30, Math.max(1 / 240, (now - lastT) / 1000));
         lastT = now;
@@ -861,7 +1024,7 @@ export function WatercolorField({
           // once stirred it follows closely but continuously, so it never jumps
           // back onto the growth when the stirring stops
           const relaxS = growing ? Math.min(GROW_RELAX_S, tuneRef.current.relaxS) : tuneRef.current.relaxS;
-          g.uniform1f(P.dye.u("uRelax"), fresh || (growing && !stirred) ? 1 : 1 - Math.exp(-dt / relaxS));
+          g.uniform1f(P.dye.u("uRelax"), fresh || (growing && !stirred && !entering) ? 1 : 1 - Math.exp(-dt / (entering ? Math.min(ENTRY_RELAX_S, relaxS) : relaxS)));
           g.uniform2f(P.dye.u("uRes"), canvas.clientWidth, canvas.clientHeight);
           g.uniform4fv(P.dye.u("uSeg"), segData);
           g.uniform1fv(P.dye.u("uSegSpeed"), segSpeed);

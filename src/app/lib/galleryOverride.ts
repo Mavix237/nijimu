@@ -30,6 +30,8 @@ export interface ArtifactSeat {
   blurPx?: number;
   /** Seats from the apex along the curve (0 at the apex): what to build first. */
   offset?: number;
+  /** Called with the seat's canvas right after its first whole frame (the ink entry keeps its outline). */
+  onFrame?: (canvas: HTMLCanvasElement) => void;
 }
 
 export type SeatDepth = ReturnType<typeof carouselSeat>;

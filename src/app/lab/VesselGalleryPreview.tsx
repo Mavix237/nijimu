@@ -621,7 +621,7 @@ export function VesselGalleryProvider({
         facing={s.facing}
         viewPitch={s.viewPitch}
         viewToken={s.facing === undefined ? undefined : `${s.facing}|${s.viewPitch}`}
-        locked={s.viewLocked}
+        holdView={s.viewLocked}
         focused={seat.focused}
         still={seat.still}
         frameloop={field.busy ? "always" : seat.frameloop}

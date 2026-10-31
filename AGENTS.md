@@ -1797,12 +1797,18 @@ form/m2, morph, photo, color, distance, transcript and original assessment. It d
 not reopen the older `/record/shape/feeling` route or reassess the handled memory.
 
 
-**Partial feeling tint (2026-10-10).** `vesselTint.ts` maps the saved OKLCH pick
-into a faint glass stain (strength .22, chroma × .65). The shared glass shader
-applies it on one broad shoulder and grazing edges, using transmission color
-without adding alpha or whitening the photo. Descent reduces the uniform room
-cast from .4 to .06; naming/gallery use their neutral room plus this same stain.
-Standalone vessel studies default to zero stain. Rhythm now uses the thumb–index
+**Partial feeling tint (2026-10-10; gradient 2026-10-30).** `vesselTint.ts` maps
+the saved OKLCH pick into a faint glass stain (`MEMORY_STAIN` .36, chroma × .65).
+The shared glass shader (`feelingTint`) lays it as a linear gradient up the
+vessel: full at the glass's lowest point, clear by half its height, measured
+from each glass's own lo/hi (`GlassWrite.span` → `uTintSpan`; the descent
+re-measures its morphing glass in `followWall`). It uses transmission colour
+without adding alpha or whitening the photo. One strength serves the colour
+step, naming and the gallery — naming's former rim-only override
+(`NAMING_STAIN`, `memoryTintSpread`) is gone, so the colour step shows the tint
+the vessel arrives with. Descent reduces the uniform room cast from .4 to .06;
+naming/gallery use their neutral room plus this same stain. Standalone vessel
+studies default to zero stain. Rhythm now uses the thumb–index
 aperture interaction described above, superseding the earlier gesture proposals.
 
 **Highlighted phrases (2026-10-10, archived 2026-10-11).** The drag-to-highlight

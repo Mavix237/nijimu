@@ -1015,8 +1015,14 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     return { sheet, rest, base, normals: new Float32Array(rest.length), groundY: sphere.lo - 0.02, sphere };
   }, [bodyKey]);
   useEffect(() => () => { vessel.sheet.geometry.dispose(); vessel.sphere.geometry.dispose(); }, [vessel]);
+  /** The glass's lowest and highest y as it is now: the stain rises from its foot to half-way. */
+  const glassSpan = useRef({ lo: -1, hi: 1 });
   const followWall = () => {
-    const wall = buildWallMap({ positions: artifact.geometry.getAttribute("position").array as Float32Array });
+    const glassPositions = artifact.geometry.getAttribute("position").array as Float32Array;
+    let lo = Infinity, hi = -Infinity;
+    for (let k = 1; k < glassPositions.length; k += 3) { lo = Math.min(lo, glassPositions[k]); hi = Math.max(hi, glassPositions[k]); }
+    glassSpan.current = { lo, hi };
+    const wall = buildWallMap({ positions: glassPositions });
     const { sheet, rest, base } = vessel;
     const pos = sheet.geometry.getAttribute("position") as THREE.BufferAttribute;
     const out = pos.array as Float32Array;
@@ -1168,7 +1174,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
       tune: vesselTune, seed, sheet: vessel.sheet, sheetMode: "draped", face: "glass", key: vesselKey,
       edgePrint: filmUniforms.uEdgePrint.value, groundY: vessel.groundY, reflect: -1, air,
     });
-    writeGlassUniforms(glassU, { tune: vesselTune, seed, key: vesselKey, patches: vesselPatches, room: VESSEL_ROOM, groundY: vessel.groundY, reflect: -1, air });
+    writeGlassUniforms(glassU, { tune: vesselTune, seed, key: vesselKey, patches: vesselPatches, room: VESSEL_ROOM, groundY: vessel.groundY, reflect: -1, air, span: glassSpan.current });
     glassU.uAboveColor.value.copy(above);
     glassU.uBelowColor.value.copy(below);
   };

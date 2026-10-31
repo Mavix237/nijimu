@@ -1,12 +1,17 @@
 import type { Oklch } from "./oklch";
 
-/** Feeling is a thin stain on parts of the glass, never an opaque body color —
-    and the colour the vessel's highlights take, flashing now and then. */
+/** How strongly the colour stains the glass at its foot. One strength for the
+    colour step, naming and the gallery, so the vessel keeps the tint it was given. */
+export const MEMORY_STAIN = .36;
+
+/** Feeling is a thin stain rising from the foot of the glass to half its height,
+    never an opaque body color — and the colour the vessel's highlights take,
+    flashing now and then. */
 export function vesselTint(pick?: Oklch) {
   return {
     memoryTintHue: pick?.h ?? 0,
     memoryTintChroma: pick ? Math.max(0, Math.min(.18, pick.c)) * .65 : 0,
-    memoryTintAmount: pick ? .22 : 0,
+    memoryTintAmount: pick ? MEMORY_STAIN : 0,
     memoryFlash: pick ? 1 : 0,
   };
 }

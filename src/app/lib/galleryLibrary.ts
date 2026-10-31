@@ -39,7 +39,7 @@ export interface ShapePlacement {
   photoSize: number;
   /** Which of the gallery stills hangs inside, by its place in the sorted set. Absent keeps the memory's own still. */
   photo?: number;
-  /** A locked camera: the seat opens here and a drag does not turn it. Null leaves the usual view, free to turn. */
+  /** A kept camera: the seat opens here and does not drift on hover; a drag still turns it (in /lab/shapes it holds still). Null leaves the usual view. */
   view: ShapeView | null;
 }
 

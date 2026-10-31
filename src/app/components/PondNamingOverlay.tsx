@@ -56,7 +56,7 @@ const ARRIVE_SETTLE_VH = 3;
  * The glass lit as this scene is lit, not as the gallery's grey wall: the
  * pale warm sky over it, the bright water under it, and a thinner, lighter
  * body — the gallery's thick-dark feet and rim read as a grey ball over
- * this much light. The memory's own stain stays in its tune.
+ * this much light. The memory's own stain stays in its tune (vesselTint).
  */
 const NAMING_ROOM: Room = { above: "#f3f3ee", below: "#e6e6e6" };
 const NAMING_LIGHT = { envAbove: 1.09, envBelow: 1.09, thickDark: 0.06, rim: 0.67, highlight: 1, keyIntensity: 1.41 };
@@ -69,8 +69,6 @@ function namingLightAt(haze: number): NamingLight {
   for (const k of Object.keys(out) as (keyof NamingLight)[]) out[k] = NAMING_LIGHT[k] + (NAMING_LIGHT_FAR[k] - NAMING_LIGHT[k]) * t;
   return out;
 }
-/** The colour gathers around the rim, where the wall turns edge-on, and the face stays clear. */
-const NAMING_STAIN = 0.36;
 
 type NamingLight = typeof NAMING_LIGHT;
 
@@ -136,10 +134,7 @@ export function PondNamingOverlay({
   const vessel = useMemo(() => galleryStateFor(draftArtifactOf(session)), [session]);
   const canvasRoom = useMemo(() => vesselCanvasScale(vessel.form, vessel.tune.morph), [vessel]);
   const namingLight = useMemo(() => namingLightAt(vessel.tune.haze), [vessel]);
-  const lit = useMemo(() => ({
-    ...vessel.tune, ...namingLight,
-    ...(vessel.tune.memoryTintAmount > 0 ? { memoryTintAmount: NAMING_STAIN, memoryTintSpread: 1 } : {}),
-  }), [vessel, namingLight]);
+  const lit = useMemo(() => ({ ...vessel.tune, ...namingLight }), [vessel, namingLight]);
   /** Where the memory is (1 = below its seat, in the water; 0 = in its seat) and how far it has appeared. */
   const liftRef = useRef(0);
   const appearRef = useRef(rising ? 0 : 1);

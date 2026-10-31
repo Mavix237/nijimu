@@ -13,11 +13,20 @@ export function defaultCarouselIndex(count: number) {
   return Math.min(5, Math.max(0, count - 3));
 }
 
+/** 0 for a square or landscape screen, rising to 1 for an upright phone
+ * (a little over twice as tall as it is wide). */
+export function portraitTall(width: number, height: number) {
+  return Math.min(1, Math.max(0, (1 - width / Math.max(1, height)) / 0.45));
+}
+
 export function carouselFrame(width: number, height: number) {
+  // An upright phone has little width to share: the memory in hand takes a
+  // larger part of it, reaching .42 of the width. Landscape is unchanged.
+  const tall = portraitTall(width, height);
   return {
     cx: width * 0.5,
     apexY: height * CAROUSEL_FOCUS_Y,
-    size: Math.min(Math.max(120, width * 0.26), 360, height * 0.48),
+    size: Math.min(Math.max(120, width * (0.26 + 0.16 * tall)), 360, height * 0.48),
   };
 }
 
@@ -42,7 +51,10 @@ export function carouselSeat(width: number, height: number, offset: number) {
     * Math.exp(-(((offset - 2) / 0.65) ** 2));
   // Open the adjacent gaps locally, keeping the five distant seats in frame.
   const focusSpacing = 0.02 * offset * Math.exp(-offset * offset / 2);
-  const x = 0.5 + offset * 0.175 * perspective + 0.016 * Math.tanh(offset * 1.5) - foregroundPull + focusSpacing;
+  // An upright phone's larger seats need more road on the near side to
+  // leave the screen before they unmount; the two nearest keep their seats.
+  const tallSpread = 0.12 * portraitTall(width, height) * Math.max(0, offset - 2);
+  const x = 0.5 + offset * 0.175 * perspective + 0.016 * Math.tanh(offset * 1.5) - foregroundPull + focusSpacing + tallSpread;
   // Stronger recession on the older side, with a smooth derivative at focus.
   const newer = Math.max(0, offset);
   const rightShrink = 0.1 * newer * newer * Math.exp(1 - newer * newer);

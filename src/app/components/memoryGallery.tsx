@@ -5,6 +5,7 @@ import { LIFE_EVENTS } from "../data/memoryData";
 import { SERIF, SERIF_ITALIC_TRACKING, SANS } from "../lib/theme";
 import { COLOR_PALETTE } from "../lib/colors";
 import { loadMemories } from "../lib/memoryStore";
+import { curatedShape } from "../lib/galleryLibrary";
 import { ArtifactForm, formForMemory } from "../lib/superformula";
 import addEllipse from "../../assets/memory-grid/add-ellipse.svg";
 import addTriangle from "../../assets/memory-grid/add-triangle.png";
@@ -48,6 +49,7 @@ export function formatYearMonth(isoOrYear: string): string {
 export function generateGalleryMemories(): GalleryMemory[] {
   const curated = LIFE_EVENTS.map((event) => {
     const colorIndex = event.color % COLOR_PALETTE.length;
+    const y = curatedShape(event.id);
     return {
       id: event.id,
       title: event.event,
@@ -55,11 +57,11 @@ export function generateGalleryMemories(): GalleryMemory[] {
       lastUpdated: formatYearMonth(event.year),
       color: event.color,
       shape: {
-        form: formForMemory(event.id),
+        form: y?.form ?? formForMemory(event.id),
         colorIndex,
-        fluidity: seededUnit(event.id, 2),
-        evolve: seededUnit(event.id, 3),
-        bumpAmount: seededUnit(event.id, 4) * 0.12,
+        fluidity: y ? 0 : seededUnit(event.id, 2),
+        evolve: y ? y.morph : seededUnit(event.id, 3),
+        bumpAmount: y ? 0 : seededUnit(event.id, 4) * 0.12,
       },
     };
   });

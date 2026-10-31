@@ -4,6 +4,10 @@ interface BackButtonProps {
   onClick?: () => void;
 }
 
+/** Same centerline as the wordmark and the corner icons (those are 36px at top 22). */
+const HEADER_CENTER = 40;
+const BACK_SIZE = 32;
+
 export function BackButton({ onClick }: BackButtonProps) {
   const navigate = useNavigate();
 
@@ -18,12 +22,14 @@ export function BackButton({ onClick }: BackButtonProps) {
   return (
     <button
       onClick={handleClick}
+      aria-label="back"
+      className="nijimu-press-icon"
       style={{
         position: "absolute",
-        top: 30,
-        left: 30,
-        width: 32,
-        height: 32,
+        top: HEADER_CENTER - BACK_SIZE / 2,
+        left: "var(--chrome-left)",
+        width: BACK_SIZE,
+        height: BACK_SIZE,
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -35,10 +41,11 @@ export function BackButton({ onClick }: BackButtonProps) {
         opacity: 0.6,
         transition: "opacity 0.2s ease",
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.opacity = "1";
+      // a mouse only: a tap's synthetic enter would leave the arrow lit
+      onPointerEnter={(e) => {
+        if (e.pointerType === "mouse") e.currentTarget.style.opacity = "1";
       }}
-      onMouseLeave={(e) => {
+      onPointerLeave={(e) => {
         e.currentTarget.style.opacity = "0.6";
       }}
     >

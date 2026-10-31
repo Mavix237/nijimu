@@ -4,22 +4,68 @@ import type { AmbientFill, EditableLight } from "./sceneLights";
 
 export type Oklch = { l: number; c: number; h: number };
 
-/** Soft field: hue across X, lightness down Y, chroma kept low. */
+/*
+ * The field the color step picks from. Hue runs across, lightness down.
+ *
+ * Every hue is there, evenly — rose, sand, olive, sea, sky, slate, violet and
+ * round to rose — so it reads as a whole spectrum. Its tone is the
+ * homescreen's: the blobs there (colors.ts) are dusty, between 0.61 (ocean)
+ * and 0.89 (cloud) light with chroma 0.01–0.055, so the field runs from a pale
+ * cloud-light top to an ocean-deep bottom, gathering colour as it darkens,
+ * never brighter or purer than those blobs by much.
+ */
 export const FIELD = {
-  lTop: 0.998,
-  lBottom: 0.851,
-  cMin: 0.032,
-  cMax: 0.118,
+  lTop: 0.88,
+  lBottom: 0.62,
+  cMin: 0.022,
+  cMax: 0.068,
 };
 
-export const DEFAULT_OKLCH: Oklch = { l: 0.92, c: 0.05, h: 248 };
+/* Where the hues sit across the width: evenly, from rose round to rose.
+   Monotonic in u, with the hue unwrapped past 360 so it can be inverted. */
+const HUE_STOPS: ReadonlyArray<readonly [number, number]> = [
+  [0, 10], // rose
+  [1, 370], // round to rose
+];
+
+export function hueAt(u: number): number {
+  const x = clamp01(u);
+  for (let i = 1; i < HUE_STOPS.length; i++) {
+    const [u0, h0] = HUE_STOPS[i - 1];
+    const [u1, h1] = HUE_STOPS[i];
+    if (x <= u1) return wrapHue(h0 + ((x - u0) / (u1 - u0)) * (h1 - h0));
+  }
+  return wrapHue(HUE_STOPS[HUE_STOPS.length - 1][1]);
+}
+
+function uOfHue(h: number): number {
+  let hh = wrapHue(h);
+  if (hh < HUE_STOPS[0][1]) hh += 360;
+  for (let i = 1; i < HUE_STOPS.length; i++) {
+    const [u0, h0] = HUE_STOPS[i - 1];
+    const [u1, h1] = HUE_STOPS[i];
+    if (hh <= h1) return u0 + ((hh - h0) / (h1 - h0)) * (u1 - u0);
+  }
+  return 1;
+}
+
+/** Yellow-greens carry a little less chroma than the rest; at equal chroma
+    they are what reads as neon beside the dusty blues and roses. */
+function chromaScale(h: number): number {
+  const d = Math.abs(wrapHue(h) - 110);
+  const dist = Math.min(d, 360 - d);
+  const t = clamp01(1 - dist / 70);
+  return 1 - 0.25 * t * t * (3 - 2 * t);
+}
+
+export const DEFAULT_OKLCH: Oklch = { l: 0.84, c: 0.032, h: 248 };
 
 export function sampleField(u: number, v: number): Oklch {
-  const x = clamp01(u);
   const y = clamp01(v);
+  const h = hueAt(u);
   const l = FIELD.lTop + (FIELD.lBottom - FIELD.lTop) * y;
-  const c = FIELD.cMin + (FIELD.cMax - FIELD.cMin) * y;
-  return { l, c, h: x * 360 };
+  const c = (FIELD.cMin + (FIELD.cMax - FIELD.cMin) * y) * chromaScale(h);
+  return { l, c, h };
 }
 
 export function oklchCss({ l, c, h }: Oklch): string {
@@ -137,7 +183,7 @@ export function ambientBackground(ok: Oklch): string {
 export function uvFromOklch(ok: Oklch): { u: number; v: number } {
   const span = FIELD.lTop - FIELD.lBottom;
   return {
-    u: ((ok.h % 360) + 360) % 360 / 360,
+    u: uOfHue(ok.h),
     v: clamp01((FIELD.lTop - ok.l) / (span || 1)),
   };
 }

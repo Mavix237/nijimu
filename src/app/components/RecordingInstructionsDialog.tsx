@@ -1,8 +1,7 @@
+import { PANE_CONTENT_GAP } from "../lib/theme";
 import { useState } from "react";
-import { SERIF, TITLE, BODY_SIZE } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
-import { PillButton } from "./PillButton";
-import { TextButton } from "./TextButton";
+import { ArrowIcon, MicIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
 
 /** Intentionally shown on every recording attempt, regardless of past visits
  * or whether the browser already remembers microphone permission. */
@@ -21,78 +20,23 @@ export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onCl
       onClose={() => { if (!busy) setOpen(false); }}
       onExited={onClose}
       labelledBy="recording-instructions-title"
-      closeLabel="back to the pond"
       closeDisabled={busy}
+      align="start"
     >
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 10,
-          width: "100%",
-        }}
-      >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#8a8a96" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-          <rect x="9" y="3" width="6" height="11" rx="3" />
-          <path d="M5 11a7 7 0 0 0 14 0" />
-          <path d="M12 18v3" />
-          <path d="M8 21h8" />
-        </svg>
-        <h2
-          id="recording-instructions-title"
-          style={{
-            ...TITLE,
-            color: "#7b7b87",
-            margin: 0,
-            textAlign: "center",
-          }}
-        >
-          Before you begin
-        </h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
+        <h2 id="recording-instructions-title" style={PANE_TITLE}>To hear your voice</h2>
+        <div id="recording-instructions-body" className="nijimuPaneBody" style={PANE_BODY}>
+          <p>If you’d like to speak about a memory, please allow microphone access in your browser.</p>
+          <p>Or, skip to a sample story to experience the full flow without recording yourself.</p>
+        </div>
+        {error && <p role="alert" style={PANE_BODY}>{error}</p>}
       </div>
 
-      <div
-        id="recording-instructions-body"
-        style={{
-          fontFamily: SERIF,
-          fontSize: BODY_SIZE,
-          fontWeight: 400,
-          lineHeight: 1.65,
-          color: "rgba(123, 123, 135, 0.82)",
-          textAlign: "left",
-          width: "100%",
-        }}
-      >
-        <p style={{ margin: 0 }}>
-          If you’d like to sculpt an artifact from your own story, allow microphone access in your browser.
-        </p>
-        <p style={{ margin: "14px 0 0" }}>
-          Otherwise, select “Skip to sample transcript” to experience the full nijimu flow with a sample story.
-        </p>
-      </div>
-
-      {error && (
-        <p role="alert" style={{ fontFamily: SERIF, fontSize: BODY_SIZE, lineHeight: 1.5, color: "#7b7b87", margin: 0, textAlign: "center" }}>
-          {error}
-        </p>
-      )}
-
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, width: "100%" }}>
-        <PillButton
-          label={busy ? "Opening microphone…" : "Allow microphone & record"}
-          onClick={onStart}
-          disabled={busy}
-          transform="none"
-          style={{ width: "100%", alignSelf: "stretch" }}
-        />
-        <TextButton
-          label="Skip to sample transcript"
-          trailing="››"
-          onClick={onSkip}
-          disabled={busy}
-        />
-      </div>
+      <PaneOptions>
+        <PaneOption primary mark={<MicIcon />} label={busy ? "Opening microphone…" : "Allow microphone & record my story"}
+          onClick={onStart} disabled={busy} />
+        <PaneOption mark={<ArrowIcon />} label="Skip to a sample story" onClick={onSkip} disabled={busy} />
+      </PaneOptions>
     </GlassPane>
   );
 }

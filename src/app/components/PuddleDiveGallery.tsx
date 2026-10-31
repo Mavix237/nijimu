@@ -1,15 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { Link } from "react-router";
 import { SceneViewer } from "./SceneViewer";
+import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
 import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
 import { BackButton } from "./BackButton";
+import { GalleryScrollHint } from "./GalleryOnboarding";
+import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
+import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
-import { flowProgress, inkGrowth, inkWash, INK_POINTER_SIZE, type InkArrival } from "../lib/landingTransition";
-import { pondRimPose, pondRimSeat } from "../lib/pondTransition";
+import { flowProgress, inkGrowth, inkWash, type InkArrival } from "../lib/landingTransition";
+import { INK_CUT_SCALE, captureInkMask, clearInkSeats, setInkSeat } from "../lib/inkCutouts";
+import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
 import { carouselFrame, carouselSeat, carouselContainsOffset, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
+import { useHeaderMenu } from "./HeaderMenu";
+import { useCompact } from "../hooks/useCompact";
 
 /*
  * PuddleDiveGallery — the gallery presentation of the "dive" variant.
@@ -41,12 +48,21 @@ const NEIGHBOR_IN_STAGGER_MS = 110;
 const NEIGHBOR_OUT_STAGGER_MS = 80;
 /** Caption block centre-ish, as a fraction of viewport height from the top —
     scales with the window instead of sitting a fixed px above the timescale. */
-const CAPTION_TOP_VH = 0.62;
+export const CAPTION_TOP_VH = 0.62;
 /** Extra downward sit of the title + year. Shared by the carousel and the
     naming step — both draw this caption from the same seat. */
 export const CAPTION_DOWN_VH = 0.07;
-/** Height of the timescale above the bottom of the viewport. */
-const TS_BOTTOM_PX = 78;
+/** Height of the timescale line above the bottom of the viewport. A phone
+    keeps a fixed inset, nearer its thumb. Wider screens leave 2vh under the
+    slider's hit area — less than the old fixed 42px — and the line sits
+    36px above that, where the 68px hit rect extends past it. */
+const TS_BELOW_VH = 0.02;
+const TS_HIT_BELOW_PX = 36;
+const TS_BOTTOM_PX_PHONE = 54;
+
+function timeScaleInset(viewport: { w: number; h: number }) {
+  return viewport.w <= 600 ? TS_BOTTOM_PX_PHONE : viewport.h * TS_BELOW_VH + TS_HIT_BELOW_PX;
+}
 
 function useViewport() {
   const [size, setSize] = useState(() => ({
@@ -126,14 +142,133 @@ export const CAPTION_YEAR_STYLE: CSSProperties = {
   textAlign: "center",
 };
 
+/** Space kept between the memory's words and the timescale. */
+const TRANSCRIPT_CLEARANCE = 24;
+const TRANSCRIPT_DWELL_MS = 3000;
+
+/** The memory's own words, under its year. */
+const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
+  ...GALLERY_TRANSCRIPT,
+  margin: "1.6em auto 0",
+  maxWidth: "60ch",
+  lineHeight: 1.4,
+  letterSpacing: "0.012em",
+  textAlign: "center",
+  textWrap: "pretty",
+  transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
+};
+
+/** A transcript line slides down into place over LINE_IN_MS, the next LINE_STAGGER_MS after.
+    The first line comes in a word at a time, WORD_STAGGER_MS apart — closer for a long
+    line, so its last word starts within FIRST_LINE_MAX_MS; the second follows the first
+    line's last word by one more step. */
+const LINE_IN_MS = 720;
+const LINE_STAGGER_MS = 80;
+const WORD_STAGGER_MS = 70;
+const FIRST_LINE_MAX_MS = 560;
+
+/** The words stop above `floorY`; when they would run past it, the last lines fade out.
+    They come in line by line, each sliding down out of its own mask; the lines are
+    found by setting the words once, unseen, at the same width and reading where
+    each one wraps. */
+function CaptionTranscript({ text, visible, floorY }: { text: string; visible: boolean; floorY: number }) {
+  const ref = useRef<HTMLParagraphElement>(null);
+  const measure = useRef<HTMLParagraphElement>(null);
+  const [room, setRoom] = useState<number | null>(null);
+  const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
+  const [lines, setLines] = useState<string[]>([text]);
+  useLayoutEffect(() => {
+    const el = measure.current;
+    if (!el) return;
+    const read = () => {
+      const next: string[] = [];
+      let top: number | null = null;
+      for (const span of el.children as HTMLCollectionOf<HTMLElement>) {
+        const word = span.textContent?.trim() ?? "";
+        if (top === null || Math.abs(span.offsetTop - top) > 2) {
+          next.push(word);
+          top = span.offsetTop;
+        } else next[next.length - 1] += ` ${word}`;
+      }
+      setLines((was) => (was.length === next.length && was.every((l, i) => l === next[i]) ? was : next));
+    };
+    read();
+    const watch = new ResizeObserver(read);
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [words]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const top = el.getBoundingClientRect().top;
+    const space = Math.max(0, floorY - top);
+    setRoom(el.scrollHeight > space + 1 ? space : null);
+  }, [lines, floorY, visible]);
+  const fade = "linear-gradient(to bottom, #000 calc(100% - 3.2em), transparent)";
+  const still = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  return (
+    <div data-trail-ignore style={{ position: "relative" }}>
+      <style>{`
+        @keyframes transcriptLineIn {
+          from { transform: translateY(-105%); }
+          to { transform: translateY(0); }
+        }
+        @keyframes transcriptLineFade { from { opacity: 0; } }
+      `}</style>
+      {/* the same words, unseen, to find where the lines break */}
+      <p ref={measure} aria-hidden style={{ ...CAPTION_TRANSCRIPT_STYLE, position: "absolute", left: 0, right: 0, top: 0, visibility: "hidden", pointerEvents: "none" }}>
+        {words.map((word, i) => <span key={i}>{word}{i < words.length - 1 ? " " : ""}</span>)}
+      </p>
+      <p ref={ref} style={{
+        ...CAPTION_TRANSCRIPT_STYLE,
+        opacity: visible ? 1 : 0,
+        ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
+      }}>
+        {lines.map((line, i, all) => {
+          const firstWords = all[0].split(" ").length;
+          const wordStep = Math.min(WORD_STAGGER_MS, FIRST_LINE_MAX_MS / firstWords);
+          // shown afresh each time: the lines come in again
+          const enter = (delay: number) => visible
+            ? `${still ? "transcriptLineFade" : "transcriptLineIn"} ${LINE_IN_MS}ms cubic-bezier(.2, .7, .2, 1) ${delay}ms both`
+            : "none";
+          if (i === 0) {
+            const first = line.split(" ");
+            return (
+              <span key={i} style={{ display: "block", textAlign: "center" }}>
+                {first.map((word, j) => (
+                  <Fragment key={j}>
+                    {/* each word slides down out of its own mask */}
+                    <span style={{ display: "inline-block", overflow: "hidden", verticalAlign: "top" }}>
+                      <span style={{ display: "inline-block", animation: enter(j * wordStep) }}>{word}</span>
+                    </span>
+                    {j < first.length - 1 ? " " : ""}
+                  </Fragment>
+                ))}
+              </span>
+            );
+          }
+          const after = firstWords * wordStep;
+          return (
+            <span key={i} style={{ display: "block", overflow: "hidden" }}>
+              <span style={{ display: "block", textAlign: "center", animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
+            </span>
+          );
+        })}
+      </p>
+    </div>
+  );
+}
+
 /** Gap between the title and the year, in the caption block's own em. */
 export const CAPTION_TITLE_GAP = "0.8em";
+/** The gallery's title-to-year gap: the shared one, 30% tighter. */
+const GALLERY_TITLE_YEAR_GAP = "0.56em";
 
 /** The settled caption — a memory's words and its year. */
 export function StaticCaption({ title, year }: { title: string; year: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-      <div style={{ marginBottom: CAPTION_TITLE_GAP }}>
+      <div style={{ marginBottom: GALLERY_TITLE_YEAR_GAP }}>
         <span style={{ ...CAPTION_TITLE_STYLE, display: "inline-block", whiteSpace: "pre-line" }}>
           {title}
         </span>
@@ -152,7 +287,7 @@ export function PuddleDiveGallery({
   onExit,
   onOverscrollExit,
   caption,
-  exitOnBackdropClick = true,
+  exitOnBackdropClick = false,
   onToggleGrid,
   toggleIcon = "view",
   showTimeScale = true,
@@ -170,13 +305,14 @@ export function PuddleDiveGallery({
   reducedMotion: boolean;
   /** Steps to travel around the rim: negative = older (left), positive = newer. */
   onNavigate: (delta: number) => void;
-  onExit: () => void;
+  /** Omit on dedicated galleries: the wordmark is their only home control. */
+  onExit?: () => void;
   /** Leave past the first or last memory — the dedicated carousel uses this
       to open the perspective pond; the G-gallery falls back to onExit. */
   onOverscrollExit?: () => void;
   /** Replace the default title / year caption (used by the naming step). */
   caption?: ReactNode;
-  /** Homescreen G-gallery exits on a blank click; the naming step does not. */
+  /** Explicit opt-in for an embedded gallery that can dismiss on its backdrop. */
   exitOnBackdropClick?: boolean;
   onToggleGrid?: () => void;
   /** The /memory carousel uses a plus that opens the pond after scrolling
@@ -197,6 +333,14 @@ export function PuddleDiveGallery({
   pondDeparture?: number;
   hideHeader?: boolean;
 }) {
+  // a preview may seat something other than the crystal; the live routes provide nothing
+  const override = useContext(GalleryOverrideContext);
+  /* The preview's field: while the seats are asked for there, or still on their
+     way between, every memory is mounted, the rim does not step, and the chrome
+     that belongs to the years (the caption, the ruler, the arrows) stands aside. */
+  const field = override?.field;
+  const inField = !!field && (field.on || field.progress > 0);
+  const yearsChrome = !field || (!field.on && field.progress < 0.35);
   const hasOlder = activeIdx > 0;
   const hasNewer = activeIdx < items.length - 1;
   const viewport = useViewport();
@@ -259,8 +403,28 @@ export function PuddleDiveGallery({
 
   const focusIdx = Math.round(rimAt);
   const item = items[focusIdx] ?? items[activeIdx];
-  const captionItem = items[activeIdx] ?? item;
+  // in the field the words belong to the memory under the pointer, if any
+  const captionItem: DiveGalleryItem | null = field?.on
+    ? items.find((it) => it.id === field.hovered) ?? null
+    : items[activeIdx] ?? item;
+  // the last words stay in the block while it fades, so they go out as words and not as a cut
+  const lastCaptionRef = useRef(captionItem);
+  if (captionItem) lastCaptionRef.current = captionItem;
+  const shownCaption = captionItem ?? lastCaptionRef.current;
   const rimSettled = Math.abs(rimAt - activeIdx) < 0.04;
+  /** The memory whose full transcript has opened after resting at the apex. */
+  const [revealedId, setRevealedId] = useState<string | null>(null);
+  // a phone shows only the name and year; the vessel opens the words (MemoryReadingPane)
+  const compact = useCompact();
+  const transcriptReady = phase === "gallery" && growth >= 1 && pondDeparture === 0
+    && !inField && !caption && !compact && rimSettled;
+  useEffect(() => {
+    setRevealedId(null);
+    if (!transcriptReady || !focusId) return;
+    const timer = window.setTimeout(() => setRevealedId(focusId), TRANSCRIPT_DWELL_MS);
+    return () => window.clearTimeout(timer);
+  }, [focusId, transcriptReady]);
+  useEffect(() => () => setApexHover(false), []);
   const rimSettledRef = useRef(rimSettled);
   rimSettledRef.current = rimSettled;
   const pendingPondRef = useRef(false);
@@ -268,6 +432,10 @@ export function PuddleDiveGallery({
 
   const openPondFromPlus = () => {
     if (pondDeparture > 0 || pendingPondRef.current) return;
+    if (inField) {
+      onOverscrollExit?.();
+      return;
+    }
     const target = Math.max(0, items.length - 1);
     if (target === activeIdx) {
       onOverscrollExit?.();
@@ -292,19 +460,29 @@ export function PuddleDiveGallery({
     }
   }, [activeIdx, rimSettled, pondDeparture, onOverscrollExit]);
 
-  /* arrows — keyboard */
+  /* arrows — keyboard. Paced like the wheel, so a held key steps rather than
+     racing the rim; leaving for the pond takes a fresh press once the rim is still. */
   useEffect(() => {
+    let lockedUntil = 0;
     const handler = (e: KeyboardEvent) => {
       if (phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // an open pane (the memory's words, the profile) has the keys; its Escape closes it
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
+      if (e.key === "Escape") { onExit?.(); return; }
+      if (inField) return;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      const now = performance.now();
+      if (now < lockedUntil) return;
+      lockedUntil = now + (reducedMotion ? 80 : 140);
       if (e.key === "ArrowLeft") { if (hasOlder) onNavigate(-1); }
-      else if (e.key === "ArrowRight") hasNewer ? onNavigate(1) : onOverscrollExit?.();
-      else if (e.key === "Escape") onExit();
+      else if (hasNewer) onNavigate(1);
+      else if (!e.repeat && rimSettledRef.current) onOverscrollExit?.();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [phase, growth, pondDeparture, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit]);
+  }, [phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit, reducedMotion]);
 
   /* A sideways gesture over the carousel is for the artifacts, never for the
      browser's swipe-to-go-back — which unwound the entry and dropped the
@@ -332,9 +510,11 @@ export function PuddleDiveGallery({
     let lockedUntil = 0;
     const leave = onOverscrollExit ?? onExit;
     const handler = (e: WheelEvent) => {
-      if (phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
+      if (phase !== "gallery" || growth < 1 || pondDeparture > 0 || inField) return;
       const t = e.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+      // scrolling a pane's text is not turning the rim
+      if (t?.closest('[role="dialog"]')) return;
       e.preventDefault();
       const now = performance.now();
       if (now < lockedUntil) return;
@@ -348,22 +528,23 @@ export function PuddleDiveGallery({
       if (dir < 0 && !hasOlder) {
         leftover = 0;
       } else if (dir > 0 && !hasNewer) {
-        if (rimSettledRef.current) leave();
+        if (rimSettledRef.current) leave?.();
         leftover = 0;
       } else onNavigate(dir);
     };
     window.addEventListener("wheel", handler, { passive: false });
     return () => window.removeEventListener("wheel", handler);
-  }, [showArrows, phase, growth, pondDeparture, reducedMotion, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit]);
+  }, [showArrows, phase, growth, pondDeparture, inField, reducedMotion, hasOlder, hasNewer, onNavigate, onExit, onOverscrollExit]);
 
   // Touch has the same boundary behavior as a wheel, without interpreting a
   // tap (or an OrbitControls drag on the focused artifact) as overscroll.
   useEffect(() => {
-    if (!showArrows || phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
+    if (!showArrows || phase !== "gallery" || growth < 1 || pondDeparture > 0 || inField) return;
     let start: { x: number; y: number } | null = null;
     const down = (e: TouchEvent) => {
       const target = e.target as HTMLElement;
-      if (e.touches.length !== 1 || target.closest("button, input, textarea, canvas")) { start = null; return; }
+      // nor is a swipe through a pane's text
+      if (e.touches.length !== 1 || target.closest('button, input, textarea, canvas, [role="dialog"]')) { start = null; return; }
       start = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     };
     const end = (e: TouchEvent) => {
@@ -376,7 +557,7 @@ export function PuddleDiveGallery({
       const dir = distance > 0 ? 1 : -1;
       if (dir < 0 && !hasOlder) return;
       if (dir > 0 && !hasNewer) {
-        if (rimSettledRef.current) (onOverscrollExit ?? onExit)();
+        if (rimSettledRef.current) (onOverscrollExit ?? onExit)?.();
       } else onNavigate(dir);
     };
     const cancel = () => { start = null; };
@@ -388,7 +569,7 @@ export function PuddleDiveGallery({
       window.removeEventListener("touchend", end);
       window.removeEventListener("touchcancel", cancel);
     };
-  }, [showArrows, phase, growth, pondDeparture, hasOlder, hasNewer, onNavigate, onOverscrollExit, onExit]);
+  }, [showArrows, phase, growth, pondDeparture, inField, hasOlder, hasNewer, onNavigate, onOverscrollExit, onExit]);
 
   /* build the forms just off the end of the rim while the page is idle, so
      the memory that swings in on an arrow press never spends its first frame
@@ -408,7 +589,7 @@ export function PuddleDiveGallery({
      A carried rim wasn't moving at all, so it starts calm. */
   const [wobbling, setWobbling] = useState(false);
   useEffect(() => {
-    if (!waterEffect || phase === "diving" || reducedMotion || inkArrival) {
+    if (!waterEffect || phase === "diving" || reducedMotion || inkArrival || override?.arrival === "plain") {
       setWobbling(false);
       return;
     }
@@ -423,7 +604,7 @@ export function PuddleDiveGallery({
         : DIVE_TUNING.artifactResolveMs;
     const t = setTimeout(() => setWobbling(false), ms);
     return () => clearTimeout(t);
-  }, [arrival, phase, reducedMotion, waterEffect, !!inkArrival]);
+  }, [arrival, phase, reducedMotion, waterEffect, !!inkArrival, override?.arrival]);
 
   /* The neighbours outlive `neighborsVisible` going false: they have to stay
      mounted long enough to sink back out, or the rim would simply blink away. */
@@ -519,6 +700,8 @@ export function PuddleDiveGallery({
     return () => clearTimeout(t);
   }, [phase, reducedMotion, !!inkArrival, growth < 1]);
 
+  // read before the early return: hooks run on every render
+  const headerMenu = useHeaderMenu();
   if (!item) return null;
 
   /* Reveal choreography: an artifact begins resolving the moment it exists on
@@ -530,16 +713,21 @@ export function PuddleDiveGallery({
   const dissolveMs = Math.round(
     (reducedMotion ? DIVE_TUNING.reducedMs : DIVE_TUNING.surfaceMs) * 0.6,
   );
+  /* A preview's seats may ask to arrive plain: no tint toward the water, no
+     blur, no wobble — a rise and a fade. The glass vessels carry their own
+     colour and read the teal as a stain, and a 28px filter over ten canvases
+     compiling their shaders is what made it linger. */
+  const plain = override?.arrival === "plain";
   const artifactAnimation = !waterEffect
     ? "none"
     : phase === "diving"
       ? "none"
       : phase === "surfacing"
-        ? `${reducedMotion ? "diveDissolveReduced" : "diveDissolve"} ${dissolveMs}ms ease forwards`
+        ? `${reducedMotion ? "diveDissolveReduced" : plain ? "diveDissolvePlain" : "diveDissolve"} ${dissolveMs}ms ease forwards`
         : rimReady
           ? "none"
           : `${
-              reducedMotion ? "diveResolveReduced" : "diveResolve"
+              reducedMotion ? "diveResolveReduced" : plain ? "diveResolvePlain" : "diveResolve"
             } ${Math.round(resolveMs)}ms cubic-bezier(0.22, 1, 0.36, 1) backwards`;
 
   /* Chrome the carried arrival brings with it — the foot ruler, the arrows, the
@@ -558,6 +746,8 @@ export function PuddleDiveGallery({
         { dur: Math.round(resolveMs), scale: "42;14;0" };
 
   const chromeVisible = phase === "gallery" && growth >= 1 && pondDeparture === 0;
+  /** The chrome of the years — caption, ruler, arrows — which the field stands down. */
+  const yearsVisible = chromeVisible && yearsChrome;
   const palette = COLOR_PALETTE[item.colorIndex % COLOR_PALETTE.length];
   const travelMs = reducedMotion ? 0 : ARC_TRAVEL_MS;
   const travelEase = "cubic-bezier(0.33, 0.02, 0.2, 1)";
@@ -568,6 +758,36 @@ export function PuddleDiveGallery({
      this color; nothing is added to the surface below. */
   const washFadeMs = phase === "surfacing" ? dissolveMs : Math.round(resolveMs);
 
+  /* Through the ink entry each seat tells the landing where it will finally
+     sit, and keeps the outline of its vessel's first whole frame, so the
+     landing's washes can become flat cutouts of these vessels in place. */
+  const streamRef = useRef<HTMLDivElement>(null);
+  const inkSeatsRef = useRef<{ id: string; x: number; y: number; size: number; opacity: number }[]>([]);
+  inkSeatsRef.current = [];
+  const frameHooks = useRef(new Map<string, (canvas: HTMLCanvasElement) => void>());
+  const onFrameFor = (id: string) => {
+    let hook = frameHooks.current.get(id);
+    if (!hook) {
+      hook = (canvas) => captureInkMask(id, canvas);
+      frameHooks.current.set(id, hook);
+    }
+    return hook;
+  };
+  const inkEntering = !!inkArrival && !inkArrival.reducedMotion;
+  useLayoutEffect(() => {
+    if (inkEntering) clearInkSeats();
+    // the gallery mounts with the entry: a fresh set of seats and outlines each time
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useLayoutEffect(() => {
+    if (!inkEntering) return;
+    const box = streamRef.current?.getBoundingClientRect();
+    if (!box) return;
+    for (const seat of inkSeatsRef.current) {
+      setInkSeat(seat.id, { x: box.left + seat.x, y: box.top + seat.y, size: seat.size, opacity: seat.opacity });
+    }
+  });
+
   /* The rim, apex outward. Only the focused memory exists while the dolly is
      still running; everything on the dome leaves together when it reverses. */
   const slots: { offset: number; item: DiveGalleryItem }[] = [];
@@ -576,8 +796,10 @@ export function PuddleDiveGallery({
     if (phase === "diving" && Math.abs(offset) > 0.01) continue;
     if (!neighborsMounted && Math.abs(offset) > 0.01) continue;
     /* Bounds include an invisible distant seat and an offscreen foreground
-       seat: scrolling never unmounts a visible model, even after settling. */
-    if (!carouselContainsOffset(offset)) continue;
+       seat: scrolling never unmounts a visible model, even after settling.
+       A preview with a field keeps every memory mounted — a canvas made or
+       lost at the switch is a long frame — and hides the ones off the curve. */
+    if (!field && !carouselContainsOffset(offset)) continue;
     const slotItem = items[i];
     if (slotItem) slots.push({ offset, item: slotItem });
   }
@@ -613,17 +835,22 @@ export function PuddleDiveGallery({
   const arrowStyle = (side: "left" | "right"): CSSProperties => ({
     position: "absolute",
     top: geo.apexY,
-    [side]: "clamp(8px, 1.6vw, 26px)",
+    // Desktop shares the create icon's centerline; phones keep their wider hit area.
+    [side]: "var(--gallery-arrow-inset)",
+    width: "var(--gallery-arrow-width)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     transform: "translateY(-50%)",
     background: "none",
     border: "none",
-    padding: 16,
+    padding: "16px 0",
     cursor: "pointer",
     color: "#4a4a4a",
-    opacity: chromeVisible ? 0.35 : 0,
+    opacity: yearsVisible ? 0.35 : 0,
     transition: "opacity 0.6s ease",
     animation: carriedChrome,
-    pointerEvents: chromeVisible ? "auto" : "none",
+    pointerEvents: yearsVisible ? "auto" : "none",
   });
 
   return (
@@ -641,7 +868,7 @@ export function PuddleDiveGallery({
         // release, so turning an artifact and letting go a little off it lands
         // a click here. That is someone handling a memory, not asking to leave.
         if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
-        if (chromeVisible && exitOnBackdropClick) onExit();
+        if (chromeVisible && exitOnBackdropClick) onExit?.();
       }}
     >
       {/* ═══ BACKGROUND WASH — the memory's color, held around the focused
@@ -658,7 +885,7 @@ export function PuddleDiveGallery({
           height: "clamp(700px, 78vw, 1000px)",
           borderRadius: "50%",
           backgroundColor: washColor(palette.color),
-          opacity:
+          opacity: override?.wash === false ? 0 :
             inkArrival
               ? DIVE_TUNING.artifactWashOpacity * washIn
               : (chromeVisible || !waterEffect)
@@ -725,20 +952,27 @@ export function PuddleDiveGallery({
       {/* The chronological stream. Stable memory keys let the entire path
           advance without replacing its artifacts. Isolate its depth stack
           so foreground memories cannot cover the caption or navigation. */}
-      <div className="absolute inset-0" data-pond-departure={pondDeparture}
+      <div ref={streamRef} className="absolute inset-0" data-pond-departure={pondDeparture}
         data-pond-tilt={pondRimPose(pondDeparture, !!reducedMotion).tilt * 180 / Math.PI}
         style={{ opacity: 1, isolation: "isolate" }}>
         {slots.map(({ offset, item: slotItem }) => {
-          const focused = Math.abs(offset) < 0.5;
-          const depth = carouselSeat(viewport.w, viewport.h, offset);
-          const seat = pondRimSeat(depth.x, depth.y, geo.cx, geo.apexY, viewport.h, pondDeparture, !!reducedMotion);
+          // in the field no seat is the apex: nothing turns in hand, every memory is a thing to pick
+          const focused = Math.abs(offset) < 0.5 && !field?.on;
+          const curveDepth = carouselSeat(viewport.w, viewport.h, offset);
+          const depth: SeatPlace = override?.adjustSeat ? override.adjustSeat(curveDepth, offset, viewport, slotItem) : curveDepth;
+          const seat = inField
+            ? pondFieldSeat(depth.x, depth.y, geo.size * depth.scale, depth.depth ?? 4 / Math.max(.01, depth.scale), viewport.h, pondDeparture, !!reducedMotion)
+            : pondRimSeat(depth.x, depth.y, geo.cx, geo.apexY, viewport.h, pondDeparture, !!reducedMotion);
           const slotPalette =
             COLOR_PALETTE[slotItem.colorIndex % COLOR_PALETTE.length];
           /* handed over rather than arriving: it is already exactly here */
           const carried = carriedIds.has(slotItem.id) && phase === "gallery";
-          const entryScale = inkArrival && !inkArrival.reducedMotion
-            ? INK_POINTER_SIZE / geo.size + (1 - INK_POINTER_SIZE / geo.size) * growth
-            : 1;
+          // the vessel grows on from the size its flat cutout formed at
+          const entryScale = inkEntering ? INK_CUT_SCALE + (1 - INK_CUT_SCALE) * growth : 1;
+          if (inkEntering) {
+            inkSeatsRef.current.push({ id: slotItem.id, x: seat.x, y: seat.y,
+              size: geo.size * depth.scale * seat.scale, opacity: depth.opacity });
+          }
           /* Naming year: neighbours gather with a real CSS transition, not a
              keyframe that can miss the first paint and hard-cut the canvases in. */
           const gather = !focused && !waterEffect && !inkArrival;
@@ -756,18 +990,28 @@ export function PuddleDiveGallery({
               data-carousel-offset={offset}
               onClick={(e) => {
                 e.stopPropagation();
-                if (!focused && chromeVisible) onNavigate(Math.round(offset));
+                if (!chromeVisible) return;
+                if (field?.on) {
+                  // a press and release, not the end of a drag across the field
+                  const down = backdropDownRef.current;
+                  if (down && Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6) return;
+                  field.onPick(slotItem);
+                  return;
+                }
+                if (!focused) onNavigate(Math.round(offset));
               }}
+              onPointerEnter={field?.on ? () => field.onHover(slotItem.id) : undefined}
+              onPointerLeave={field?.on ? () => field.onHover(null) : undefined}
               style={{
                 position: "absolute",
                 left: 0,
                 top: 0,
                 width: geo.size,
                 height: geo.size,
-                transform: `translate(-50%, -50%) translate(${seat.x.toFixed(2)}px, ${seat.y.toFixed(2)}px) scale(${depth.scale * seat.scale})`,
-                zIndex: 100000 + Math.round(offset * 100 + seat.z),
+                transform: `translate(-50%, -50%) translate(${seat.x.toFixed(2)}px, ${seat.y.toFixed(2)}px) scale(${depth.scale * seat.scale})${depth.rotate ? ` rotate(${depth.rotate.toFixed(2)}deg)` : ""}`,
+                zIndex: 100000 + Math.round((depth.order ?? offset * 100) + seat.z),
                 cursor: focused ? "default" : "pointer",
-                pointerEvents: chromeVisible ? "auto" : "none",
+                pointerEvents: chromeVisible && depth.opacity > 0.02 ? "auto" : "none",
               }}
             >
               {/* the arrival / departure, on its own layer so the depth
@@ -779,11 +1023,11 @@ export function PuddleDiveGallery({
                   opacity: gather
                     ? gatherHidden ? 0 : 1
                     : inkArrival
-                      // Keyed to the form's own size, not to the clock: it stays
-                      // out of sight until it is 40% grown, then fades in over
-                      // the next third. Opacity used to finish at 20% of the
-                      // growth, so the artifact simply appeared at dot size.
-                      ? flowProgress(entryScale, 0.4, 0.72)
+                      // The cutout is already here at half size: the vessel comes
+                      // up through it over most of the growth, while the cutout
+                      // lets go across all of it (BlobScene), so the two overlap
+                      // rather than swap. Reduced motion keeps the old fade by size.
+                      ? inkEntering ? flowProgress(growth, 0, 0.75) : flowProgress(entryScale, 0.4, 0.72)
                       : phase === "diving" ? 0 : undefined,
                   filter: gather ? (gatherHidden ? "blur(24px)" : "blur(0px)") : undefined,
                   transform: gather
@@ -801,13 +1045,17 @@ export function PuddleDiveGallery({
                       ? "none"
                       : neighborAnimation(offset)
                     : artifactAnimation,
-                  willChange: "filter, opacity, transform",
+                  // a filter layer over a transparent canvas is what fringes the
+                  // vessels in Safari; only a seat that is actually filtering keeps one
+                  willChange: gather || (!override && depth.blurPx > 0.2) ? "filter, opacity, transform" : "transform, opacity",
                 }}
               >
                 {/* depth: how far into the water this slot has fallen. The
                     bob lives on the model so a step never cuts a CSS float
                     short and drops the box. The depth blur belongs to the
-                    dome, not the water, so both screens carry it. */}
+                    dome, not the water, so both screens carry it. A vessel
+                    draws that softness itself, in its own pixels, so Safari
+                    and Chrome composite the same blur. */}
                 <div
                   style={{
                     width: "100%",
@@ -815,7 +1063,7 @@ export function PuddleDiveGallery({
                     opacity: depth.opacity,
                     filter:
                       [
-                        depth.blurPx ? `blur(${depth.blurPx}px)` : "",
+                        !override && depth.blurPx ? `blur(${depth.blurPx}px)` : "",
                         waterEffect && focused && wobbling ? "url(#dive-refraction)" : "",
                       ]
                         .filter(Boolean)
@@ -823,7 +1071,15 @@ export function PuddleDiveGallery({
                     transition: "none",
                   }}
                 >
-                  <SceneViewer
+                  {override ? override.renderArtifact(slotItem, {
+                    focused,
+                    still: !focused && rimSettled,
+                    frameloop: focused || !rimSettled || pondDeparture > 0 ? "always" : "demand",
+                    haze: depth.haze,
+                    blurPx: depth.blurPx,
+                    offset,
+                    onFrame: onFrameFor(slotItem.id),
+                  }) : <SceneViewer
                     measureUnscaled
                     form={slotItem.shape.form}
                     fluidity={slotItem.shape.fluidity}
@@ -860,7 +1116,7 @@ export function PuddleDiveGallery({
                       matColor: slotPalette.color,
                     }}
                     style={{ width: "100%", height: "100%" }}
-                  />
+                  />}
                 </div>
               </div>
               {/* A neighbour is a destination, not a toy: this lid keeps the
@@ -880,10 +1136,15 @@ export function PuddleDiveGallery({
           items={items}
           activeIdx={rimAt}
           viewport={viewport}
-          visible={chromeVisible}
+          visible={yearsVisible && !inField}
           travelMs={0}
           travelEase={travelEase}
           enterAnimation={carriedChrome}
+          onSeek={(i) => {
+            if (inField || pondDeparture > 0) return;
+            const next = Math.max(0, Math.min(items.length - 1, i));
+            if (next !== activeIdx) onNavigate(next - activeIdx);
+          }}
         />
       )}
 
@@ -891,30 +1152,42 @@ export function PuddleDiveGallery({
       <div
         className="absolute left-0 right-0 text-center"
         style={{
-          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH) * viewport.h,
+          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH + (caption ? 0 : 0.02)) * viewport.h,
           padding: "0 clamp(24px, 6vw, 80px)",
           fontFamily: SERIF,
-          opacity: chromeVisible ? 1 : 0,
-          transition: "opacity 0.8s ease",
+          // in the field the words come only while a memory is under the pointer
+          opacity: chromeVisible && (field?.on ? !!captionItem : yearsChrome) ? 1 : 0,
+          transition: field?.on ? "opacity 0.45s ease" : "opacity 0.8s ease",
           zIndex: 30,
           pointerEvents: caption ? "auto" : "none",
         }}
       >
-        <div
-          key={captionItem.id}
+        {shownCaption && <div
+          key={shownCaption.id}
           style={{
-            /* the opening fade waits for the memory; once the rim is in
-               motion the words stay put and simply change with the step */
+            /* first arrival waits for the vessel; later steps use the same
+               fade-and-focus as the rest of the copy */
             animation:
-              caption || reducedMotion || rimReady || carriedIds.has(captionItem.id)
+              caption || reducedMotion
                 ? undefined
-                : `diveCaptionIn ${travelMs}ms ease`,
+                : rimReady || carriedIds.has(shownCaption.id)
+                  ? textEnter()
+                  : `diveCaptionIn ${travelMs}ms ease both`,
             pointerEvents: caption ? "auto" : "none",
           }}
         >
-          {caption ?? <StaticCaption title={captionItem.event} year={captionItem.year} />}
-        </div>
+          {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
+          {!caption && !field?.on && !compact && shownCaption.transcript && (
+            <CaptionTranscript text={shownCaption.transcript} visible={transcriptReady && revealedId === shownCaption.id}
+              floorY={viewport.h - (showTimeScale ? timeScaleInset(viewport) + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
+          )}
+        </div>}
       </div>
+
+      {showArrows && !caption && !hideHeader && (
+        <GalleryScrollHint visible={yearsVisible} settled={rimSettled}
+          atNewest={!hasNewer} leaving={pondDeparture > 0} />
+      )}
 
       {/* ═══ ARROWS ═══ */}
       {showArrows && hasOlder && (
@@ -925,11 +1198,12 @@ export function PuddleDiveGallery({
             e.stopPropagation();
             onNavigate(-1);
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.7" : "0")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.35" : "0")}
+          // darker only under a mouse: a tap fires mouseenter with no mouseleave, which left it dark
+          onPointerEnter={(e) => { if (e.pointerType === "mouse") e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0"; }}
+          onPointerLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="22" height="40" viewBox="0 0 22 40" fill="none" aria-hidden>
-            <path d="M18 4 L6 20 L18 36" stroke="currentColor" strokeWidth="1.2" />
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
+            <path d="M16 2 L2 12 L16 22 Z" />
           </svg>
         </button>
       )}
@@ -941,11 +1215,12 @@ export function PuddleDiveGallery({
             e.stopPropagation();
             onNavigate(1);
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.7" : "0")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = chromeVisible ? "0.35" : "0")}
+          // darker only under a mouse: a tap fires mouseenter with no mouseleave, which left it dark
+          onPointerEnter={(e) => { if (e.pointerType === "mouse") e.currentTarget.style.opacity = yearsVisible ? "0.7" : "0"; }}
+          onPointerLeave={(e) => (e.currentTarget.style.opacity = yearsVisible ? "0.35" : "0")}
         >
-          <svg width="22" height="40" viewBox="0 0 22 40" fill="none" aria-hidden>
-            <path d="M4 4 L16 20 L4 36" stroke="currentColor" strokeWidth="1.2" />
+          <svg width="18" height="24" viewBox="0 0 18 24" fill="currentColor" aria-hidden style={{ transform: "scale(var(--gallery-arrow-scale))" }}>
+            <path d="M2 2 L16 12 L2 22 Z" />
           </svg>
         </button>
       )}
@@ -958,16 +1233,32 @@ export function PuddleDiveGallery({
           pointerEvents: chromeVisible ? "auto" : "none",
         }}
       >
-        <BackButton onClick={onExit} />
+        {onExit && <BackButton onClick={onExit} />}
+        {/* a way into the vessel preview (/lab/gallery), beside the arrow; not shown inside the preview itself */}
+        {!override && (
+          <Link to="/lab/gallery" aria-label="see the memories as vessels"
+            style={{ position: "absolute", top: 36, left: 70, zIndex: 100, fontFamily: SANS, fontSize: 12, letterSpacing: "0.04em",
+              color: CHROME_GRAY, opacity: 0.55, textDecoration: "none" }}>
+            vessels
+          </Link>
+        )}
       </div>}
 
       <GalleryViewToggle
         view="carousel"
         icon={toggleIcon}
         onToggle={toggleIcon === "plus" ? openPondFromPlus : (onToggleGrid ?? (() => {}))}
-        visible={!hideHeader && chromeVisible && (toggleIcon === "plus" ? !!onOverscrollExit : !!onToggleGrid)}
+        visible={!hideHeader && (toggleIcon === "plus" ? chromeVisible && !!onOverscrollExit : yearsVisible && !!onToggleGrid)}
         enterAnimation={carriedChrome}
       />
+
+      {/* the preview's own chrome, arriving and leaving with the gallery's;
+          folded into the phone's header menu it cannot fade, so it is there or not */}
+      {override?.chrome && !hideHeader && (!headerMenu.list || chromeVisible) && (
+        <div style={{ opacity: chromeVisible ? 1 : 0, transition: "opacity 0.8s ease", pointerEvents: chromeVisible ? "auto" : "none" }}>
+          {override.chrome}
+        </div>
+      )}
 
       <style>{`
         /* The slots are scaled with a CSS transform, and r3f sizes its canvas
@@ -1032,6 +1323,17 @@ export function PuddleDiveGallery({
             transform: translateY(34px) scale(0.94);
           }
         }
+        /* The plain arrival a preview may ask for: the same rise, nothing
+           done to the colour and no blur — the thing is seen whole from its
+           first frame, only faint and a little low. Leaving, the reverse. */
+        @keyframes diveResolvePlain {
+          0% { opacity: 0; transform: translateY(22px) scale(0.96); }
+          100% { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes diveDissolvePlain {
+          0% { opacity: 1; transform: translateY(0) scale(1); }
+          100% { opacity: 0; transform: translateY(26px) scale(0.95); }
+        }
         /* the settled artifact's slow buoyant drift */
         @keyframes diveFloat {
           from { transform: translateY(0); }
@@ -1039,9 +1341,8 @@ export function PuddleDiveGallery({
         }
         /* the words arrive after the memory they belong to */
         @keyframes diveCaptionIn {
-          0%   { opacity: 0; }
-          45%  { opacity: 0; }
-          100% { opacity: 1; }
+          0%, 45% { opacity: 0; filter: blur(4px); }
+          100%    { opacity: 1; filter: none; }
         }
         @keyframes diveResolveReduced {
           from { opacity: 0; }
@@ -1118,6 +1419,11 @@ export function PuddleDiveGallery({
         @keyframes diveChromeIn {
           from { opacity: 0; filter: blur(6px); }
         }
+        @keyframes tsMagnet {
+          0% { transform: scale(1); }
+          42% { transform: scale(1.14); }
+          100% { transform: scale(1); }
+        }
       `}</style>
     </div>
   );
@@ -1140,6 +1446,28 @@ const TS_YEAR_TICK = 9;
 const TS_LABEL_DROP = 22;
 /** Major ticks every N years (2010, 2015, …). */
 const TS_YEAR_STEP = 5;
+/** How far a pointer can be from a memory, px, and still be drawn to it. */
+const TS_MAGNET_PX = 34;
+
+function nearestMemory(t: number, positions: number[]) {
+  let best = 0;
+  let dist = Infinity;
+  for (let i = 0; i < positions.length; i++) {
+    const d = Math.abs((positions[i] ?? 0) - t);
+    if (d < dist) { dist = d; best = i; }
+  }
+  return best;
+}
+
+/** Pull `t` toward the nearest memory; stronger as it comes inside the magnet. */
+function magnetize(t: number, positions: number[], inner: number) {
+  const i = nearestMemory(t, positions);
+  const dest = positions[i] ?? t;
+  const distPx = Math.abs(dest - t) * inner;
+  const u = distPx >= TS_MAGNET_PX ? 0 : 1 - distPx / TS_MAGNET_PX;
+  const pull = u * u;
+  return { i, displayT: t + (dest - t) * pull * 0.88, pull };
+}
 
 function TimeScale({
   items,
@@ -1149,6 +1477,7 @@ function TimeScale({
   travelMs,
   travelEase,
   enterAnimation,
+  onSeek,
 }: {
   items: DiveGalleryItem[];
   activeIdx: number;
@@ -1158,6 +1487,7 @@ function TimeScale({
   travelEase: string;
   /** Set when the ruler is new to the screen and has to draw itself in. */
   enterAnimation?: string;
+  onSeek?: (index: number) => void;
 }) {
   /** Memory places + the five-year ticks that frame them. */
   const { positions, yearTicks } = useMemo(() => {
@@ -1193,26 +1523,74 @@ function TimeScale({
 
   const pad = Math.max(TS_SIDE_PAD_MIN, TS_SIDE_PAD_VW * viewport.w);
   const inner = Math.max(1, viewport.w - pad * 2);
-  const y = viewport.h - TS_BOTTOM_PX;
+  const y = viewport.h - timeScaleInset(viewport);
   const x = (t: number) => pad + t * inner;
+  const [dragT, setDragT] = useState<number | null>(null);
+  const [pulse, setPulse] = useState(0);
+  const dragRef = useRef<{ id: number; x: number; travelled: number; last: number } | null>(null);
+  const selected = Math.round(Math.max(0, Math.min(positions.length - 1, activeIdx)));
+  const selectedRef = useRef(selected);
+  useEffect(() => {
+    if (dragT !== null) return;
+    if (selectedRef.current === selected) return;
+    selectedRef.current = selected;
+    setPulse((n) => n + 1);
+  }, [selected, dragT]);
+
+  const tFromX = (clientX: number) => Math.max(0, Math.min(1, (clientX - pad) / inner));
+  const applyPointer = (clientX: number, commit: boolean) => {
+    const raw = tFromX(clientX);
+    const { i, displayT, pull } = magnetize(raw, positions, inner);
+    setDragT(displayT);
+    if (commit || pull > 0.42) onSeek?.(i);
+    return i;
+  };
+
+  const onPointerDown = (e: PointerEvent<SVGRectElement>) => {
+    if (!visible || !onSeek || (e.button !== 0 && e.pointerType === "mouse")) return;
+    e.stopPropagation();
+    e.preventDefault();
+    dragRef.current = { id: e.pointerId, x: e.clientX, travelled: 0, last: selected };
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* already released */ }
+    applyPointer(e.clientX, false);
+  };
+  const onPointerMove = (e: PointerEvent<SVGRectElement>) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.travelled += Math.abs(e.clientX - drag.x);
+    drag.x = e.clientX;
+    const i = applyPointer(e.clientX, false);
+    drag.last = i;
+  };
+  const onPointerUp = (e: PointerEvent<SVGRectElement>) => {
+    const drag = dragRef.current;
+    if (!drag || e.pointerId !== drag.id) return;
+    dragRef.current = null;
+    const i = applyPointer(e.clientX, true);
+    setDragT(null);
+    if (i !== selectedRef.current) { selectedRef.current = i; setPulse((n) => n + 1); }
+  };
+
   const markAt = (() => {
+    if (dragT !== null) return dragT;
     const a = Math.max(0, Math.min(positions.length - 1, activeIdx));
     const i = Math.floor(a);
     const t0 = positions[i] ?? 0;
     const t1 = positions[Math.min(i + 1, positions.length - 1)] ?? t0;
     return t0 + (t1 - t0) * (a - i);
   })();
+  const magnet = magnetize(markAt, positions, inner);
 
   return (
     <svg
-      aria-hidden
-      className="absolute inset-0 pointer-events-none"
+      className="absolute inset-0"
       width="100%"
       height="100%"
       style={{
         opacity: visible ? 1 : 0,
         transition: "opacity 0.8s ease",
         animation: enterAnimation,
+        pointerEvents: "none",
       }}
     >
       <defs>
@@ -1235,18 +1613,22 @@ function TimeScale({
       <line x1={0} y1={y} x2={viewport.w} y2={y} stroke="url(#dive-timescale-fade)" strokeWidth={1} />
 
       {/* every memory — short tick, no year */}
-      {positions.map((t, i) => (
-        <line
-          key={`m-${items[i].id}`}
-          x1={x(t)}
-          y1={y - TS_MEMORY_TICK / 2}
-          x2={x(t)}
-          y2={y + TS_MEMORY_TICK / 2}
-          stroke="#4a4a4a"
-          strokeOpacity={0.28}
-          strokeWidth={1}
-        />
-      ))}
+      {positions.map((t, i) => {
+        const on = i === selected;
+        const lift = on ? 1 + magnet.pull * 0.55 : 1;
+        return (
+          <line
+            key={`m-${items[i].id}`}
+            x1={x(t)}
+            y1={y - (TS_MEMORY_TICK / 2) * lift - (on ? 1.6 : 0)}
+            x2={x(t)}
+            y2={y + (TS_MEMORY_TICK / 2) * lift + (on ? 1.6 : 0)}
+            stroke="#4a4a4a"
+            strokeOpacity={on ? 0.42 + magnet.pull * 0.22 : 0.28}
+            strokeWidth={on ? 1.25 : 1}
+          />
+        );
+      })}
 
       {/* regular five-year increments — long tick + year */}
       {yearTicks.map(({ year, t }) => (
@@ -1282,17 +1664,43 @@ function TimeScale({
       <g
         style={{
           transform: `translate(${x(markAt).toFixed(2)}px, ${y}px)`,
-          transition: travelMs ? `transform ${travelMs}ms ${travelEase}` : "none",
+          transition: dragT !== null || !travelMs ? "none" : `transform ${travelMs}ms ${travelEase}`,
         }}
       >
         <circle
+          key={pulse}
           r={TS_YEAR_TICK / 2}
           fill="#f7f7f8"
           stroke="#4a4a4a"
           strokeWidth={0.3}
-          style={{ filter: "drop-shadow(0 1px 11px rgba(45, 45, 45, 0.38))" }}
+          style={{
+            filter: `drop-shadow(0 1px ${11 + magnet.pull * 6}px rgba(45, 45, 45, ${0.38 + magnet.pull * 0.16}))`,
+            transform: `scale(${1 + magnet.pull * 0.06})`,
+            transformOrigin: "center",
+            transformBox: "fill-box",
+            animation: pulse && dragT === null ? "tsMagnet 720ms ease" : "none",
+          }}
         />
       </g>
+
+      <rect
+        x={0}
+        y={y - 32}
+        width={viewport.w}
+        height={68}
+        fill="transparent"
+        role="slider"
+        aria-label="memories in time"
+        aria-valuemin={0}
+        aria-valuemax={Math.max(0, items.length - 1)}
+        aria-valuenow={selected}
+        aria-valuetext={items[selected] ? `${items[selected].year} ${items[selected].event.replace(/\n/g, " ")}` : undefined}
+        style={{ pointerEvents: visible && onSeek ? "auto" : "none", cursor: dragT !== null ? "grabbing" : "ew-resize", touchAction: "none" }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      />
     </svg>
   );
 }

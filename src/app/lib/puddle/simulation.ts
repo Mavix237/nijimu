@@ -964,6 +964,8 @@ export function createPuddleSimulation(
 
     resize() {
       if (disposed) return;
+      // kept at 2× on phones too: the paper grain is drawn per canvas pixel,
+      // and a lower ratio would coarsen it (deviceTier.ts lowers the others)
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const w = Math.max(Math.round(canvas.clientWidth * dpr), 1);
       const h = Math.max(Math.round(canvas.clientHeight * dpr), 1);

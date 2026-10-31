@@ -1,39 +1,43 @@
+import { holdSurfaceFrame } from "../../lib/surfaceHandoff";
+import { ARTIFACT_LIGHT, useArtifactGlow } from "../../components/ArtifactGlow";
+import { SINK_WASH } from "../../lib/pondCamera";
 import { useLocation, useNavigate } from "react-router";
 import { useState, useEffect, useRef } from "react";
-import { BackButton } from "./BackButton";
-import { SceneViewer, MATERIAL_PRESETS } from "./SceneViewer";
-import { BubbleViewer, DEFAULT_BUBBLE_MATERIAL } from "./BubbleViewer";
-import { UNDERWATER_CSS_BACKGROUND } from "../lib/underwaterLight";
-import { OklchColorField } from "./OklchColorField";
-import { stripLegacyEvolveFromState } from "../hooks/useOscillatingEvolve";
+import { BackButton } from "../../components/BackButton";
+import { SceneViewer, MATERIAL_PRESETS } from "../../components/SceneViewer";
+import { BubbleViewer, BUBBLE_BACKGROUND, DEFAULT_BUBBLE_MATERIAL } from "../../components/BubbleViewer";
+import { AmbientSurround } from "../../components/AmbientSurround";
+import { OklchColorField } from "../../components/OklchColorField";
+import { stripLegacyEvolveFromState } from "../../hooks/useOscillatingEvolve";
 import {
   createGestureGate,
   handCenter,
   handOpenness,
   landmarkDistance,
   useHandTracking,
-} from "../hooks/useHandTracking";
-import { SANS, SERIF } from "../lib/theme";
-import { GestureHint } from "./GestureHint";
-import { PageHeader } from "./PageHeader";
-import { PillButton } from "./PillButton";
-import { LightGeometryView } from "./LightGeometryView";
-import { BubbleMaterialView } from "./BubbleMaterialView";
-import { BubblePhotoView } from "./BubblePhotoView";
-import { BubbleFormView } from "./BubbleFormView";
+} from "../../hooks/useHandTracking";
+import { SANS, SERIF } from "../../lib/theme";
+import { GestureHint } from "../../components/GestureHint";
+import { PageHeader } from "../../components/PageHeader";
+import { PillButton } from "../../components/PillButton";
+import { LightGeometryView } from "../../components/LightGeometryView";
+import { BubbleMaterialView } from "../../components/BubbleMaterialView";
+import { BubblePhotoView } from "../../components/BubblePhotoView";
+import { BubbleFormView } from "../../components/BubbleFormView";
+import { PhotoLibraryTray } from "../../components/PhotoLibraryTray";
 import {
   MEMORY_PHOTO_DEFAULTS,
   MEMORY_PHOTO_FILTER_DEFAULTS,
   type MemoryPhotoFilter,
-} from "./MemoryPhotoLayer";
+} from "../../components/MemoryPhotoLayer";
 import {
   DEFAULT_BUBBLE_AMBIENTS,
   DEFAULT_BUBBLE_LIGHTS,
   EditableLight,
   AmbientFill,
   TransformMode,
-} from "../lib/sceneLights";
-import { asFiniteNumber, loadFormDraft, saveFormDraft } from "../lib/formDraft";
+} from "../../lib/sceneLights";
+import { asFiniteNumber, loadFormDraft, saveFormDraft } from "../../lib/formDraft";
 import {
   DEFAULT_OKLCH,
   type Oklch,
@@ -42,22 +46,24 @@ import {
   rimFromOklch,
   sampleField,
   uvFromOklch,
-} from "../lib/oklch";
+} from "../../lib/oklch";
 import {
   NAMING_PATH,
   PHOTO_PATH,
   SHAPE_DISTANCE_PATH,
   SHAPE_FEELING_PATH,
   SHAPE_GROW_PATH,
-} from "../lib/routes";
+  TRANSCRIPT_PATH,
+} from "../../lib/routes";
 import {
   ArtifactCategory,
   ArtifactForm,
   createArtifactForm,
   formFromState,
   formKey,
-} from "../lib/superformula";
-import memoryPhotoUrl from "../../assets/memory-photo.jpg";
+} from "../../lib/superformula";
+import memoryPhotoUrl from "../../../assets/memory-photo.jpg";
+import snowMountainPhotoUrl from "../../../assets/memory-photo-02.png";
 
 type GestureStep = "shape" | "feeling" | "distance";
 
@@ -130,8 +136,12 @@ export function ShapeGrowPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const step = stepFromPath(location.pathname);
-  const underwaterEntry = !!location.state?.underwaterEntry;
-  // The scene is already there when arriving from the pond; only the words fade in.
+  const [leaving, setLeaving] = useState(false);
+  const exitRaf = useRef(0);
+  const exitStarted = useRef(false);
+  const artifactRef = useRef<HTMLDivElement>(null);
+  const glow = useArtifactGlow(ARTIFACT_LIGHT, .5);
+  useEffect(() => () => cancelAnimationFrame(exitRaf.current), []);
   const [fadeIn, setFadeIn] = useState(false);
   const [sceneReady, setSceneReady] = useState(underwaterEntry);
   const [handsDetected, setHandsDetected] = useState(0);
@@ -453,11 +463,30 @@ export function ShapeGrowPage() {
     MATERIAL_PRESETS.length - 1,
   );
   const colorApplied = step === "feeling";
-  // The chosen feeling colours the water around the form, faintly.
-  const underwaterTint = oklchToHex({
-    l: 0.8,
-    c: Math.min(oklch.c * 0.55, 0.05),
-    h: oklch.h,
+
+  const formState = () => ({
+    ...stripLegacyEvolveFromState(location.state),
+    cameraPermission,
+    form,
+    morphProgress,
+    bubbleMaterial,
+    lights,
+    ambients,
+    renderVariant: variant,
+    vividness,
+    photoFilter,
+    photoUrl: selectedPhotoUrl,
+    oklch,
+    coreColor,
+    rimColor,
+    matPresetIndex,
+    matColor: coreColor,
+    shape: {
+      form,
+      fluidity: 0,
+      evolve: morphProgress,
+      bumpAmount: 0,
+    },
   });
   const photoWrapped = !selectedPhotoUrl || photoWrapProgress >= .999;
   const overlayPhotoFade = photoWrapped
@@ -522,13 +551,30 @@ export function ShapeGrowPage() {
 
   const handleContinue = () => {
     saveFormDraft({ form, morphProgress, bubbleMaterial, lights, ambients });
-    const nextPath =
-      step === "shape"
-        ? SHAPE_DISTANCE_PATH
-        : step === "distance"
-          ? SHAPE_FEELING_PATH
-          : NAMING_PATH;
-    navigate(nextPath, { state: formState() });
+    if (step === "shape") navigate(SHAPE_DISTANCE_PATH, { state: formState() });
+    else if (step === "distance") navigate(SHAPE_FEELING_PATH, { state: formState() });
+    else {
+      if (exitStarted.current) return;
+      exitStarted.current = true;
+      const state = { ...formState(), rise: true,
+        look: { ...location.state?.look, photoUrl: selectedPhotoUrl ?? undefined, oklch, vividness } };
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        navigate(NAMING_PATH, { state }); return;
+      }
+      setLeaving(true);
+      const start = performance.now();
+      const tick = (now: number) => {
+        const p = Math.min(1, (now - start) / 1400);
+        const k = p * p * (3 - 2 * p);
+        glow.apply(artifactRef.current, k, .65 * k);
+        if (p < 1) exitRaf.current = requestAnimationFrame(tick);
+        else {
+          holdSurfaceFrame(artifactRef.current?.querySelector("canvas") ?? null, true);
+          navigate(NAMING_PATH, { state });
+        }
+      };
+      exitRaf.current = requestAnimationFrame(tick);
+    }
   };
 
   const handleBack = () => {
@@ -545,9 +591,13 @@ export function ShapeGrowPage() {
     <div
       className="relative w-full h-screen flex flex-col overflow-hidden"
       style={{
-        background: variant === "bubble" ? UNDERWATER_CSS_BACKGROUND : "#e0e0e0",
+        background: leaving ? SINK_WASH : variant === "bubble" ? BUBBLE_BACKGROUND : "#e0e0e0",
+        transition: "background 1400ms ease",
+        pointerEvents: leaving ? "none" : undefined,
       }}
     >
+      {glow.filter}
+      {step === "feeling" && <div style={{ opacity: leaving ? 0 : 1, transition: "opacity 1400ms ease" }}><AmbientSurround oklch={oklch} /></div>}
 
       <div
         style={{
@@ -562,6 +612,8 @@ export function ShapeGrowPage() {
           background: "rgba(40, 36, 48, 0.1)",
           boxShadow: "0 8px 24px rgba(40, 36, 48, 0.14), 0 2px 6px rgba(40, 36, 48, 0.08)",
           zIndex: 1000,
+          opacity: leaving ? 0 : 1,
+          transition: "opacity 700ms ease",
         }}
       >
         <video
@@ -579,6 +631,7 @@ export function ShapeGrowPage() {
       </div>
 
       <div
+        ref={artifactRef}
         style={{
           position: "fixed",
           top: 0,
@@ -593,6 +646,7 @@ export function ShapeGrowPage() {
       >
         {variant === "bubble" ? (
           <BubbleViewer
+            preserveDrawingBuffer={step === "feeling"}
             key={formKey(form)}
             autoRotate={!lightEditOpen && photoWrapped}
             morphProgress={morphProgress}
@@ -644,7 +698,7 @@ export function ShapeGrowPage() {
       <div
         className="flex flex-col h-full transition-opacity duration-1000"
         style={{
-          opacity: fadeIn ? 1 : 0,
+          opacity: fadeIn && !leaving ? 1 : 0,
           position: "relative",
           zIndex: 2,
           // Pass wheel / two-finger through to the canvas underneath.
@@ -729,7 +783,15 @@ export function ShapeGrowPage() {
         {variant === "bubble" && (step !== "shape" || photoWrapped) && (
           <GestureHint
             kind={step === "feeling" ? "color" : step}
-            active={photoWrapped && handsDetected >= (step === "shape" ? 2 : 1)}
+            active={handsDetected >= (step === "shape" ? 2 : 1)}
+            style={{
+              top: "auto",
+              left: "auto",
+              /* Centered on the round preview (152px, inset 22) with a gap above it. */
+              right: 22 + 76,
+              bottom: 22 + 152 + 12,
+              transform: "translateX(50%)",
+            }}
           />
         )}
 
@@ -820,7 +882,7 @@ export function ShapeGrowPage() {
       </div>
 
       {step === "feeling" && (
-        <div style={{ pointerEvents: "auto" }}>
+        <div style={{ pointerEvents: leaving ? "none" : "auto", opacity: leaving ? 0 : 1, transition: "opacity 1400ms ease" }}>
           <OklchColorField
             u={colorUv.u}
             v={colorUv.v}
@@ -874,7 +936,15 @@ export function ShapeGrowPage() {
         </>
       )}
 
-      {!lightEditOpen && step === "shape" && selectedPhotoUrl && !photoWrapped ? (
+      <PhotoLibraryTray
+        open={step === "distance" && photoLibraryOpen}
+        photos={[snowMountainPhotoUrl, memoryPhotoUrl]}
+        selectedUrl={selectedPhotoUrl}
+        onSelect={selectLibraryPhoto}
+        onClose={() => setPhotoLibraryOpen(false)}
+      />
+
+      {!lightEditOpen && !photoLibraryOpen && step === "distance" && (
         <PillButton
           label={photoWrapProgress > 0 ? "settling into the form" : "let the picture find its form"}
           onClick={beginPhotoWrap}
@@ -900,6 +970,7 @@ export function ShapeGrowPage() {
             left: "50%",
             transform: "translateX(-50%)",
             bottom: 40,
+            opacity: leaving ? 0 : 1,
             zIndex: 30,
             pointerEvents: "auto",
           }}

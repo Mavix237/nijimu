@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState } from "react";
+import { useContext, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router";
+import { GalleryOverrideContext } from "../lib/galleryOverride";
 import { isPuddleSupported } from "../lib/puddle/simulation";
 import { PuddleScene } from "./PuddleScene";
 import { PageHeader } from "./PageHeader";
@@ -31,7 +32,9 @@ export function MemoryCarouselPage({
   hideHeader?: boolean;
 }) {
   const navigate = useNavigate();
-  const items = useMemo(() => buildArchive(), [naming]);
+  const override = useContext(GalleryOverrideContext);
+  const overrideItems = override?.items;
+  const items = useMemo(() => overrideItems ?? buildArchive(), [naming, overrideItems]);
   const galleryFocusId = requestedFocusId ?? items[defaultCarouselIndex(items.length)]?.id;
   const [activeIdx, setActiveIdx] = useState(() => {
     if (!galleryFocusId) return 0;
@@ -63,7 +66,6 @@ export function MemoryCarouselPage({
     }
   }
   const goRecord = () => navigate(RECORD_START_PATH);
-  const goHome = () => navigate("/");
   const goPond = onPondEnter ?? (() => navigate(MEMORY_POND_PATH));
   const goGrid = () => navigate("/memory/scroll");
 
@@ -72,7 +74,7 @@ export function MemoryCarouselPage({
   if (!isPuddleSupported()) {
     return (
       <>
-        {markReady && !hideHeader && <PageHeader layout="absolute" link={false} />}
+        {markReady && !hideHeader && <PageHeader layout="absolute" />}
         <DiveGalleryHost
           naming={naming}
           reducedMotion={inkArrival?.reducedMotion ?? window.matchMedia("(prefers-reduced-motion: reduce)").matches}
@@ -84,7 +86,6 @@ export function MemoryCarouselPage({
             activeIdx: idx,
             phase: "gallery",
             onNavigate: (delta) => setActiveIdx((i) => Math.max(0, Math.min(items.length - 1, i + delta))),
-            onExit: goHome,
             onOverscrollExit: goPond,
             onToggleGrid: goGrid,
             toggleIcon: "plus",
@@ -109,7 +110,6 @@ export function MemoryCarouselPage({
       naming={naming}
       hideAnnotations
       onNewMemory={goRecord}
-      onGalleryExit={goHome}
       onOverscrollExit={goPond}
       onToggleGrid={goGrid}
       toggleIcon="plus"

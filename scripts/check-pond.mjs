@@ -21,7 +21,25 @@ function load(path, imports = {}, globals = {}) {
 }
 
 const landing = load("../src/app/lib/landingTransition.ts");
-const { POND_ENTRY, pondTransition, pondRimTravel, pondRimPose, pondRimSeat, pondSurfaceMask } = load("../src/app/lib/pondTransition.ts", { "./landingTransition": landing });
+const { POND_ENTRY, pondTransition, pondRimTravel, pondRimPose, pondRimSeat, pondFieldSeat, pondSurfaceMask } = load("../src/app/lib/pondTransition.ts", { "./landingTransition": landing });
+for (const height of [640, 1000]) {
+  for (const depth of [1, 4, 12, 24]) {
+    const size = 300, y = height * .8;
+    let previousY = y;
+    for (let step = 0; step <= 100; step++) {
+      const pose = pondFieldSeat(200, y, size, depth, height, step / 100, false);
+      assert.equal(pose.x, 200, 'constellation departure preserves horizontal placement');
+      assert.equal(pose.scale, 1, 'departure preserves artifact size');
+      assert.ok(pose.y <= previousY, 'each memory travels upward without a reversal');
+      previousY = pose.y;
+    }
+    assert.ok(previousY + size / 2 < 0, 'every memory fully clears the viewport');
+    assert.equal(pondFieldSeat(200, y, size, depth, height, 0, false).y, y, 'no jump at departure');
+    assert.equal(pondFieldSeat(200, y, size, depth, height, 1, true).y, y, 'reduced motion leaves seats still under the pond fade');
+  }
+  assert.ok(pondFieldSeat(200, 400, 300, 1, height, .5, false).y < pondFieldSeat(200, 400, 300, 12, height, .5, false).y,
+    'near memories travel faster than distant memories');
+}
 assert.equal(pondSurfaceMask(1), undefined, "settled pond retains its original appearance");
 assert.equal(pondSurfaceMask(2), undefined);
 assert.ok(pondSurfaceMask(0).includes("black 480px"), "entry feather spans twice the original height");
@@ -64,6 +82,11 @@ for (const reduced of [false, true]) {
 }
 
 const { pondPromptCue, POND_PROMPT_PERIOD, POND_THOUGHTS } = load("../src/app/lib/pondPrompts.ts", { "./landingTransition": landing });
+assert.equal(pondPromptCue(-1).ripple, 0, "no ripple while the first drop is still falling");
+assert.equal(pondPromptCue(-1).opacity, 0);
+assert.equal(pondPromptCue(-1).age, -1, "the cue counts down to the first landing");
+assert.equal(pondPromptCue(-1).cycle, 0);
+assert.equal(pondPromptCue(POND_PROMPT_PERIOD * 4 + 1).cycle, 4);
 assert.equal(pondPromptCue(0).ripple, 0);
 assert.ok(pondPromptCue(.05).ripple > 0, "the impulse is visible while its radius is still tiny");
 assert.equal(pondPromptCue(.1).ripple, 1, "do not wait until a large ring has already formed");
@@ -91,7 +114,7 @@ assert.ok(pondSource.includes("float waterHeight(vec2 p)"));
 assert.ok(pondSource.includes("/ (1.0 + d * .55)"), "a ring's energy is shared over a growing circumference");
 assert.ok(pondSource.includes("exp(-age * .33)"), "and is lost to the water as the ring travels");
 assert.ok(pondSource.includes("float gate = exp(-pow(max(0.0, front)"), "water outside the travelling front cannot ripple early");
-assert.ok(pondSource.includes("float birth = smoothstep(0.0, .03, age)"), "the near-zero impulse starts softly");
+assert.ok(pondSource.includes("float birth = smoothstep(0.0, mix(.03, .65, soft), age)"), "touch impulses start softly and transcription ripples have a longer entrance");
 assert.ok(pondSource.includes("uTime < uDrops[i].z) continue"), "a ripple cannot exist before its birth");
 assert.ok(!pondSource.includes("uRippleEnergy"), "new ripples cannot reset the pond-wide contrast");
 assert.ok(pondSource.includes("(ribbons - .5) * .022 + fibers * .006"), "ambient lighting contrast remains constant");
@@ -108,8 +131,8 @@ assert.ok(pondSource.includes("(ribbons - .5) * .022 + fibers * .006"), "ambient
 assert.ok(pondSource.includes("float train = cos(trail / wavelength"), "one dispersive train, not rings that each start again from nothing");
 assert.ok(pondSource.includes("float dimple ="), "the touch itself lands on the same frame as the press");
 assert.ok(!pondSource.includes("repeating-radial-gradient"), "the water is simulated, never a drawn-on pattern");
-assert.ok(pondSource.includes("vec2 surface = p - rippleField(p).yz"), "ripple displaces the water texture");
-assert.ok(pondSource.includes("vec2 flow = p - ripple.yz"), "the existing waves move with the same displacement");
+assert.ok(pondSource.includes("vec2 flow = flowAt(ripple, p)"), "ripple and wind share one flow");
+assert.ok(pondSource.includes("return p - ripple.yz * 1.8"), "a ripple drags the surface along with it");
 const pondPageSource = readFileSync(new URL("../src/app/components/MemoryPondPage.tsx", import.meta.url), "utf8");
 assert.ok(!pondPageSource.includes('background: "#7d9290"'), "prompt dots are removed");
 assert.ok(!pondSource.includes("createFlowLake"), "the later flow-map engine is not active");

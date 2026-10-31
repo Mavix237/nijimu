@@ -14,12 +14,16 @@ export const POND_THOUGHTS = [
 /** One drop, then its words, then stillness before the next pair. Seconds. */
 export const POND_PROMPT_PERIOD = 8.4;
 const unit = (value: number) => Math.max(0, Math.min(1, value));
+/** `elapsed` is measured from the first drop's landing; before it (negative)
+ * the first drop is still falling, and `age` counts down to the landing. */
 export function pondPromptCue(elapsed: number) {
-  const cycle = Math.floor(Math.max(0, elapsed) / POND_PROMPT_PERIOD);
-  const age = Math.max(0, elapsed) % POND_PROMPT_PERIOD;
+  if (elapsed < 0) return { index: 0, cycle: 0, age: elapsed, opacity: 0, lift: 9, ripple: 0 };
+  const cycle = Math.floor(elapsed / POND_PROMPT_PERIOD);
+  const age = elapsed % POND_PROMPT_PERIOD;
   const appear = unit(smoothProgress(age, .55, 1.45));
   return {
     index: cycle % POND_THOUGHTS.length,
+    cycle,
     age,
     opacity: unit(appear * (1 - smoothProgress(age, 5.7, 7))),
     lift: (1 - appear) * 9,

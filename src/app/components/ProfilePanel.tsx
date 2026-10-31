@@ -5,9 +5,9 @@
  */
 
 import { GlassPane } from "./GlassPane";
-import { PillButton } from "./PillButton";
+import { PaneOption, PaneOptions } from "./PaneOption";
 import { useLandingReturn } from "../lib/landingReturn";
-import { NOTE_SIZE, SERIF, SERIF_EXPOSURE, TITLE, META } from "../lib/theme";
+import { NOTE_SIZE, SANS, SERIF, SERIF_EXPOSURE, TITLE, META } from "../lib/theme";
 
 interface ProfilePanelProps {
   open: boolean;
@@ -43,7 +43,7 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
   const { beginReturn } = useLandingReturn();
 
   return (
-    <GlassPane open={open} onClose={onClose} label="profile" closeLabel="close profile">
+    <GlassPane open={open} onClose={onClose} label="profile">
       <div
         style={{
           display: "flex",
@@ -78,7 +78,10 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
         <h2
           style={{
             ...TITLE,
-            color: "#7b7b87",
+            fontFamily: SANS,
+            fontWeight: 600,
+            letterSpacing: "-0.01em",
+            color: "rgba(123, 123, 135, 0.7)",
             textTransform: "lowercase",
             margin: 0,
             textAlign: "center",
@@ -97,6 +100,7 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
             lineHeight: 1.6,
             color: "rgba(123, 123, 135, 0.7)",
             textAlign: "center",
+            textWrap: "balance",
             margin: 0,
             maxWidth: "min(300px, 100%)",
           }}
@@ -154,12 +158,9 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
         </div>
       </div>
 
-      <PillButton
-        label="exit to landing page"
-        onClick={beginReturn}
-        variant="outline"
-        style={{ marginTop: 2, flexShrink: 0 }}
-      />
+      <PaneOptions>
+        <PaneOption label="exit to landing page" onClick={beginReturn} />
+      </PaneOptions>
     </GlassPane>
   );
 }

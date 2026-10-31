@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { GalleryOverrideContext } from "../lib/galleryOverride";
 // import NewMomoryIdle from "../../imports/NewMomoryIdle"; // button hidden — cursor hint replaces it
 import { LIFE_EVENTS, MemoryEvent } from "../data/memoryData";
 import { loadMemories, toMemoryEvent, SavedMemory } from "../lib/memoryStore";
@@ -15,7 +16,7 @@ import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PuddleDiveGallery, type DiveGalleryItem, type DivePhase } from "./PuddleDiveGallery";
 import { INK_ENTRY, inkGrowth } from "../lib/landingTransition";
 import { DiveGalleryHost, draftAsSaved, type NamingSession } from "./NamingRim";
-import { NameMemoryPage } from "./NameMemoryPage";
+import { NameMemoryPage } from "../archive/shape-flow/NameMemoryPage";
 import { buildArchive } from "../lib/archive";
 
 /*
@@ -436,6 +437,7 @@ export function PuddleScene({
      placeholder above has words and a year in storage. Same indices as
      `anchors` (a saved memory is appended, and the draft was appended last),
      so the surface captions and the intro order can read from here. */
+  const override = useContext(GalleryOverrideContext);
   const liveSaved = useMemo(
     () => (naming ? savedMemories : loadMemories()),
     [naming, savedMemories],
@@ -455,13 +457,15 @@ export function PuddleScene({
      into a different order with differently seeded forms. Each one keeps the
      drop anchor its memory holds on the surface, which is what the water
      ripples to as the rim swings. */
+  // keyed on the override's items, not the override: a preview moving its seats re-provides every frame
+  const overrideItems = override?.items;
   const galleryItems = useMemo<DiveGalleryItem[]>(() => {
     const anchorById = new Map(events.map((e, i) => [e.id, anchors[i]]));
-    return buildArchive(liveSaved).map((artifact) => {
+    return (overrideItems ?? buildArchive(liveSaved)).map((artifact) => {
       const anchor = anchorById.get(artifact.id);
       return { ...artifact, anchor: { x: anchor?.x ?? 0.5, y: anchor?.y ?? 0.5 } };
     });
-  }, [events, anchors, liveSaved]);
+  }, [events, anchors, liveSaved, overrideItems]);
 
   /** Dedicated carousel route, or a rim handed over: the scene begins at depth
       so the puddle field never flashes underneath. */
@@ -1200,7 +1204,7 @@ export function PuddleScene({
     if (galleryOnly) return <PuddleDiveGallery items={galleryItems} activeIdx={galleryAt}
       phase="gallery" reducedMotion={reducedMotionPref} inkArrival={inkArrival} pondDeparture={pondDeparture} hideHeader={hideGalleryHeader}
       onNavigate={delta => setGalleryIdx(i => Math.max(0, Math.min(galleryItems.length - 1, i + delta)))}
-      onExit={() => onGalleryExit?.()} onOverscrollExit={onOverscrollExit}
+      onOverscrollExit={onOverscrollExit}
       onToggleGrid={onToggleGrid} toggleIcon={toggleIcon} />;
     return <BlobScene onNewMemory={onNewMemory} hideAnnotations={hideAnnotations} />;
   }
@@ -1214,7 +1218,7 @@ export function PuddleScene({
 
   return (
     <div
-      className="relative w-full h-screen overflow-hidden select-none"
+      className="relative w-full h-dvh overflow-hidden select-none"
       style={{ background: PAGE_BG }}
     >
       {/* The water. Under the naming step it is there but unseen — at depth,
@@ -1410,8 +1414,8 @@ export function PuddleScene({
           100% { opacity: 0; filter: blur(6px); }
         }
         @keyframes puddleHintIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
+          from { opacity: 0; filter: blur(4px); }
+          to { opacity: 1; filter: none; }
         }
         @keyframes puddleHoldRing {
           from {
@@ -1444,7 +1448,7 @@ export function PuddleScene({
             zIndex: 31,
           }}
         >
-          <PageHeader layout="absolute" link={false} />
+          <PageHeader layout="absolute" />
         </div>
       )}
 
@@ -1514,8 +1518,8 @@ export function PuddleScene({
               setGalleryIdx(next);
               diveControlsRef.current?.ripple(next);
             },
-            onExit: () => diveControlsRef.current?.close(),
-            onOverscrollExit: onOverscrollExit ?? (() => diveControlsRef.current?.close()),
+            onExit: galleryOnly ? undefined : () => diveControlsRef.current?.close(),
+            onOverscrollExit: onOverscrollExit ?? (galleryOnly ? undefined : () => diveControlsRef.current?.close()),
             onToggleGrid,
             toggleIcon,
             arrival: galleryCarried ? "carried" : "resolve",
@@ -1525,7 +1529,6 @@ export function PuddleScene({
     </div>
   );
 }
-
 
 
 

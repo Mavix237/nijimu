@@ -1,31 +1,42 @@
 # Archived screens
 
-These pages are not on the live router. Restore one by moving it back to
-`src/app/components/` and adding its route in `App.tsx`.
+The current create flow shares one canvas in `DescentFlow`:
+
+```
+/record/start → /record/descent (photo, hold, shape, rhythm, distance, feeling)
+  → /record/name (PondNamingOverlay in LandingPage) → /memory
+```
+
+`/record/transcript` redirects into `/record/descent`. The highlight screen is
+in `highlight-transcript/`.
+
+Current headings and naming fields use `FlowPageGrid`, with row positions in
+`FLOW_PAGE` in `src/app/lib/theme.ts`. Navigation is a separate row above them.
+`/lab/descent` previews the same scene with additional study controls.
+
+## `color-spectrum-2026-10-10/`
+
+The separate [`color-spectrum-2026-10-10/`](color-spectrum-2026-10-10/README.md)
+snapshot preserves the underwater colour page before the homescreen-palette field
+experiment. It includes the owning scene and original colour field/mapping.
+
+## `shape-flow/`
+
+Previous standalone shape, color, texture, and naming screens. The old
+`/record/shape/:step` routes now redirect into `/record/descent`, preserving
+carried state. Their home-screen shortcuts have been removed. `NameMemoryPage`
+is retained only as the existing WebGL-failure fallback for the older
+`PuddleScene` host; the live naming route uses `PondNamingOverlay`.
+
+## `highlight-transcript/`
+
+The spoken-word screen (`PuddleTranscriptPage`): the transcript types in, then
+a drag highlights up to two words at a time. It is not routed. Curated
+`highlightedWords` remain on each memory; the gallery trail does not ink them.
 
 ## `record-loop/`
 
-The previous create flow, reached when hold-to-record still A/B'd through
-`RecordingStartRoute` / `TranscriptRoute`:
-
-```
-/record/click
-/record/start      RecordingStartPage (dark blob field)
-/record/process
-/record/transcript TranscriptPage (gray polish + highlight)
-/record/build
-/record/shape
-/record/shape/grow → weight → color → texture
-/record/connect
-/record/orb
-```
-
-The present flow is:
-
-```
-hold (pond / carousel)
- └ /record/start      PuddleRecordingPage
-   └ /record/transcript  PuddleTranscriptPage
-     └ /record/name      naming rim (LandingPage)
-       └ /memory
-```
+Earlier recording/build/connect/orb screens, no longer routed. These include
+RecordingStartPage, TranscriptPage, ShapeEditorPage, ShapeWeightPage,
+ShapeColorPage's predecessors, and ConnectMemoriesPage. Restore experiments
+only behind a dedicated lab route; do not replace the current create flow.

@@ -1,9 +1,9 @@
 import { useLocation } from "react-router";
 import { useMemo, useState } from "react";
-import { PAGE_BG } from "./PuddleBackdrop";
-import { PageHeader } from "./PageHeader";
-import { PuddleDiveGallery } from "./PuddleDiveGallery";
-import { useNamingRim, type NameFlowState, type NamingSession } from "./NamingRim";
+import { PAGE_BG } from "../../components/PuddleBackdrop";
+import { PageHeader } from "../../components/PageHeader";
+import { PuddleDiveGallery } from "../../components/PuddleDiveGallery";
+import { useNamingRim, type NameFlowState, type NamingSession } from "../../components/NamingRim";
 
 /*
  * NameMemoryPage — the naming step on its own page.
@@ -19,7 +19,7 @@ export function NameMemoryPage() {
     () => window.matchMedia("(prefers-reduced-motion: reduce)").matches,
   );
   const session = useMemo<NamingSession>(
-    () => ({ draftId, state: (location.state as NameFlowState | null) ?? {} }),
+    () => ({ draftId: (location.state as NameFlowState | null)?.memoryId ?? draftId, state: (location.state as NameFlowState | null) ?? {} }),
     [draftId, location.state],
   );
   const rim = useNamingRim(session, reducedMotion);
@@ -38,7 +38,7 @@ export function NameMemoryPage() {
         background: PAGE_BG,
       }}
     >
-      <PageHeader layout="absolute" link={false} />
+      <PageHeader layout="absolute" />
       <PuddleDiveGallery
         items={rim.items}
         activeIdx={rim.activeIdx}

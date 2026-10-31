@@ -1,26 +1,34 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useHoldToCreate } from "../hooks/useHoldToCreate";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, RECORD_START_PATH, SHAPE_GROW_PATH, TRANSCRIPT_PATH } from "../lib/routes";
 import { CHROME_GRAY } from "../lib/colors";
-import { INSTRUCTION_SIZE, SANS, SERIF, SERIF_EXPOSURE } from "../lib/theme";
+import { INSTRUCTION_SIZE, POND_PROMPT_SIZE, SANS, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { POND_THOUGHTS, hasSeenPondInstruction, markPondInstructionSeen, pondPromptCue } from "../lib/pondPrompts";
-import { loadFormDraft } from "../lib/formDraft";
-import { DEFAULT_BUBBLE_AMBIENTS, DEFAULT_BUBBLE_LIGHTS, type AmbientFill, type EditableLight } from "../lib/sceneLights";
-import { createArtifactForm, formFromState } from "../lib/superformula";
-import { DEFAULT_BUBBLE_MATERIAL } from "./BubbleViewer";
-import { PerspectivePond, type PondTouch, type UnderwaterHandoff } from "./PerspectivePond";
+import { POND_DROP_FALL_S } from "../lib/pondPigment";
+import { POND_BACKDROP, PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
 import { PondRecordingOverlay } from "./PondRecordingOverlay";
-import { PondPhotoOverlay } from "./PondPhotoOverlay";
-import type { PondPaper } from "./PondPhotoPaper";
-import { PuddleTranscriptPage } from "./PuddleTranscriptPage";
+import { PondNamingOverlay } from "./PondNamingOverlay";
+import type { NamingSession } from "./NamingRim";
 
-export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, transcript = false, photo = false, onReady, onLeave, onSubmergeChange }: {
-  arrival?: number; active?: boolean; reducedMotion?: boolean; recording?: boolean; transcript?: boolean; photo?: boolean; onReady?: () => void; onLeave?: () => void; onSubmergeChange?: (active: boolean) => void;
+export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, naming = null, onReady, onLeave, onNamingSaved, namingBackRef, covered = false, renderScene }: {
+  /** Another step owns the controls while the pond stays mounted underneath. */
+  covered?: boolean;
+  /** Reuse a host scene, including its camera, wave clock, and ripple uniforms. */
+  renderScene?: (props: PondProps) => ReactNode;
+  arrival?: number; active?: boolean; reducedMotion?: boolean; recording?: boolean;
+  /** The naming step: the memory just made hangs over this same water. */
+  naming?: NamingSession | null;
+  onReady?: () => void; onLeave?: () => void;
+  /** The named memory is saved; the host takes the pond away and opens the gallery on it. */
+  onNamingSaved?: (draftId: string) => void;
+  /** Filled by the naming step with its way back down to the feeling step. */
+  namingBackRef?: RefObject<(() => void) | null>;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const overlaid = recording || transcript || photo;
+  const overlaid = covered || recording || !!naming;
+  const sinkRef = useRef(0);
   const [touch, setTouch] = useState<PondTouch | null>(null);
   // The picture chosen for this memory, on its way down to (or resting on) the water.
   const [paper, setPaper] = useState<PondPaper | null>(null);
@@ -65,15 +73,13 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     return () => onSubmergeChange?.(false);
   }, [submerging, onSubmergeChange]);
   const promptRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const cueRef = useRef(pondPromptCue(0));
+  const cueRef = useRef(pondPromptCue(-POND_DROP_FALL_S));
   const buttonRef = useRef<HTMLButtonElement>(null);
   const origin = useRef<{ x: number; y: number } | null>(null);
   const cursorRef = useRef<{ x: number; y: number } | null>(null);
   const hintRef = useRef<HTMLDivElement>(null);
-  const lineRef = useRef<HTMLParagraphElement>(null);
   const hintReveal = useRef(0);
   const holdProgress = useRef(0);
-  const seen = useRef(hasSeenPondInstruction());
   const [lifeReady, setLifeReady] = useState(() => overlaid || hasSeenPondInstruction());
   const enabled = active && arrival === 1 && !overlaid;
   const ready = useCallback(() => onReady?.(), [onReady]);
@@ -81,7 +87,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
   touchRef.current = touch;
   const hold = useHoldToCreate(() => {
     const at = touchRef.current;
-    navigate(RECORD_START_PATH, { state: { focus: [at?.x ?? .5, at?.y ?? .65] } });
+    navigate(RECORD_START_PATH, { state: { ...location.state, focus: [at?.x ?? .5, at?.y ?? .65] } });
   }, enabled);
   holdProgress.current = hold.progress;
   const back = useCallback(() => (onLeave ?? (() => navigate(CAROUSEL_PATH)))(), [navigate, onLeave]);
@@ -89,36 +95,19 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     const r = e.currentTarget.getBoundingClientRect();
     cursorRef.current = { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height };
   };
+  // The first visit's prompts and hint wait for the heading to have appeared.
   useEffect(() => {
     if (!enabled || lifeReady) return;
-    const line = lineRef.current;
-    if (!line) return;
-    let raf = 0, elapsed = 0, last = performance.now();
-    const appearMs = reducedMotion ? 1 : 920;
-    const riseMs = reducedMotion ? 1 : 1100;
-    const ease = (t: number) => t * t * (3 - 2 * t);
-    line.style.opacity = "0";
-    line.style.transform = "translate(-50%, -50%) translateY(18px)";
-    const tick = (now: number) => {
-      if (!document.hidden) elapsed += Math.min(50, now - last);
-      last = now;
-      const appear = ease(Math.min(1, elapsed / appearMs));
-      const rise = ease(Math.min(1, Math.max(0, (elapsed - appearMs) / riseMs)));
-      line.style.opacity = String(appear);
-      line.style.transform = `translate(-50%, -50%) translateY(calc(${(1 - appear) * 18}px - ${rise * 20}vh))`;
-      if (appear >= 1 && rise >= 1) {
-        markPondInstructionSeen();
-        seen.current = true;
-        setLifeReady(true);
-        return;
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    const timer = window.setTimeout(() => {
+      markPondInstructionSeen();
+      setLifeReady(true);
+    }, reducedMotion ? 0 : POND_HEADING_DELAY_MS + TEXT_ENTER_MS);
+    return () => window.clearTimeout(timer);
   }, [enabled, lifeReady, reducedMotion]);
   useEffect(() => {
-    let raf = 0, elapsed = 0, last = performance.now();
+    // Each prompt's ripple is a drop of pigment landing; the first one falls
+    // before the clock reaches it, under reduced motion it is already down.
+    let raf = 0, elapsed = reducedMotion ? 0 : -POND_DROP_FALL_S, last = performance.now();
     const tick = (now: number) => {
       if (enabled && lifeReady && !document.hidden) elapsed += Math.min(50, now - last) / 1000;
       last = now;
@@ -169,19 +158,28 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     if (!active) return;
     const keys = (e: KeyboardEvent) => {
       if (e.key !== "Escape" && e.key !== "ArrowUp") return;
-      if (submerging) return;
-      if (photo) navigate(TRANSCRIPT_PATH, { state: location.state });
-      else if (transcript) navigate(RECORD_START_PATH, { state: location.state });
+      if (naming) namingBackRef?.current?.();
       else if (recording) navigate(MEMORY_POND_PATH);
       else back();
     };
     window.addEventListener("keydown", keys);
     return () => window.removeEventListener("keydown", keys);
-  }, [active, recording, transcript, photo, submerging, back, navigate, location.state]);
+  }, [active, recording, naming, namingBackRef, back, navigate]);
   useEffect(() => {
     if (!enabled) return;
     buttonRef.current?.focus({ preventScroll: true });
   }, [enabled]);
+  useEffect(() => {
+    const el = buttonRef.current;
+    if (!el) return;
+    // A long press on this full-screen button opens the iOS text magnifier
+    // unless the touch itself is cancelled. The listener has to be non-passive.
+    const stopMagnifier = (event: TouchEvent) => {
+      if (event.cancelable) event.preventDefault();
+    };
+    el.addEventListener("touchstart", stopMagnifier, { passive: false });
+    return () => el.removeEventListener("touchstart", stopMagnifier);
+  }, [overlaid]);
   useEffect(() => {
     if (!enabled) return;
     let leftover = 0;
@@ -206,47 +204,22 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     setTouch({ ...at, serial: performance.now() });
   }, []);
 
-  return <section aria-label={photo ? "a picture for this memory" : transcript ? "your spoken memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-ready={enabled}
-    style={{ position: "absolute", inset: 0, overflow: "hidden", background: "linear-gradient(#ededE8, #e2e6e2 42%, #b6c8c3)" }}>
-    <PerspectivePond arrival={arrival} reducedMotion={reducedMotion} touch={touch} cursorRef={cursorRef} holdRef={holdProgress} hintRef={hintRef} hintRevealRef={hintReveal} promptRefs={promptRefs} cueRef={cueRef} onReady={ready} lifeReady={lifeReady} promptRipples={!overlaid}
-      paper={paper} onPaperLanded={markPaperLanded}
-      submerge={submerging} handoff={handoff} onSubmergeComplete={finishSubmerge} />
-    <div aria-hidden style={{
-      position: "absolute", inset: 0, pointerEvents: "none",
-      background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)",
-      opacity: submerging ? 0 : 1,
-      transition: "opacity 2400ms ease",
-    }} />
+  const pondProps: PondProps = { arrival, reducedMotion, touch, cursorRef, holdRef: holdProgress,
+    hintRef, hintRevealRef: hintReveal, promptRefs, cueRef, onReady: ready, lifeReady,
+    promptRipples: !overlaid && active, sinkRef };
+
+  return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
+    style={{ position: "absolute", inset: 0, overflow: "hidden", background: POND_BACKDROP, WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
+    {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
+    {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
+
     {POND_THOUGHTS.map((thought, i) => <div key={thought.text} ref={el => { promptRefs.current[i] = el; }} data-pond-prompt={i} aria-hidden="true"
-      style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SERIF_EXPOSURE, fontWeight: 400, fontSynthesis: "none", fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
+      style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SANS, fontWeight: 400, fontSynthesis: "none", fontSize: POND_PROMPT_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
       {thought.text}
     </div>)}
-    <p
-      ref={lineRef}
-      aria-hidden
-      style={{
-        position: "absolute",
-        left: "50%",
-        top: "50%",
-        transform: seen.current
-          ? "translate(-50%, -50%) translateY(-20vh)"
-          : "translate(-50%, -50%) translateY(18px)",
-        margin: 0,
-        width: "min(28em, 86vw)",
-        textAlign: "center",
-        pointerEvents: "none",
-        zIndex: 8,
-        color: CHROME_GRAY,
-        fontFamily: SERIF,
-        fontWeight: 400,
-        fontSynthesis: "none",
-        fontSize: INSTRUCTION_SIZE,
-        lineHeight: 1.45,
-        opacity: overlaid ? 0 : seen.current ? arrival : 0,
-        transition: overlaid ? "opacity 400ms ease" : undefined,
-      }}
-    >To create a new memory artifact, record yourself talking about a particular memory.
-    </p>
+    <PondHeading visible={enabled} reducedMotion={reducedMotion}>
+      To create a new memory artifact, record yourself talking about a particular memory.
+    </PondHeading>
     {!overlaid && <button ref={buttonRef} aria-label="Hold to begin" aria-describedby="pond-hold-help" disabled={!enabled}
       onPointerDown={e => {
         if (e.button !== 0) return;
@@ -254,7 +227,8 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
         origin.current = { x: e.clientX, y: e.clientY };
         setCursor(e);
         const r = e.currentTarget.getBoundingClientRect();
-        setTouch({ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, serial: performance.now() });
+        // a press stirs the water gently: a low ring that spreads slowly
+        setTouch({ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, serial: performance.now(), strength: .7, slow: true });
         hold.start();
       }}
       onPointerMove={e => {
@@ -276,7 +250,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       onBlur={hold.cancel} onContextMenu={e => e.preventDefault()}
       onKeyDown={e => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); hold.start(); } }}
       onKeyUp={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); hold.cancel(); } }}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", outline: "none", background: "transparent", touchAction: "none", cursor: "default", zIndex: 10 }}>
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", outline: "none", background: "transparent", touchAction: "none", cursor: "default", zIndex: 10, WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
       <span className="sr-only">Hold for two seconds, or hold Space or Enter. Release to cancel.</span>
     </button>}
     <div ref={hintRef} id="pond-hold-help" aria-hidden
@@ -284,8 +258,37 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       Hold to begin
     </div>
     {recording && <PondRecordingOverlay reducedMotion={reducedMotion} onVoicePulse={pulseWater} />}
-    {transcript && <PuddleTranscriptPage />}
-    {photo && !submerging && <PondPhotoOverlay reducedMotion={reducedMotion} chosenUrl={paper?.url} landed={paperLanded} onChoose={choosePaper} onClear={clearPaper} onContinue={beginSubmerge} />}
-    <span className="sr-only" role="status">{recording ? "ready to record" : photo && paperLanded ? "the picture is resting on the water" : ""}</span>
+    {naming && onNamingSaved && <PondNamingOverlay key={naming.draftId} session={naming} reducedMotion={reducedMotion} sinkRef={sinkRef} onSaved={onNamingSaved} backRef={namingBackRef} />}
+    <span className="sr-only" role="status">{recording ? "ready to record" : ""}</span>
   </section>;
+}
+
+/** After the camera settles, a beat before the heading appears. */
+const POND_HEADING_DELAY_MS = 300;
+
+/** The pond's heading: it fades in where it rests, never travelling, a beat
+ * after the camera has settled. The descent's floating photo wears the same. */
+export function PondHeading({ visible, reducedMotion = false, children }: {
+  visible: boolean; reducedMotion?: boolean; children: ReactNode;
+}) {
+  return <p aria-hidden style={{
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    transform: "translate(-50%, -50%) translateY(-20vh)",
+    margin: 0,
+    width: "min(28em, 86vw)",
+    textAlign: "center",
+    pointerEvents: "none",
+    zIndex: 8,
+    color: CHROME_GRAY,
+    fontFamily: SERIF,
+    fontWeight: 400,
+    fontSynthesis: "none",
+    fontSize: INSTRUCTION_SIZE,
+    lineHeight: 1.45,
+    opacity: visible ? 1 : 0,
+    transition: reducedMotion ? "opacity 200ms ease"
+      : visible ? `opacity ${TEXT_ENTER_MS}ms ease ${POND_HEADING_DELAY_MS}ms` : "opacity 400ms ease",
+  }}>{children}</p>;
 }

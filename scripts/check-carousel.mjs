@@ -155,7 +155,7 @@ assert.equal(floatState.floatClock.current, 0, "rapid reversal resets the float 
 assert.equal(floatState.t, 12, "rotation clock is preserved");
 
 // Run the real keyboard, wheel and touch handlers against both archive ends.
-const inputSource = gallery.slice(gallery.indexOf("  /* arrows — keyboard */"), gallery.indexOf("  /* build the forms just off the end of the rim"));
+const inputSource = gallery.slice(gallery.indexOf("  /* arrows — keyboard"), gallery.indexOf("  /* build the forms just off the end of the rim"));
 assert.ok(inputSource.includes('addEventListener("touchend"'));
 for (const oldest of [true, false]) {
   const handlers = {};
@@ -167,8 +167,9 @@ for (const oldest of [true, false]) {
   }).outputText, {
     useEffect: fn => fn(),
     window: { innerHeight: 800, addEventListener: (name, fn) => { handlers[name] = fn; } },
+    document: { querySelector: () => null },
     performance: { now: () => now += 1000 },
-    phase: "gallery", growth: 1, pondDeparture: 0, showArrows: true,
+    phase: "gallery", growth: 1, pondDeparture: 0, showArrows: true, inField: false,
     hasOlder: !oldest, hasNewer: oldest, reducedMotion: true,
     rimSettledRef: { current: true }, onNavigate: dir => moves.push(dir),
     onExit: () => exits.push("home"), onOverscrollExit: () => exits.push("pond"),

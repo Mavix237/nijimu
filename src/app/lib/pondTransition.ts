@@ -34,6 +34,16 @@ export function pondRimSeat(x: number, y: number, cx: number, apex: number, heig
     scale, z, tilt: pose.tilt };
 }
 
+/** Lift the constellation in depth layers, keeping each memory's size and x.
+ * Near memories leave sooner; every seat clears before the pond settles.
+ * The same pose plays backwards when returning from the pond. */
+export function pondFieldSeat(x: number, y: number, size: number, depth: number, height: number, progress: number, reduced: boolean) {
+  const near = 1 / (1 + Math.max(0, depth) / 4);
+  const lift = reduced ? 0 : smoothProgress(progress, (1 - near) * .12, 1 - near * .24);
+  const travel = Math.max(height * (1.15 + near * .45), y + size / 2 + height * .15);
+  return { x, y: y - travel * lift, scale: 1, z: 0, tilt: 0 };
+}
+
 export function pondTransition(elapsed: number, reduced: boolean) {
   if (reduced) {
     const arrival = smoothProgress(elapsed, 0, POND_ENTRY.reducedEnd);

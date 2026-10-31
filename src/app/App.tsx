@@ -1,18 +1,16 @@
-import { createBrowserRouter, Outlet, RouterProvider, useLocation, useNavigate } from "react-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createBrowserRouter, Navigate, Outlet, RouterProvider, useLocation, useNavigate } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CHROME_GRAY } from "./lib/colors";
-import { HomePage } from "./components/HomePage";
 import { LandingPage } from "./components/LandingPage";
 import {
   CAROUSEL_PATH,
   MEMORY_FIELD_PATH,
   MEMORY_POND_PATH,
+  DESCENT_PATH,
+  DESCENT_STEP_PATHS,
   NAMING_PATH,
   PHOTO_PATH,
   RECORD_START_PATH,
-  SHAPE_DISTANCE_PATH,
-  SHAPE_FEELING_PATH,
-  SHAPE_GROW_PATH,
   TRANSCRIPT_PATH,
 } from "./lib/routes";
 import {
@@ -22,18 +20,11 @@ import {
   useLandingReturn,
   type LandingReturnPhase,
 } from "./lib/landingReturn";
-import { ShapeGrowPage } from "./components/ShapeGrowPage";
-import { MemorySavedPage } from "./components/MemorySavedPage";
+import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
 import { ProfilePanel } from "./components/ProfilePanel";
-import { MemoryScrollPage } from "./components/MemoryScrollPage";
-import { RevisitMemoryPage } from "./components/RevisitMemoryPage";
-import { EditWeightPage } from "./components/EditWeightPage";
-import { EditColorPage } from "./components/EditColorPage";
-import { EditTexturePage } from "./components/EditTexturePage";
-import { StyleGuidePage } from "./components/StyleGuidePage";
-
-const SOUNDTRACK_URL =
-  "https://cdn.jsdelivr.net/gh/Noyok1vas/figbuildAssets/prodarmaan%20-%20somber%20springtime.mp3";
+import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
+import { useCompact } from "./hooks/useCompact";
+import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
 
 /** GitHub Pages subpath: Vite sets BASE_URL from vite.config base (e.g. /repo/). */
 const routerBasename =
@@ -46,6 +37,12 @@ function RootLayout() {
   const { pathname } = useLocation();
   const [phase, setPhase] = useState<LandingReturnPhase>("idle");
   const [profileOpen, setProfileOpen] = useState(false);
+  // on a phone the header's corner icons fold into one menu (HeaderMenu.tsx)
+  const compact = useCompact();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [menuList, setMenuList] = useState<HTMLElement | null>(null);
+  const closeMenu = useCallback(() => setMenuOpen(false), []);
+  const headerMenu = useMemo(() => ({ list: compact ? menuList : null, close: closeMenu }), [compact, menuList, closeMenu]);
   const timersRef = useRef<number[]>([]);
 
   const clearTimers = useCallback(() => {
@@ -83,7 +80,9 @@ function RootLayout() {
 
   return (
     <LandingReturnContext.Provider value={{ phase, beginReturn }}>
-      <GlobalControls profileOpen={profileOpen} onProfileOpenChange={setProfileOpen} />
+    <HeaderMenuContext.Provider value={headerMenu}>
+      <GlobalControls profileOpen={profileOpen} onProfileOpenChange={setProfileOpen}
+        menu={compact ? { open: menuOpen, onOpenChange: setMenuOpen, listRef: setMenuList } : null} />
       <div
         aria-hidden
         style={{
@@ -99,20 +98,31 @@ function RootLayout() {
         }}
       />
       <Outlet />
+    </HeaderMenuContext.Provider>
     </LandingReturnContext.Provider>
   );
 }
 
+// Old bookmarks enter the current, single-canvas flow with their carried draft.
+function ArchivedShapeRedirect() {
+  const { state } = useLocation();
+  return <Navigate to={DESCENT_PATH} state={state} replace />;
+}
+
 const router = createBrowserRouter([
-  { path: "/style", Component: StyleGuidePage },
+  { path: "/style", HydrateFallback: () => null, lazy: () => import("./components/StyleGuidePage").then((m) => ({ Component: m.StyleGuidePage })) },
+  { path: "/lab/descent", HydrateFallback: () => null, lazy: () => import("./lab/DescentPrototype").then((m) => ({ Component: m.DescentPrototype })) },
+  { path: "/lab/film", HydrateFallback: () => null, lazy: () => import("./lab/FilmPreview").then((m) => ({ Component: m.FilmPreview })) },
+  { path: "/lab/vessel", HydrateFallback: () => null, lazy: () => import("./lab/VesselPreview").then((m) => ({ Component: m.VesselPreview })) },
   {
     Component: RootLayout,
+    // a direct visit to a lazily loaded page shows the paper while its code arrives
+    HydrateFallback: () => null,
     children: [
       {
-        /* Landing, the dive carousel, the pond, recording, transcript, the
-           picture, and naming share one layout: Enter preloads the gallery
-           behind the ink, recording, transcript and the picture keep the pond
-           mounted, and saving a memory
+        /* Landing, gallery, pond, recording, descent and
+           naming share one layout: Enter preloads the gallery behind the ink,
+           saving a memory
            turns the naming rim into that same gallery in place. The children
            render nothing themselves; LandingPage reads the path. */
         Component: LandingPage,
@@ -122,20 +132,25 @@ const router = createBrowserRouter([
           { path: MEMORY_POND_PATH, element: null },
           { path: RECORD_START_PATH, element: null },
           { path: TRANSCRIPT_PATH, element: null },
-          { path: PHOTO_PATH, element: null },
+          { path: DESCENT_PATH, element: null },
+          ...Object.values(DESCENT_STEP_PATHS).map(path => ({ path, element: null })),
           { path: NAMING_PATH, element: null },
         ],
       },
-      { path: MEMORY_FIELD_PATH, Component: HomePage },
-      { path: SHAPE_GROW_PATH, Component: ShapeGrowPage },
-      { path: SHAPE_FEELING_PATH, Component: ShapeGrowPage },
-      { path: SHAPE_DISTANCE_PATH, Component: ShapeGrowPage },
-      { path: "/record/saved", Component: MemorySavedPage },
-      { path: "/memory/scroll", Component: MemoryScrollPage },
-      { path: "/memory/revisit", Component: RevisitMemoryPage },
-      { path: "/memory/edit/weight", Component: EditWeightPage },
-      { path: "/memory/edit/color", Component: EditColorPage },
-      { path: "/memory/edit/texture", Component: EditTexturePage },
+      /* Everything off the landing layout loads on its own: the landing must
+         not wait for three.js, the labs or the revisit editors. A navigation
+         keeps the current page until the next one's code has arrived. */
+      { path: MEMORY_FIELD_PATH, lazy: () => import("./components/HomePage").then((m) => ({ Component: m.HomePage })) },
+      { path: "/lab/gallery", lazy: () => import("./lab/VesselGalleryPreview").then((m) => ({ Component: m.VesselGalleryPreview })) },
+      { path: "/lab/meaning", lazy: () => import("./lab/MemoryMeaningLab").then((m) => ({ Component: m.MemoryMeaningLab })) },
+      { path: "/lab/shapes", lazy: () => import("./lab/ShapeLibraryLab").then((m) => ({ Component: m.ShapeLibraryLab })) },
+      { path: "/record/shape/:step", Component: ArchivedShapeRedirect },
+      { path: "/record/saved", lazy: () => import("./components/MemorySavedPage").then((m) => ({ Component: m.MemorySavedPage })) },
+      { path: "/memory/scroll", lazy: () => import("./components/MemoryScrollPage").then((m) => ({ Component: m.MemoryScrollPage })) },
+      { path: "/memory/revisit", lazy: () => import("./components/RevisitMemoryPage").then((m) => ({ Component: m.RevisitMemoryPage })) },
+      { path: "/memory/edit/weight", lazy: () => import("./components/EditWeightPage").then((m) => ({ Component: m.EditWeightPage })) },
+      { path: "/memory/edit/color", lazy: () => import("./components/EditColorPage").then((m) => ({ Component: m.EditColorPage })) },
+      { path: "/memory/edit/texture", lazy: () => import("./components/EditTexturePage").then((m) => ({ Component: m.EditTexturePage })) },
     ],
   },
 ], { basename: routerBasename });
@@ -143,119 +158,92 @@ const router = createBrowserRouter([
 function GlobalControls({
   profileOpen,
   onProfileOpenChange,
+  menu,
 }: {
   profileOpen: boolean;
   onProfileOpenChange: (open: boolean) => void;
+  /** The folded header on a phone; null draws the corner icons. */
+  menu: { open: boolean; onOpenChange: (open: boolean) => void; listRef: (el: HTMLDivElement | null) => void } | null;
 }) {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [muted, setMuted] = useState(true);
+  // one player for the visit (lib/soundtrack.ts): no page change restarts it
+  const muted = useSoundtrack();
   const { pathname } = useLocation();
   const { phase } = useLandingReturn();
-  const onLanding = pathname === "/";
   const leavingScene = phase === "scene-out" || phase === "holding";
-
-  useEffect(() => {
-    const audio = new Audio(SOUNDTRACK_URL);
-    audio.loop = true;
-    audio.volume = 0.35;
-    audio.muted = true;
-    audioRef.current = audio;
-
-    const attempt = audio.play();
-    if (attempt !== undefined) {
-      attempt.catch(() => {
-        const resume = () => {
-          audio.play().catch(() => {});
-          window.removeEventListener("pointerdown", resume);
-          window.removeEventListener("keydown", resume);
-        };
-        window.addEventListener("pointerdown", resume, { once: true });
-        window.addEventListener("keydown", resume, { once: true });
-      });
-    }
-
-    return () => {
-      audio.pause();
-      audio.src = "";
-    };
-  }, []);
-
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.muted = muted;
-  }, [muted]);
 
   /** The pane belongs to the page it opened over — leaving that page closes it. */
   useEffect(() => {
     onProfileOpenChange(false);
   }, [pathname, onProfileOpenChange]);
 
+  const onMenuOpenChange = menu?.onOpenChange;
+  /** So does the folded menu. */
+  useEffect(() => {
+    onMenuOpenChange?.(false);
+  }, [pathname, onMenuOpenChange]);
+  const { list: menuList } = useHeaderMenu();
+
+  const [nameShown, setNameShown] = useState<"music" | null>(null);
+
   const iconButtonStyle = {
     position: "fixed" as const,
     zIndex: 99999,
-    width: 36,
-    height: 36,
-    borderRadius: "50%",
+    boxSizing: "border-box" as const,
+    width: "var(--chrome-icon)",
+    height: 36 + HEADER_ICON_LABEL_PAD,
+    padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
+    borderRadius: 0,
     border: "none",
     background: "transparent",
     cursor: "pointer",
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    padding: 0,
   };
 
   const iconStroke = CHROME_GRAY;
+  const musicGlyph = muted ? (
+    <svg key="off" className="nijimu-glyph-in" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <line x1="23" y1="9" x2="17" y2="15" />
+      <line x1="17" y1="9" x2="23" y2="15" />
+    </svg>
+  ) : (
+    <svg key="on" className="nijimu-glyph-in" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  );
+
+  if (menu) {
+    return (
+      <>
+        <HeaderMenu open={menu.open} onOpenChange={menu.onOpenChange} listRef={menu.listRef}
+          hidden={leavingScene} />
+        {menuList && (
+          <HeaderMenuRow order={HEADER_MENU_ORDER.music} icon={musicGlyph} label={muted ? "music off" : "music on"}
+            ariaLabel={muted ? "unmute" : "mute"} onClick={() => setSoundtrackMuted(!muted)} />
+        )}
+        <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />
+      </>
+    );
+  }
 
   return (
     <>
-      {!onLanding && (
-        <button
-          onClick={() => onProfileOpenChange(!profileOpen)}
-          title="Profile"
-          aria-expanded={profileOpen}
-          style={{
-            ...iconButtonStyle,
-            top: 22,
-            right: 68,
-            opacity: leavingScene ? 0 : 1,
-            transition: leavingScene ? `opacity ${LANDING_RETURN.sceneFadeMs}ms ease` : "none",
-            pointerEvents: phase === "idle" ? "auto" : "none",
-          }}
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke={iconStroke}
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-            <circle cx="12" cy="7" r="4" />
-          </svg>
-        </button>
-      )}
-
       <button
-        onClick={() => setMuted((m) => !m)}
-        title={muted ? "Unmute" : "Mute"}
-        style={{ ...iconButtonStyle, top: 22, right: 22 }}
+        onClick={() => setSoundtrackMuted(!muted)}
+        aria-label={muted ? "unmute" : "mute"}
+        className="nijimu-press-icon"
+        onMouseEnter={() => setNameShown("music")}
+        onMouseLeave={() => setNameShown(null)}
+        onFocus={() => setNameShown("music")}
+        onBlur={() => setNameShown(null)}
+        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)", opacity: 0.85 }}
       >
-        {muted ? (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <line x1="23" y1="9" x2="17" y2="15" />
-            <line x1="17" y1="9" x2="23" y2="15" />
-          </svg>
-        ) : (
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={iconStroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
-            <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
-            <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
-          </svg>
-        )}
+        <HeaderIconLabel name="music" shown={nameShown === "music"} />
+        {musicGlyph}
       </button>
 
       <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />

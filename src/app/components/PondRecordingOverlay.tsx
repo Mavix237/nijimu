@@ -1,14 +1,17 @@
+import { FlowPageGrid } from "./FlowPageGrid";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { useCompact } from "../hooks/useCompact";
 import { useVoiceRecorder } from "../hooks/useVoiceRecorder";
 import { CHROME_GRAY } from "../lib/colors";
-import { SERIF, TITLE, NOTE_SIZE } from "../lib/theme";
+import { FLOW_PAGE, SERIF, NOTE_SIZE, INSTRUCTION_SIZE, TRANSCRIPT, TRANSCRIPT_WIDTH, UNDERWATER_PHONE } from "../lib/theme";
+import { PAGE_HEADER_MARK } from "./PageHeader";
 import { beginTranscription } from "../lib/transcribe";
-import svgPathsStop from "../../imports/svg-hpzn3032f5";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PillButton } from "./PillButton";
+import { TextButton } from "./TextButton";
 import { RecordingInstructionsDialog } from "./RecordingInstructionsDialog";
-import { MEMORY_POND_PATH, TRANSCRIPT_PATH } from "../lib/routes";
+import { TRANSCRIPT_PATH, MEMORY_POND_PATH } from "../lib/routes";
 import { ArtifactForm, createArtifactForm, formFromState } from "../lib/superformula";
 import { createVoiceRippleBurstPlanner, pickVoiceRippleSpot, type VoiceRippleSpot } from "../lib/voicePeaks";
 
@@ -28,6 +31,8 @@ const noteStyle = {
 } as const;
 
 interface RecordingArrival {
+  transcript?: string;
+  transcriptionId?: string;
   focus?: [number, number];
   shape?: { form?: ArtifactForm };
 }
@@ -45,11 +50,13 @@ export function PondRecordingOverlay({
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const compact = useCompact();
   const arrival = (location.state as RecordingArrival | null) ?? null;
   const focus = arrival?.focus;
 
   const [buttonIn, setButtonIn] = useState(reducedMotion);
   const [leaving, setLeaving] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const [captureFailed, setCaptureFailed] = useState(false);
   const [openingMicrophone, setOpeningMicrophone] = useState(false);
   // The memory's form is assigned here, before it has words, and travels with
@@ -96,7 +103,7 @@ export function PondRecordingOverlay({
       const transcriptionId = beginTranscription(audio);
       setLeaving(true);
       setTimeout(() => {
-        navigate(TRANSCRIPT_PATH, {
+        navigate(TRANSCRIPT_PATH + location.search, {
           state: {
             transcriptionId,
             shape: { form },
@@ -140,9 +147,10 @@ export function PondRecordingOverlay({
 
   const goToSampleTranscript = () => {
     if (leaving) return;
+    setSkipping(true);
     setLeaving(true);
     setTimeout(() => {
-      navigate(TRANSCRIPT_PATH, {
+      navigate(TRANSCRIPT_PATH + location.search, {
         state: {
           shape: { form },
           ...(focus ? { focus } : {}),
@@ -164,131 +172,99 @@ export function PondRecordingOverlay({
 
   // No first-visit flag: every entry (and failed attempt) gets the same
   // instructions. The microphone opens only after the primary action.
-  if (!recorder.isRecording && !leaving) return <RecordingInstructionsDialog
+  if (!recorder.isRecording && (!leaving || skipping)) return <div
+    style={{ opacity: leaving ? 0 : 1, transition: `opacity ${CHROME_OUT_MS}ms ease`, pointerEvents: leaving ? "none" : undefined }}>
+    <RecordingInstructionsDialog
     busy={openingMicrophone} error={troubleMessage} onStart={startRecording}
-    onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH)} />;
+    onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH, { state: arrival })} />
+  </div>;
 
   return (
     <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 30 }}>
       <style>{`
         ${PARTICLE_TEXT_KEYFRAMES}
         @keyframes puddleRecIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
+          from { opacity: 0; filter: blur(4px); }
+          to { opacity: 1; filter: none; }
         }
       `}</style>
 
-      <p
-        style={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
-          top: 171,
-          margin: 0,
-          ...TITLE,
-          color: CHROME_GRAY,
-          width: "min(28em, 90vw)",
-          textAlign: "center",
-          ...leaveStyle,
-        }}
-      >
-        <ParticleText
-          text="What's been lingering on your mind?"
-          seed={41}
-          animate={!reducedMotion}
-          delay={QUESTION_DELAY_S}
-          sweep={QUESTION_SWEEP_S}
-          wrap
-        />
-      </p>
-
-      <p
-        style={{
-          position: "absolute",
-          left: "50%",
-          transform: "translateX(-50%)",
-          top: 229,
-          margin: 0,
-          width: "min(28em, 82vw)",
-          textAlign: "center",
-          ...noteStyle,
-          ...leaveStyle,
-        }}
-      >
-        <ParticleText
-          text="Start with a moment, feeling, or detail that stayed with you. Don’t worry about finding the perfect words, just speak naturally until you feel you’ve finished telling your story."
-          seed={53}
-          animate={!reducedMotion}
-          delay={NOTE_1_DELAY_S}
-          sweep={NOTE_SWEEP_S}
-          wrap
-        />
-      </p>
-
-      {(recorder.isRecording || troubleMessage) && (
-        <p
-          style={{
-            position: "absolute",
-            left: "50%",
-            transform: "translateX(-50%)",
-            top: 338,
-            margin: 0,
-            whiteSpace: "nowrap",
-            ...noteStyle,
-            ...leaveStyle,
-            opacity: leaving ? 0 : troubleMessage ? 1 : 0.6 + recorder.level * 0.4,
-            transition: "opacity 0.4s ease",
-            animation: reducedMotion ? "none" : "puddleRecIn 0.8s ease backwards",
-          }}
-        >
-          {troubleMessage ?? `Recording...(${recorder.duration}s)`}
-        </p>
-      )}
-
-      <div style={{ pointerEvents: buttonIn && !leaving ? "auto" : "none", ...fadeStyle(buttonIn) }}>
-        {!recorder.isRecording ? (
-          <div
-            style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              bottom: 110,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "stretch",
-              gap: 12,
-            }}
-          >
-            <PillButton
+      <FlowPageGrid headingStyle={{ maxWidth: "none" }} heading={
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 28, ...leaveStyle }}>
+          <div style={{ margin: 0, width: "100%", textAlign: "center", color: CHROME_GRAY, fontFamily: SERIF,
+            fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45 }}>
+            <ParticleText
+              text="Speak about a memory."
+              seed={41}
+              animate={!reducedMotion}
+              delay={QUESTION_DELAY_S}
+              sweep={QUESTION_SWEEP_S}
+              wrap
+              soft
+            />
+          </div>
+          {/* as wide as the transcript that follows: measured in its font */}
+          <div style={{ fontFamily: TRANSCRIPT.fontFamily, fontSize: TRANSCRIPT.fontSize, width: TRANSCRIPT_WIDTH }}>
+            <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6, textAlign: "center" }}>
+              <ParticleText
+                text="Think of a memory in your mind, and talk about it freely."
+                seed={53}
+                animate={!reducedMotion}
+                delay={NOTE_1_DELAY_S}
+                sweep={NOTE_SWEEP_S}
+                wrap
+                soft
+              />
+              <ParticleText
+                text="Stop when the story feels complete."
+                seed={59}
+                animate={!reducedMotion}
+                delay={NOTE_1_DELAY_S + NOTE_SWEEP_S}
+                sweep={NOTE_SWEEP_S}
+                wrap
+                soft
+              />
+            </div>
+          </div>
+        </div>
+      }
+      actionBottom={FLOW_PAGE.surfaceActionBottom}
+      actionsStyle={{ pointerEvents: buttonIn && !leaving ? "auto" : "none", ...fadeStyle(buttonIn) }} actions={
+        // Hold the stop pill through the fade. Swapping to record / sample
+        // the moment recording ends flashes those two buttons on the way out.
+        !recorder.isRecording && !leaving ? (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 22 }}>
+            <TextButton
               label={captureFailed ? "record again" : "record"}
               onClick={startRecording}
-              style={{ width: "100%" }}
+              style={{ width: "9em", justifyContent: "center" }}
             />
-            <PillButton
-              label="show sample transcript"
-              variant="outline"
+            <span aria-hidden style={{ width: 1, height: "1em", background: "rgba(123, 123, 135, 0.45)", flexShrink: 0 }} />
+            <TextButton
+              label="sample story"
               onClick={goToSampleTranscript}
-              style={{ width: "100%" }}
+              style={{ width: "9em", justifyContent: "center" }}
             />
           </div>
         ) : (
           <PillButton
             label="stop"
+            icon={<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden><rect x="4" y="4" width="12" height="12" rx="2" fill={CHROME_GRAY} /></svg>}
             onClick={() => { cancelRipples(); recorder.stop(); }}
-            icon={
-              <svg width="14" height="14" viewBox="0 0 20 20" fill="none">
-                <path d={svgPathsStop.p220b0800} fill={CHROME_GRAY} />
-              </svg>
-            }
-            style={{
-              position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
-              bottom: 110,
-            }}
           />
-        )}
-      </div>
+        )
+      } />
+      {/* the timer, or what went wrong, in the middle of the water */}
+      {(recorder.isRecording || troubleMessage) && (
+        <p role={troubleMessage ? "alert" : "timer"} aria-label={troubleMessage ? undefined : "recording duration"}
+          style={{ ...noteStyle, position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+            width: "min(28em, calc(100% - 40px))", textAlign: "center", fontVariantNumeric: "tabular-nums",
+            opacity: !buttonIn || leaving ? 0 : 1,
+            transition: "opacity 0.4s ease", pointerEvents: "none",
+            animation: reducedMotion ? "none" : "puddleRecIn 700ms ease backwards" }}>
+          {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`}
+        </p>
+      )}
     </div>
   );
 }

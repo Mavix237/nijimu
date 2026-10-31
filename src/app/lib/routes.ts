@@ -10,13 +10,33 @@ export const MEMORY_POND_PATH = "/memory/pond";
 /** Speak a memory — chrome over the same pond, not a separate water screen. */
 export const RECORD_START_PATH = "/record/start";
 
-/** Spoken words and highlights — same pond overlay as recording. */
+/** Read the finished transcript before choosing a photo. */
 export const TRANSCRIPT_PATH = "/record/transcript";
 
-/** A picture for the memory, let down onto the same water after the words. */
-export const PHOTO_PATH = "/record/photo";
+/** Photo, film, and the descent — the create shot after recording.
+    The same scene as /lab/descent, without the lab's knobs. */
+export const DESCENT_PATH = "/record/descent";
 
-/** MediaPipe shape steps — one screen per gesture. */
+/** Each handling step is a history entry within the same underwater scene. */
+export const DESCENT_STEP_PATHS = {
+  shape: "/record/descent/shape",
+  rhythm: "/record/descent/rhythm",
+  distance: "/record/descent/distance",
+  color: "/record/descent/color",
+} as const;
+export type DescentStep = keyof typeof DESCENT_STEP_PATHS;
+
+export function descentStepForPath(pathname: string): DescentStep | null {
+  return (Object.keys(DESCENT_STEP_PATHS) as DescentStep[])
+    .find(step => DESCENT_STEP_PATHS[step] === pathname) ?? null;
+}
+
+export function isDescentPath(pathname: string): boolean {
+  return pathname === DESCENT_PATH || descentStepForPath(pathname) !== null;
+}
+
+/** Archived MediaPipe shape steps. Kept for the archived implementation only;
+    live bookmarks redirect to DESCENT_PATH and there are no home shortcuts. */
 export const SHAPE_GROW_PATH = "/record/shape/grow";
 export const SHAPE_FEELING_PATH = "/record/shape/feeling";
 export const SHAPE_DISTANCE_PATH = "/record/shape/distance";

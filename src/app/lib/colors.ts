@@ -5,6 +5,17 @@
 /** Muted chrome gray — homescreen wordmark, top-right icons, hold-to-create hint. */
 export const CHROME_GRAY = "#7e7e86";
 
+/** Floating panes: a Switzer title, Rowan body, and Switzer options — every
+ * option in the body's ink, set apart by weight. `secondary` is the lighter
+ * ink of slider knobs and notes, no longer the panes' ways out. */
+export const PANE_INK = {
+  title: CHROME_GRAY,
+  body: CHROME_GRAY,
+  primary: CHROME_GRAY,
+  secondary: "#9b9ba3",
+  ring: "#aaaaaa",
+} as const;
+
 export interface PaletteEntry {
   id: string;
   color: string;

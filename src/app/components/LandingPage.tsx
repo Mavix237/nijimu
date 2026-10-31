@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FLOW_PAGE } from "../lib/theme";
+import { resumeColorState } from "../lib/namingDraft";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { BlobScene } from "./BlobScene";
-import { MemoryCarouselPage } from "./MemoryCarouselPage";
-import { MemoryPondPage } from "./MemoryPondPage";
+// the 3D scenes are their own chunks: the landing paints without three.js
+import { DescentFlow, LiveVesselGallery, MemoryCarouselPage, MemoryPondPage, preloadLandingScenes, preloadLandingScenesWhenIdle, warmGalleryTransition } from "./landingScenes";
+import { LIGHT_TIER } from "../lib/deviceTier";
 import { PageHeader } from "./PageHeader";
 import { BackButton } from "./BackButton";
+import { GalleryIntroLines } from "./GalleryOnboarding";
+import { useLandingReturn } from "../lib/landingReturn";
 import { INK_ENTRY, pickLandingGalleryIndex, type InkArrival } from "../lib/landingTransition";
+import { clearInkSeats } from "../lib/inkCutouts";
 import { buildArchive } from "../lib/archive";
-import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, PHOTO_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
+import { useGalleryPush } from "../lib/labPush";
+import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH, DESCENT_STEP_PATHS, isDescentPath } from "../lib/routes";
 import { POND_ENTRY, pondTransition, pondSurfaceMask } from "../lib/pondTransition";
 import type { NameFlowState, NamingSession } from "./NamingRim";
 
@@ -20,12 +27,12 @@ interface GalleryEntry {
 }
 
 /**
- * One layout owns /, /memory, /memory/pond, /record/start, /record/transcript,
- * /record/photo, and /record/name. The gallery starts loading behind the ink
- * when Enter is pressed, and the naming rim becomes that same gallery when a
- * memory is saved — both need the page (and its canvases) to survive the URL
- * change. Recording, transcript and the picture keep the pond mounted as
- * chrome over the water.
+ * One layout owns /, /memory, /memory/pond, /record/start,
+ * /record/transcript, /record/descent, and /record/name. The gallery starts loading behind the ink when Enter is
+ * pressed. Naming happens on the pond: the memory rises out of the water, and
+ * saving takes that water away onto the gallery that already holds it.
+ * The invitation, recording, transcript and descent retain one DescentFlow;
+ * naming uses its existing above-water host and surface-frame handoff.
  * The pond also mounts before the rim leaves, so its perspective canvas is
  * ready before it rises into view; scrolling back keeps the gallery mounted
  * and plays the same clock in reverse.
@@ -34,9 +41,11 @@ export function LandingPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { pathname } = location;
+  const { phase } = useLandingReturn();
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [arrival, setArrival] = useState<InkArrival | null>(null);
   const [entryFocus, setEntryFocus] = useState<{ id: string; slot: number } | null>(null);
+  const [intro, setIntro] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [seenPath, setSeenPath] = useState(pathname);
   const [pondElapsed, setPondElapsed] = useState<number | null>(null);
@@ -44,21 +53,28 @@ export function LandingPage() {
   const [pondLeaving, setPondLeaving] = useState(false);
   const [pondSubmerging, setPondSubmerging] = useState(false);
   const [pondReturnId, setPondReturnId] = useState<string>();
+  /* Saving a memory remounts the gallery behind the pond, so the rim that is
+     revealed when the water leaves already holds the new memory. */
+  const [archiveVersion, setArchiveVersion] = useState(0);
+  const [pondReplace, setPondReplace] = useState(false);
   const galleryRef = useRef<HTMLDivElement>(null);
+  const namingBackRef = useRef<(() => void) | null>(null);
+  const publishedGallery = useGalleryPush();
+  const [vesselFocus, setVesselFocus] = useState<string | undefined>();
   const inGallery = pathname === CAROUSEL_PATH;
   const inNaming = pathname === NAMING_PATH;
   const inRecording = pathname === RECORD_START_PATH;
-  const inTranscript = pathname === TRANSCRIPT_PATH;
-  const inPhoto = pathname === PHOTO_PATH;
-  const inPond = pathname === MEMORY_POND_PATH || inRecording || inTranscript || inPhoto;
+  const inDescent = isDescentPath(pathname);
+  const inCreate = inRecording || pathname === TRANSCRIPT_PATH || inDescent;
+  const inPond = pathname === MEMORY_POND_PATH || inCreate || inNaming;
   if (seenPath !== pathname) {
     setSeenPath(pathname);
-    if (!inGallery && !inNaming && !inPond) {
+    if (!inGallery && !inPond) {
       setStartedAt(null); setArrival(null); setEntryFocus(null);
       setPondElapsed(null); setPondReady(false); setPondLeaving(false);
-      setPondReturnId(undefined);
+      setPondReturnId(undefined); setPondReplace(false);
     } else if (inGallery && pondLeaving) {
-      setPondElapsed(null); setPondReady(false); setPondLeaving(false);
+      setPondElapsed(null); setPondReady(false); setPondLeaving(false); setPondReplace(false);
     }
   }
 
@@ -66,7 +82,7 @@ export function LandingPage() {
   const naming = useMemo<NamingSession | null>(
     () =>
       inNaming
-        ? { draftId, state: (location.state as NameFlowState | null) ?? {} }
+        ? { draftId: (location.state as NameFlowState | null)?.memoryId ?? draftId, state: (location.state as NameFlowState | null) ?? {} }
         : null,
     [draftId, inNaming, location.state],
   );
@@ -109,15 +125,27 @@ export function LandingPage() {
     setPondReady(false);
     setPondElapsed(0);
   }, [inGallery, pondElapsed, pondLeaving]);
-  const closePond = useCallback(() => {
+  /** The water goes back down and the rim it reveals opens on `returnId`. */
+  const leavePond = useCallback((returnId: string | undefined, replace = false) => {
     if (pondLeaving) return;
     if (pondElapsed === null && !inPond) return;
-    const archive = buildArchive();
-    setPondReturnId(archive[archive.length - 1]?.id);
+    setPondReturnId(returnId);
+    setPondReplace(replace);
     setStartedAt(null); setArrival(null);
     setPondLeaving(true);
     if (pondElapsed === null) setPondElapsed(reducedMotion ? POND_ENTRY.reducedEnd : POND_ENTRY.end);
   }, [inPond, pondElapsed, pondLeaving, reducedMotion]);
+  const closePond = useCallback(() => {
+    const archive = buildArchive();
+    leavePond(archive[archive.length - 1]?.id);
+  }, [leavePond]);
+  /* The named memory is in the store. Rebuild the gallery behind the water so
+     the rim already holds it, then take the pond away onto that memory. The
+     naming step is replaced in history: there is no draft to come back to. */
+  const namingSaved = useCallback((savedId: string) => {
+    setArchiveVersion((v) => v + 1);
+    leavePond(savedId, true);
+  }, [leavePond]);
   const pondElapsedRef = useRef(pondElapsed);
   pondElapsedRef.current = pondElapsed;
   const pondClock = (openingPond && pondReady) || pondLeaving;
@@ -137,8 +165,8 @@ export function LandingPage() {
       setPondElapsed(elapsed);
       if (leaving) {
         if (elapsed <= 0) {
-          setPondElapsed(null); setPondLeaving(false); setPondReady(false);
-          navigate(CAROUSEL_PATH, { state: { galleryFocusId: pondReturnId, galleryCarried: true } });
+          setPondElapsed(null); setPondLeaving(false); setPondReady(false); setPondReplace(false);
+          navigate(CAROUSEL_PATH, { replace: pondReplace, state: { galleryFocusId: pondReturnId, galleryCarried: true } });
           return;
         }
       } else if (elapsed >= end) {
@@ -155,32 +183,45 @@ export function LandingPage() {
     };
     window.addEventListener("keydown", cancel);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("keydown", cancel); };
-  }, [pondClock, pondLeaving, reducedMotion, navigate, pondReturnId]);
+  }, [pondClock, pondLeaving, reducedMotion, navigate, pondReturnId, pondReplace]);
+  // fetched while the landing is idle, so Enter rarely has to wait for them; a
+  // phone starts at once and warms the gallery itself too (landingScenes.ts)
+  useEffect(() => {
+    if (!LIGHT_TIER) return preloadLandingScenesWhenIdle();
+    warmGalleryTransition();
+  }, []);
   const enter = () => {
+    preloadLandingScenes();
     if (startedAt !== null) return;
+    // the last entry's seats are not this one's
+    clearInkSeats();
     const archive = buildArchive();
     const slot = pickLandingGalleryIndex(archive.length);
     setEntryFocus({ id: archive[slot]?.id ?? "", slot });
+    setIntro(!reducedMotion);
     setArrival({ elapsed: 0, reducedMotion });
     setStartedAt(performance.now());
   };
-  const showGallery = inGallery || inNaming || inPond || !!arrival || pondElapsed !== null;
+  const showGallery = inGallery || inPond || !!arrival || pondElapsed !== null;
   const pond = pondTransition(pondElapsed ?? 0, reducedMotion);
   const pondArrival = inPond && pondElapsed === null ? 1 : pond.arrival;
   return (
     <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: "#e4e4e6" }}>
       {showGallery && (
-        <div ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || (!inGallery && !inNaming)}
+        <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>
-          <MemoryCarouselPage
-            inkArrival={inNaming ? undefined : arrival ?? undefined}
-            galleryFocusId={pondReturnId ?? galleryEntry?.galleryFocusId ?? naming?.draftId ?? entryFocus?.id}
-            galleryCarried={!!pondReturnId || !!galleryEntry?.galleryCarried}
-            naming={naming}
-            onPondEnter={openPond}
-            pondDeparture={pondElapsed !== null ? Math.max(.00001, pond.departure) : 0}
-            hideHeader={pondElapsed !== null || inPond}
-          />
+          <Suspense fallback={null}>
+          <LiveVesselGallery active={inGallery && pondElapsed === null} panels={publishedGallery?.panels} pushedAt={publishedGallery?.at ?? 0} onFocus={setVesselFocus}>
+            <MemoryCarouselPage
+              inkArrival={arrival ?? undefined}
+              galleryFocusId={pondReturnId ?? vesselFocus ?? galleryEntry?.galleryFocusId ?? entryFocus?.id}
+              galleryCarried={!!pondReturnId || !!galleryEntry?.galleryCarried || vesselFocus !== undefined}
+              onPondEnter={openPond}
+              pondDeparture={pondElapsed !== null ? Math.max(.00001, pond.departure) : 0}
+              hideHeader={pondElapsed !== null || inPond}
+            />
+          </LiveVesselGallery>
+          </Suspense>
         </div>
       )}
       {pondOnStage && (
@@ -191,23 +232,20 @@ export function LandingPage() {
             maskImage: reducedMotion ? undefined : pondSurfaceMask(pondArrival),
             WebkitMaskImage: reducedMotion ? undefined : pondSurfaceMask(pondArrival),
             opacity: pondArrival }}>
-          <MemoryPondPage active={inPond && !pondLeaving} arrival={pondArrival} reducedMotion={reducedMotion} recording={inRecording} transcript={inTranscript} photo={inPhoto} onReady={markPondReady} onLeave={closePond} onSubmergeChange={setPondSubmerging} />
+          <Suspense fallback={null}>
+          {inNaming ? <MemoryPondPage active={inPond && !pondLeaving} arrival={pondArrival} reducedMotion={reducedMotion} naming={naming} onReady={markPondReady} onLeave={closePond} onNamingSaved={namingSaved} namingBackRef={namingBackRef} />
+            : <DescentFlow active={inPond && !pondLeaving} arrival={pondArrival} onReady={markPondReady} onLeave={closePond} />}
+          </Suspense>
         </div>
       )}
-      {pondOnStage && (
-        <div data-pond-header style={{
-          position: "absolute", inset: "0 0 auto", height: 76, zIndex: 100,
-          opacity: pondSubmerging ? 0 : 1,
-          transition: "opacity 900ms ease",
-          pointerEvents: pondSubmerging ? "none" : "auto",
-        }}>
-          <PageHeader layout="absolute" link={false} onCarousel={() => {
+      {pondOnStage && !inCreate && (
+        <div data-pond-header style={{ position: "absolute", inset: "0 0 auto", height: FLOW_PAGE.navigationHeight, zIndex: 100 }}>
+          <PageHeader layout="absolute" onCarousel={() => {
             if (openingPond && !pondLeaving) { setPondElapsed(null); setPondReady(false); }
             else closePond();
           }} />
           <BackButton onClick={() => {
-            if (inPhoto) navigate(TRANSCRIPT_PATH, { state: location.state });
-            else if (inTranscript) navigate(RECORD_START_PATH, { state: location.state });
+            if (inNaming) (namingBackRef.current ?? (() => navigate(DESCENT_STEP_PATHS.color, { state: resumeColorState(location.state ?? {}) })))();
             else if (inRecording) navigate(MEMORY_POND_PATH);
             else if (openingPond && !pondLeaving) { setPondElapsed(null); setPondReady(false); }
             else closePond();
@@ -221,6 +259,7 @@ export function LandingPage() {
             landingFocusSlot={entryFocus?.slot ?? 0} />
         </div>
       )}
+      {intro && arrival && !inGallery && !inPond && <GalleryIntroLines elapsed={arrival.elapsed} />}
       <span className="sr-only" role="status">{pondLeaving ? "returning to memories" : openingPond ? "opening the pond" : arrival && !inGallery ? "opening memories" : ""}</span>
     </main>
   );

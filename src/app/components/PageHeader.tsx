@@ -2,12 +2,12 @@ import { CSSProperties } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { CHROME_GRAY } from "../lib/colors";
 import { CAROUSEL_PATH, NAMING_PATH } from "../lib/routes";
-import { SERIF_CJK } from "../lib/theme";
+import { FLOW_PAGE, SERIF_CJK } from "../lib/theme";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 
 /** Target seat the landing wordmark flies to. Keep the mark in sync. */
 export const PAGE_HEADER_MARK = {
-  top: 30,
+  top: FLOW_PAGE.navigationTop,
   fontSize: 12,
   gap: 12,
   letterSpacing: "0.16px",
@@ -18,7 +18,7 @@ interface PageHeaderProps {
   layout?: "absolute" | "block";
   /** light pages use chrome gray; dark pages use a lighter gray on dark grounds */
   tone?: "light" | "dark";
-  /** When false, render a non-link mark (homescreen chrome). Default true. */
+  /** When false, the mark is not a link. Default true: nijimu returns home. */
   link?: boolean;
   /** Three-circle gallery control. Hidden on landing and on the carousel itself
       (that screen already keeps a plus in this corner). */
@@ -51,7 +51,7 @@ export function PageHeader({
           zIndex: 100,
         }
       : {
-          marginTop: 30,
+          marginTop: FLOW_PAGE.navigationTop,
           marginRight: "auto",
           marginLeft: "auto",
           marginBottom: "clamp(60px, 15vh, 100px)",
@@ -93,7 +93,7 @@ export function PageHeader({
         e.preventDefault();
         navigate("/");
       }}
-      style={{ ...markStyle, cursor: "pointer" }}
+      style={{ ...markStyle, cursor: "pointer", pointerEvents: "auto" }}
     >
       {children}
     </a>

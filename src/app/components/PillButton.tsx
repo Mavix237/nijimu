@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode } from "react";
-import { BUTTON_SIZE, BUTTON_SIZE_SM, NOTE_SIZE, SANS, SANS_UI } from "../lib/theme";
+import { BUTTON_SIZE_SM, SANS, SANS_UI } from "../lib/theme";
 
 interface PillButtonProps {
   label: string;
@@ -56,7 +56,7 @@ export function PillButton({
     <button
       onClick={onClick}
       disabled={disabled}
-      className={className}
+      className={className ? `nijimu-press ${className}` : "nijimu-press"}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -68,7 +68,7 @@ export function PillButton({
         background,
         cursor: disabled ? "not-allowed" : "pointer",
         whiteSpace: "nowrap",
-        transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease",
+        transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, scale 160ms cubic-bezier(0.23, 1, 0.32, 1)",
         ...style,
       }}
     >
@@ -76,7 +76,7 @@ export function PillButton({
       <span
         style={{
           fontFamily: isDark ? SANS_UI : SANS,
-          fontSize: isOutline ? BUTTON_SIZE_SM : BUTTON_SIZE,
+          fontSize: BUTTON_SIZE_SM,
           fontWeight: isDark ? 300 : 400,
           lineHeight: 1.5,
           letterSpacing: 0,
@@ -91,7 +91,7 @@ export function PillButton({
         <span
           style={{
             fontFamily: SANS_UI,
-            fontSize: isOutline ? NOTE_SIZE : BUTTON_SIZE_SM,
+            fontSize: BUTTON_SIZE_SM,
             lineHeight: 0,
             letterSpacing: 0,
             color: textColor,

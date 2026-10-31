@@ -74,7 +74,7 @@ export function EditWeightPage() {
 
   return (
     <div
-      className="relative w-full h-screen flex flex-col overflow-hidden"
+      className="relative w-full h-dvh flex flex-col overflow-hidden"
       style={{ background: "#e0e0e0" }}
     >
       <div

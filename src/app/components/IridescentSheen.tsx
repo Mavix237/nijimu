@@ -118,8 +118,10 @@ void main() {
   vec3 col = mix(vec3(0.9, 0.9, 0.93), spectrum(hue), 0.3 + 0.3 * gleam);
   col = mix(col, vec3(1.0), gleam * 0.12);
 
-  float a = (rest * 0.1 + gleam * 0.26) * rim;
-  o = vec4(col, clamp(a, 0.0, 1.0));
+  float a = clamp((rest * 0.1 + gleam * 0.26) * rim, 0.0, 1.0);
+  // premultiplied: the canvas is composited that way in every browser (an
+  // unpremultiplied canvas reads as a bright white rim in Safari)
+  o = vec4(col * a, a);
 }`;
 
 /** The frame a reduced-motion viewer sees: mid-pass, so the film still shows. */
@@ -174,7 +176,7 @@ export function IridescentSheen({
     if (!canvas) return;
     const gl = canvas.getContext("webgl2", {
       alpha: true,
-      premultipliedAlpha: false,
+      premultipliedAlpha: true,
       antialias: false,
       depth: false,
       stencil: false,

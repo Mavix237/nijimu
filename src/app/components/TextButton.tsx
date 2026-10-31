@@ -1,5 +1,5 @@
 import { CSSProperties } from "react";
-import { BODY_SIZE, SANS } from "../lib/theme";
+import { BUTTON_SIZE_SM, SANS } from "../lib/theme";
 
 interface TextButtonProps {
   label: string;
@@ -22,6 +22,7 @@ export function TextButton({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      className="nijimu-text-button"
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -31,12 +32,13 @@ export function TextButton({
         cursor: disabled ? "default" : "pointer",
         padding: 0,
         fontFamily: SANS,
-        fontSize: BODY_SIZE,
+        fontSize: BUTTON_SIZE_SM,
         fontWeight: 400,
         color: "#7b7b87",
         letterSpacing: 0,
         whiteSpace: "nowrap",
-        opacity: disabled ? 0.4 : 1,
+        // left unset when enabled so the hover and press can move it
+        opacity: disabled ? 0.4 : undefined,
         ...style,
       }}
     >

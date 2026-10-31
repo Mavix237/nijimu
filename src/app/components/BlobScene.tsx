@@ -1,28 +1,52 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import svgPaths from "../../imports/svg-t19vgojqiy";
 import NewMomoryIdle from "../../imports/NewMomoryIdle";
 import { LIFE_EVENTS, COLORS as MEMORY_COLORS, MemoryEvent } from "../data/memoryData";
 import { loadMemories, toMemoryEvent, SavedMemory } from "../lib/memoryStore";
-import { SceneViewer } from "./SceneViewer";
+import { curatedShape } from "../lib/galleryLibrary";
 import { ArtifactForm, formForMemory } from "../lib/superformula";
 import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival } from "../lib/landingTransition";
+import { LANDING_TONES, landingTone } from "../lib/homePaletteField";
+import { oklchToHex, type Oklch } from "../lib/oklch";
+import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, smoothProgress, type InkArrival } from "../lib/landingTransition";
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
 import { carouselSeat, carouselContainsOffset, inkUnfoldSeat } from "../lib/carouselLayout";
+import { GooeyBlobCanvas } from "./GooeyBlobCanvas";
+import { CAPTION_WAVES, captionCharLook, captionPresence, createCaptionWaves, type CaptionShow } from "../lib/captionWaves";
+import { WatercolorField, type WashBlob, type WashCuts } from "./WatercolorField";
+import { INK_CUT_SCALE, hasInkSeats, inkSeat } from "../lib/inkCutouts";
+import { WashTunePanel } from "./WashTunePanel";
+import { initialWashTune } from "../lib/washTune";
+
+/* Only the field's own gallery mode draws a 3D form; the landing never does,
+   so three.js is not loaded with it. */
+const SceneViewer = lazy(() => import("./SceneViewer").then((m) => ({ default: m.SceneViewer })));
 
 /** Caption + annotation dot — shared so the marks match the words. */
 const BLOB_CAPTION_COLOR = "#D6DADB";
+/** Event-label ink. */
+const BLOB_LABEL_OPACITY = 0.9;
+/** Filled dots invert harder than the antialiased label, so they use less ink. */
+const BLOB_DOT_OPACITY = 0.55;
 /** Landing description. */
 const HEADER_DESC_SIZE = 12;
 /** Blob year + title — restored clamp, a step above the header description. */
 const BLOB_CAPTION_SIZE =
   "clamp(13px, calc(13px + 2 * ((100vw - 390px) / (1024 - 390))), 15px)";
-const BLOB_DOT = 8;
 /** Radiating ring — kept as a painted width so scale() cannot fatten it. */
 const BLOB_RING_STROKE = 0.6;
+/** The safe zone the drifting captions (text and dot) keep from the screen's
+    edges: 6% of the width across and 8% of the height up and down, never under
+    28px (phones) nor over 72px. The CSS twin caps a caption's width so a long
+    title wraps inside the same margins. */
+const LANDING_CAPTION_SAFE = { x: .06, y: .08, min: 28, max: 72 } as const;
+const captionSafe = (size: number, share: number) =>
+  Math.min(LANDING_CAPTION_SAFE.max, Math.max(LANDING_CAPTION_SAFE.min, size * share));
+const LANDING_CAPTION_MAX_WIDTH =
+  `calc(100vw - 2 * clamp(${LANDING_CAPTION_SAFE.min}px, ${LANDING_CAPTION_SAFE.x * 100}vw, ${LANDING_CAPTION_SAFE.max}px))`;
 
 
 /* ───────── types ───────── */
@@ -32,6 +56,9 @@ interface BlobData {
   y: number;
   size: number;
   color: string;
+  /** WatercolorField's character for it: 1 complete, 0 free and diffuse. */
+  comp: number;
+  seed: number;
   blur: number;
   opacity: number;
   borderRadius: string;
@@ -51,18 +78,17 @@ interface BlobData {
 }
 
 /* ───────── constants ───────── */
-const COLORS = [
-  "radial-gradient(ellipse at 30% 30%, #9496a6, #7a7c8c)",
-  "radial-gradient(ellipse at 40% 40%, #D6DADB, #bcc0c1)",
-  "radial-gradient(ellipse at 60% 60%, #C8D0D4, #aeb6ba)",
-  "radial-gradient(ellipse at 50% 50%, #CBBFBC, #b1a5a2)",
-  "radial-gradient(ellipse at 35% 45%, #A4B6BE, #8a9ca4)",
-  "radial-gradient(ellipse at 55% 35%, #B8969A, #9e7c80)",
-  "radial-gradient(ellipse at 45% 55%, #8C9FA8, #72858e)",
-  "radial-gradient(ellipse at 40% 60%, #6488A0, #4a6e86)",
-  "radial-gradient(ellipse at 50% 40%, #9496a6, #7a7c8c)",
-  "radial-gradient(ellipse at 60% 40%, #1C2C35, #34444F)",
-];
+/*
+ * The washes wear the colour step's tones (LANDING_TONES in homePaletteField,
+ * one per MEMORY_COLORS slot), not the raw home palette, so the landing reads
+ * as colourful as the picker. WASH_AT is where each wash's light sits.
+ */
+const WASH_AT = ["30% 30%", "40% 40%", "60% 60%", "50% 50%", "35% 45%", "55% 35%", "45% 55%", "40% 60%", "50% 40%", "60% 40%"];
+const COLORS = LANDING_TONES.map((tone, i) => {
+  const lit = landingTone(tone);
+  const deep = { ...lit, l: Math.max(0.2, lit.l - 0.07) };
+  return `radial-gradient(ellipse at ${WASH_AT[i]}, ${oklchToHex(lit)}, ${oklchToHex(deep)})`;
+});
 
 /*
  * Connection graph (edges):
@@ -115,6 +141,38 @@ function computeGalleryOrder(events: { year: string }[]) {
 }
 
 /* ───────── helpers ───────── */
+/** Each blob's box is this much larger than it used to be: the washes are broad. */
+const BLOB_SPREAD = 1.3;
+/** How long a wash not bound for the gallery takes to close on Enter, and over how long their starts are spread. */
+const CLOSE_MS = 1400;
+const CLOSE_SPREAD_MS = 600;
+/** How long a wash bound for the gallery takes to drift onto its seat, and the share of the seat box it gathers to (about the vessel's own size). */
+const SEAT_DRIFT_MS = 1500;
+const SEAT_GATHER = 0.55;
+/** How far into its drift a wash begins to fill its cutout: just as it settles. */
+const SEAT_FILL_FROM = 0.85;
+/** Nearest two wash centres may sit, in % of the field. */
+const BLOB_MIN_GAP = 12;
+/** Share of washes centred on the frame's edge, about half outside it, so the field reaches past the screen. */
+const BLOB_EDGE_SHARE = 0.35;
+/** How far an edge wash's centre may stray from the edge line, in % of the field. */
+const BLOB_EDGE_DRIFT = 4;
+/** The wash's body, as a share of its box's half-width (WatercolorField's reach and edge). */
+const WASH_BODY = 0.7;
+/** The tune panel shows in development, or anywhere with ?tune on the URL. */
+/** Most canvas pixels the field may paint each frame. */
+const FIELD_PX = 7_500_000;
+const FIELD_PX_PHONE = 3_000_000;
+const TUNE_PANEL = import.meta.env.DEV || new URLSearchParams(window.location.search).has("tune");
+
+/** Between a complete wash (1) with a drying edge and a free, diffuse one (0). */
+function washCharacter(): number {
+  const r = Math.random();
+  if (r < 0.4) return 0.75 + Math.random() * 0.25;
+  if (r < 0.75) return Math.random() * 0.3;
+  return 0.35 + Math.random() * 0.35;
+}
+
 function generateBorderRadius(): string {
   const v = Array.from({ length: 8 }, () => 30 + Math.random() * 40);
   return `${v[0]}% ${v[1]}% ${v[2]}% ${v[3]}% / ${v[4]}% ${v[5]}% ${v[6]}% ${v[7]}%`;
@@ -125,14 +183,25 @@ function generateBlobs(
   saved: SavedMemory[],
   isMobile: boolean,
 ): BlobData[] {
+  /** Which edge each wash sits on (left, right, top, bottom), or -1 inside the frame. */
+  const edges = events.map(() => (Math.random() < BLOB_EDGE_SHARE ? Math.floor(Math.random() * 4) : -1));
   const raw = Array.from({ length: events.length }, (_, i) => {
     let x, y;
-    if (isMobile) {
-      // Mobile: 2x width, blobs can be generated across 200% width
-      x = Math.random() * 100; // 0-100% of the 2x container
+    const edge = edges[i];
+    if (edge >= 0) {
+      // centred on the edge line, anywhere along it
+      const along = 5 + Math.random() * 90;
+      const off = (Math.random() * 2 - 1) * BLOB_EDGE_DRIFT;
+      x = edge === 0 ? off : edge === 1 ? 100 + off : along;
+      // y is shifted down 10 below, as the inner washes are
+      y = edge === 2 ? off - 10 : edge === 3 ? 90 + off : along - 10;
+    } else if (isMobile) {
+      // Mobile: blobs spread over most of the field, a little in from the
+      // edges so neighbours overlap and pool rather than sit apart
+      x = 8 + Math.random() * 84;
       y = 10 + Math.random() * 70;
     } else {
-      // Desktop: 1.5x size canvas
+      // Desktop: keep the washes inset from the field's edges.
       x = 10 + Math.random() * 70;
       y = 10 + Math.random() * 70;
     }
@@ -147,8 +216,10 @@ function generateBlobs(
       id: i,
       x,
       y: y + 10, // Shift all blobs down (10% = approx 100px at 1080p height)
-      size: 180 + Math.random() * 300,
+      size: (180 + Math.random() * 300) * BLOB_SPREAD,
       color: COLORS[colorIndex % COLORS.length],
+      comp: washCharacter(),
+      seed: Math.random() * 10,
       blur: 8 + Math.random() * 30,
       opacity: 0.55 + Math.random() * 0.35,
       borderRadius: generateBorderRadius(),
@@ -167,14 +238,42 @@ function generateBlobs(
             bumpAmount: savedMemory.shape.bumpAmount,
           }
         : {
-            form: formForMemory(events[i].id),
+            form: curatedShape(events[i].id)?.form ?? formForMemory(events[i].id),
             colorIndex: colorIndex % COLOR_PALETTE.length, // Use the same color index
-            fluidity: Math.random() * 0.5 + 0.5,
-            evolve: Math.random() * 0.5 + 0.5,
-            bumpAmount: i % 2 === 0 ? Math.random() * 0.03 : 0.03 + Math.random() * 0.12,
+            fluidity: 0,
+            evolve: curatedShape(events[i].id)?.morph ?? 1,
+            bumpAmount: 0,
           },
     };
   });
+  // a little room between centres, so fewer washes pool into one large field
+  const [xMin, xMax] = isMobile ? [8, 92] : [10, 80];
+  for (let pass = 0; pass < 4; pass++) {
+    for (let i = 0; i < raw.length; i++) {
+      for (let j = i + 1; j < raw.length; j++) {
+        const a = raw[i], b = raw[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.01;
+        if (d >= BLOB_MIN_GAP) continue;
+        const push = (BLOB_MIN_GAP - d) / 2 / d;
+        a.x -= dx * push; a.y -= dy * push;
+        b.x += dx * push; b.y += dy * push;
+      }
+    }
+    raw.forEach((b, i) => {
+      const edge = edges[i];
+      if (edge < 0) {
+        b.x = clamp(b.x, xMin, xMax);
+        b.y = clamp(b.y, 20, 90);
+        return;
+      }
+      // an edge wash may slide along its edge, but stays on it
+      b.x = edge === 0 ? clamp(b.x, -BLOB_EDGE_DRIFT, BLOB_EDGE_DRIFT)
+        : edge === 1 ? clamp(b.x, 100 - BLOB_EDGE_DRIFT, 100 + BLOB_EDGE_DRIFT) : clamp(b.x, 0, 100);
+      b.y = edge === 2 ? clamp(b.y, -BLOB_EDGE_DRIFT, BLOB_EDGE_DRIFT)
+        : edge === 3 ? clamp(b.y, 100 - BLOB_EDGE_DRIFT, 100 + BLOB_EDGE_DRIFT) : clamp(b.y, 0, 100);
+    });
+  }
   const cx = raw.reduce((s, b) => s + b.x, 0) / raw.length;
   const cy = raw.reduce((s, b) => s + b.y, 0) / raw.length;
   for (const b of raw) {
@@ -187,7 +286,8 @@ function generateBlobs(
 function useScaleFactor(): number {
   const getScale = useCallback(() => {
     const w = window.innerWidth;
-    if (w <= 480) return 0.5;
+    // a phone's blobs a little larger than half, so the field still pools
+    if (w <= 480) return 0.62;
     if (w <= 768) return 0.6;
     if (w <= 1024) return 0.7;
     return 1;
@@ -251,6 +351,16 @@ function hexLuma(hex: string): number {
 
 const PAPER_LUMA = hexLuma(LANDING_PAPER);
 
+type Ink = { r: number; g: number; b: number; a: number };
+function parseInk(color: string): Ink {
+  const m = color.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/);
+  if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+  return { ...parseHex(color), a: 1 };
+}
+function inkAlpha(ink: Ink, a: number) {
+  return `rgba(${ink.r}, ${ink.g}, ${ink.b}, ${(ink.a * a).toFixed(3)})`;
+}
+
 interface CaptionFx {
   /** How far the caption sits in the header keep-out — blur only. */
   progress: number;
@@ -266,6 +376,7 @@ interface AnnPos {
   textAlign: "left" | "right";
   anchorX: number;
   anchorY: number;
+  fitted?: boolean;
 }
 
 /* ───────── text scale by connections ───────── */
@@ -277,6 +388,17 @@ function textScale(idx: number): number {
   if (c >= 1) return 1.0;
   return 0.88;
 }
+
+/*
+ * The landing's first arrival: once the washes have nearly finished opening
+ * (WatercolorField's onSettling), the line and Enter grow up to their size as
+ * they fade in, settling softly at the end; the captions' first wave types
+ * in once they have (captionsFrom). Once per page load — a return to
+ * the landing from inside the app has its own reveal. Without washes they
+ * arrive at once.
+ */
+const LANDING_INTRO = { delayMs: 120, durationMs: 1300, from: 0.88, ease: "cubic-bezier(.22, 1, .36, 1)" } as const;
+let landingIntroPlayed = false;
 
 /* ═══════════════════════════════════════════════
    COMPONENT
@@ -327,6 +449,50 @@ export function BlobScene({
   const [blobs] = useState<BlobData[]>(() =>
     generateBlobs(events, savedMemories, window.innerWidth <= 768),
   );
+  const [gooeyGl, setGooeyGl] = useState<boolean | null>(null);
+  const gooeySvgOnly = useMemo(() => new URLSearchParams(window.location.search).get("goo") === "svg", []);
+  const blobColors = useMemo(() => blobs.map((b) => b.color), [blobs]);
+  /* While the field is starting, the blob elements stay unpainted too, so the
+     landing never opens on plain circles that then jump into washes; they
+     paint themselves only if the field cannot. */
+  const [washState, setWashState] = useState<"starting" | "on" | "off">("starting");
+  const washOn = washState !== "off" && classicChrome;
+  const onWashReady = useCallback((ok: boolean) => setWashState(ok ? "on" : "off"), []);
+  /** How far each wash has arrived; its dot and caption come with it. */
+  const washPresence = useRef<number[]>([]);
+  /** The ink entry's hold on the washes: each becomes a flat cutout of its gallery vessel. */
+  const washCuts = useRef<WashCuts>({ on: false, boxes: [], fill: [], drain: [], fade: [], open: [], paint: [], tint: [], masks: [], spans: [] });
+  /** When (entry ms) each wash first had a gallery seat to go to; its drift is timed from there. */
+  const cutSeen = useRef(new Map<number, number>());
+  /** When (entry ms) each wash was first known to have no seat on screen; its close is timed from there. */
+  const closeSeen = useRef(new Map<number, number>());
+  const captionWords = useRef<number[]>([]);
+  const [ambientIn, setAmbientIn] = useState(false);
+  useEffect(() => {
+    // two frames, so the cleared state is painted before the fade begins
+    let b = 0;
+    const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => setAmbientIn(true)); });
+    return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
+  }, []);
+  /* Each memory's vessel colour — its colour pick, which stains the glass from
+     the foot — as wash paint (lit and deep rgb), so a wash bound for the
+     gallery arrives in its vessel's own colour. */
+  const vesselPaint = useMemo(() => events.map((e, i) => {
+    const pick = e.feeling ?? (i >= LIFE_EVENTS.length ? savedMemories[i - LIFE_EVENTS.length]?.look?.oklch : undefined);
+    if (!pick) return null;
+    const rgb = (ok: Oklch) => {
+      const { r, g, b } = parseHex(oklchToHex(ok));
+      return [r / 255, g / 255, b / 255];
+    };
+    return [...rgb(pick), ...rgb({ ...pick, l: Math.max(0.2, pick.l - 0.07) })];
+  }), [events, savedMemories]);
+  const washBlobs = useMemo<WashBlob[]>(() => blobs.map((b) => {
+    const [lit, deep] = (b.color.match(/#[0-9a-f]{6}/gi) ?? ["#9496a6", "#7a7c8c"]).map((hex) => {
+      const { r, g, b: bl } = parseHex(hex);
+      return [r / 255, g / 255, bl / 255] as [number, number, number];
+    });
+    return { color: lit, deep: deep ?? lit, comp: b.comp, seed: b.seed, opacity: b.opacity };
+  }), [blobs]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const blobEls = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -360,6 +526,12 @@ export function BlobScene({
   const returnReveal = classicChrome && (returnPhase === "holding" || returnPhase === "landing");
   const revealArmed = returnPhase === "landing";
   const [fieldShown, setFieldShown] = useState(!returnReveal);
+  const [landingIntro] = useState(() => classicChrome && !returnReveal && !landingIntroPlayed);
+  const [washesSettled, setWashesSettled] = useState(false);
+  const onWashesSettling = useCallback(() => setWashesSettled(true), []);
+  /** The intro is waiting on the washes: the copy is held hidden and Enter cannot be pressed. */
+  const introWaiting = landingIntro && washState !== "off" && !washesSettled;
+  useEffect(() => { if (classicChrome) landingIntroPlayed = true; }, [classicChrome]);
   const [headerShown, setHeaderShown] = useState(!returnReveal);
   useEffect(() => {
     if (!returnReveal) {
@@ -400,6 +572,25 @@ export function BlobScene({
   annotationsRef.current = annotations;
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [panState, setPanState] = useState({ x: 0, y: 0 });
+  const [washTune, setWashTune] = useState(initialWashTune);
+  const washTuneRef = useRef(washTune);
+  washTuneRef.current = washTune;
+  const [captionReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  /* The captions' clock: from mount, or — on the landing's first arrival — so
+     the first wave types in just as the centre block has finished appearing. */
+  const [captionsFrom, setCaptionsFrom] = useState<number | null>(() => (landingIntro ? null : performance.now()));
+  useEffect(() => {
+    if (captionsFrom !== null || introWaiting) return;
+    setCaptionsFrom(performance.now() + LANDING_INTRO.delayMs + LANDING_INTRO.durationMs - CAPTION_WAVES.firstAt);
+  }, [captionsFrom, introWaiting]);
+  const captionWaves = useMemo(() => captionsFrom === null ? null : createCaptionWaves(
+    events.map((e) => e.year + e.event + (e.year === "2026" ? "..." : "")),
+    captionsFrom,
+    captionReduced,
+  ), [captionsFrom]);
+  const [captionNow, setCaptionNow] = useState(() => performance.now());
+  /** Which captions a wave is showing; the rest take no part in the overlap blur. */
+  const captionShownRef = useRef<boolean[]>([]);
   const headerCopyRef = useRef<HTMLDivElement>(null);
   const headerOnDarkRef = useRef(false);
   const [headerOnDark, setHeaderOnDark] = useState(false);
@@ -469,13 +660,43 @@ export function BlobScene({
   const entryShrink = landingArrival && !entryReduced ? flowProgress(entryTime, INK_ENTRY.labelsEnd, INK_ENTRY.shrinkEnd) : 0;
   const entryPaper = landingArrival ? 1 - flowProgress(entryTime, entryReduced ? 320 : INK_ENTRY.pathHoldEnd,
     entryReduced ? INK_ENTRY.reducedEnd : INK_ENTRY.growEnd) : 1;
+  /* The vignette is a faint gradient the grain dithers: left without it, it
+     bands into rings. Through the entry it clears first while the grain holds,
+     and the grain lets go only once it has gone. */
+  const entryVignette = smoothProgress(entryPaper, 0.3, 1);
+  const entryGrain = smoothProgress(entryPaper, 0, 0.3);
 
   /* ─── sizing ─── */
   const vw = typeof window !== "undefined" ? window.innerWidth : 1200;
   const vh = typeof window !== "undefined" ? window.innerHeight : 800;
   const isMobile = vw <= 768;
-  const canvasWidth = isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
-  const canvasHeight = isMobile ? vh * 0.9 : vh * 1.5 * 0.9;
+  /* On a phone the blobs shrink with `scale` but keep most of their desktop
+     softness: halved blur left each overlap a crisp disc, read as separate
+     circles instead of one pooled stain. The dots go smaller with the type. */
+  // (with no gooey filter to firm their edges, a phone's blobs keep a little
+  // more of their shape than the 0.9 they had under it, still softer than scale)
+  const blobBlur = (blur: number) => blur * (isMobile ? 0.6 : scale);
+  /* A phone draws a lighter field: no gooey SVG filter (recomputed over the
+     whole layer whenever a blob moves) and no border-radius morph (it repaints
+     each blurred blob every frame). What is left — drift and breath — is
+     transform only, so each blob's blur is drawn once and moved by the GPU;
+     the soft blur and multiply still pool them. */
+  const lite = isMobile;
+  // the wash's own mask is its shape, so there is no border-radius to morph
+  const blobAnimation = (blob: BlobData) =>
+    `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite, `
+    + `blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`;
+  const dotSize = washTune.dotSize * (isMobile ? 0.625 : 1);
+  // The landing is a fixed, screen-sized composition. Legacy blend previews
+  // retain their larger, pannable field.
+  const canvasWidth = classicChrome ? vw : isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
+  const canvasHeight = classicChrome || isMobile ? vh : vh * 1.5 * 0.9;
+  /* The field at the screen's own density, within a pixel budget: the
+     canvas spans the field, which is viewport-sized on the landing. */
+  const fieldResolution = Math.min(
+    Math.min(window.devicePixelRatio || 1, 2) * washTune.sharpness,
+    Math.sqrt((isMobile ? FIELD_PX_PHONE : FIELD_PX) / Math.max(1, canvasWidth * canvasHeight)),
+  );
   const baseSize = 120 * scale;
   const selSize = 260 * scale;
   const gap = 36 * scale;
@@ -485,6 +706,9 @@ export function BlobScene({
   // their computed transform and shape preserves the original first frame.
   useLayoutEffect(() => {
     if (!landingArrival) {
+      washCuts.current.on = false;
+      cutSeen.current.clear();
+      closeSeen.current.clear();
       if (entryCapture.current) {
         entryCapture.current.forEach((captured, i) => {
           if (blobEls.current[i]) blobEls.current[i]!.style.cssText = captured.inline;
@@ -509,12 +733,23 @@ export function BlobScene({
           dotY: annotations[i] ? cr.top + annotations[i].dotY : rect.top + rect.height / 2,
           width: parseFloat(style.width), height: parseFloat(style.height),
           a: matrix.a * s, b: matrix.b * s, c: matrix.c * s, d: matrix.d * s,
-          radius: style.borderRadius, blur: blobs[i].blur * scale, opacity: blobs[i].opacity };
+          radius: style.borderRadius, blur: blobBlur(blobs[i].blur), opacity: blobs[i].opacity };
       });
     }
     const gather = entryReduced ? 0 : flowProgress(entryTime, INK_ENTRY.shrinkEnd, INK_ENTRY.pathEnd);
     const unfold = entryReduced ? 0 : flowProgress(entryTime, INK_ENTRY.pathHoldEnd, INK_ENTRY.unfoldEnd);
     const growth = inkGrowth(landingArrival);
+    /* With the field painting, there are no dots and the washes keep living.
+       Each memory the gallery will show has a mask waiting at its seat — its
+       vessel's outline at INK_CUT_SCALE of the seat. Its wash drifts there and
+       fills the mask with its own paint from the foot up, draining into it,
+       nearest the focus first; the other washes fade where they lie, so the
+       screen holds as many as the gallery does. The vessel then grows up
+       through its cutout, which grows with it and lets go as it arrives. */
+    const cutting = washOn && !entryReduced;
+    const cuts = washCuts.current;
+    cuts.on = cutting;
+    const letGo = 1 - flowProgress(growth, 0.05, 1);
     entryCapture.current.forEach((captured, i) => {
       const el = blobEls.current[i];
       if (!el) return;
@@ -531,8 +766,76 @@ export function BlobScene({
       const pointerScale = lerp(1, path.scale, gather);
       const width = lerp(captured.width, INK_POINTER_SIZE * pointerScale, entryShrink);
       const height = lerp(captured.height, INK_POINTER_SIZE * pointerScale, entryShrink);
+      if (cutting) {
+        const cut = inkSeat(events[i].id);
+        cuts.boxes[i * 3 + 2] = 0;
+        cuts.masks[i] = null;
+        cuts.spans[i] = null;
+        cuts.fill[i] = 0;
+        cuts.drain[i] = 0;
+        cuts.open[i] = 1;
+        cuts.paint[i] = null;
+        cuts.tint[i] = 0;
+        const half = cut ? cut.size / 2 : 0;
+        const onScreen = !!cut && cut.x + half > 0 && cut.x - half < vw && cut.y + half > 0 && cut.y - half < vh;
+        // the gallery seats only the memories near the focus: once it has placed
+        // any, one with no seat is not among them
+        const extra = cut ? !becomesArtifact || !onScreen || cut.opacity < 0.08 : !carouselContainsOffset(offset) || hasInkSeats();
+        if (extra) {
+          // not among the vessels on screen: its opening run backwards where it
+          // lies, a few at a time, all gone before the first cutout fills (timed
+          // from when it was known, so a late answer never snaps it away)
+          if (!closeSeen.current.has(i)) closeSeen.current.set(i, entryTime);
+          const start = Math.max(INK_ENTRY.descEnd + (blobs[i].seed / 10) * CLOSE_SPREAD_MS, closeSeen.current.get(i)!);
+          cuts.fade[i] = 1;
+          cuts.open[i] = 1 - flowProgress(entryTime, start, start + CLOSE_MS);
+          return;
+        }
+        // the gallery has not placed its seats yet: leave the wash as it is
+        if (!cut) { cuts.fade[i] = 1; return; }
+        if (!cutSeen.current.has(i)) cutSeen.current.set(i, entryTime);
+        const from = Math.max(INK_ENTRY.headerEnd, cutSeen.current.get(i)!);
+        const travel = flowProgress(entryTime, from, from + SEAT_DRIFT_MS);
+        // the fill begins as the wash settles onto its seat, with no pause between
+        const fill = flowProgress(entryTime, from + SEAT_DRIFT_MS * SEAT_FILL_FROM, INK_ENTRY.unfoldEnd - 300);
+        const box = cut.size * lerp(INK_CUT_SCALE, 1, growth);
+        // the wash drifts onto its seat, gathering to about its vessel's own size
+        const cx = lerp(captured.x, cut.x, travel), cy = lerp(captured.y, cut.y, travel);
+        const side = lerp(captured.width, box * SEAT_GATHER, travel);
+        el.style.animation = "none";
+        el.style.scale = "1";
+        el.style.left = `${cx - cr.left}px`; el.style.top = `${cy - cr.top}px`;
+        el.style.width = `${side}px`; el.style.height = `${side}px`;
+        el.style.transform = `matrix(${lerp(captured.a, 1, travel)}, ${lerp(captured.b, 0, travel)}, ${lerp(captured.c, 0, travel)}, ${lerp(captured.d, 1, travel)}, ${-side / 2}, ${-side / 2})`;
+        cuts.boxes[i * 3] = cut.x; cuts.boxes[i * 3 + 1] = cut.y; cuts.boxes[i * 3 + 2] = box / 2;
+        cuts.masks[i] = cut.mask;
+        cuts.spans[i] = cut.span;
+        cuts.fill[i] = fill;
+        // spent by the time the paint is part way up, so no wash lingers over its cutout
+        cuts.drain[i] = flowProgress(fill, 0, 0.6);
+        cuts.fade[i] = lerp(1, cut.opacity, travel) * letGo;
+        // its colour runs into its vessel's on the way
+        cuts.paint[i] = vesselPaint[i];
+        cuts.tint[i] = travel;
+        return;
+      }
       el.style.animation = "none";
       el.style.scale = "1";
+      if (lite) {
+        // a phone moves and shrinks the blob it has already drawn: size and
+        // place stay as captured and only the transform changes, so nothing is
+        // laid out or repainted per frame. Its blur shrinks with it.
+        const sx = width / captured.width, sy = height / captured.height;
+        el.style.left = `${captured.x - cr.left}px`; el.style.top = `${captured.y - cr.top}px`;
+        el.style.width = `${captured.width}px`; el.style.height = `${captured.height}px`;
+        el.style.willChange = "transform, opacity";
+        el.style.transform = `translate(${x - captured.x}px, ${y - captured.y}px) translate(-50%, -50%) matrix(${lerp(captured.a, 1, entryShrink) * sx}, ${lerp(captured.b, 0, entryShrink) * sx}, ${lerp(captured.c, 0, entryShrink) * sy}, ${lerp(captured.d, 1, entryShrink) * sy}, 0, 0)`;
+        el.style.borderRadius = entryShrink > 0.98 ? "50%" : captured.radius;
+        el.style.filter = `blur(${captured.blur}px)`;
+        el.style.opacity = `${lerp(captured.opacity, 1, entryShrink) * lerp(1, becomesArtifact ? seat.opacity : 1, unfold) * (becomesArtifact || entryReduced ? 1 - flowProgress(growth, 0.01, entryReduced ? 1 : 0.24) : 1)}`;
+        if (entryShrink > 0.98) el.style.background = blobs[i].color.match(/#[0-9a-f]{6}/i)?.[0] ?? MEMORY_COLORS[0];
+        return;
+      }
       el.style.left = `${x - cr.left}px`; el.style.top = `${y - cr.top}px`;
       el.style.width = `${width}px`; el.style.height = `${height}px`;
       el.style.transform = `matrix(${lerp(captured.a, 1, entryShrink)}, ${lerp(captured.b, 0, entryShrink)}, ${lerp(captured.c, 0, entryShrink)}, ${lerp(captured.d, 1, entryShrink)}, ${-width / 2}, ${-height / 2})`;
@@ -541,7 +844,7 @@ export function BlobScene({
       el.style.opacity = `${lerp(captured.opacity, 1, entryShrink) * lerp(1, becomesArtifact ? seat.opacity : 1, unfold) * (becomesArtifact || entryReduced ? 1 - flowProgress(growth, 0.01, entryReduced ? 1 : 0.24) : 1)}`;
       if (entryShrink > 0.98) el.style.background = blobs[i].color.match(/#[0-9a-f]{6}/i)?.[0] ?? MEMORY_COLORS[0];
     });
-  }, [landingArrival, entryTime, entryShrink, entryReduced, gallerySlot, landingFocusSlot, blobs, scale, vw, vh]);
+  }, [landingArrival, entryTime, entryShrink, entryReduced, gallerySlot, landingFocusSlot, blobs, events, vesselPaint, washOn, scale, vw, vh]);
 
   /* ─── initial pan offset (center the canvas) ─── */
   useEffect(() => {
@@ -553,6 +856,7 @@ export function BlobScene({
 
   /* ─── pan momentum animation ─── */
   useEffect(() => {
+    if (classicChrome) return;
     let raf = 0;
     const decay = () => {
       const vx = panVelocity.current.x;
@@ -577,7 +881,7 @@ export function BlobScene({
       raf = requestAnimationFrame(decay);
     }
     return () => cancelAnimationFrame(raf);
-  }, [panState, canvasWidth, canvasHeight, vw, vh]);
+  }, [classicChrome, panState, canvasWidth, canvasHeight, vw, vh]);
 
   /* ─── grain canvas ─── */
   useEffect(() => {
@@ -586,17 +890,14 @@ export function BlobScene({
     const ctx = c.getContext("2d");
     if (!ctx) return;
     let painted = false;
-    const paint = () => {
-      // Slightly larger grains, still sized relative to the display rather
-      // than stretching a fixed texture across different viewport sizes.
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const grainSize = 1.5;
-      const width = classicChrome ? Math.max(1, Math.round(c.clientWidth * dpr / grainSize)) : 512;
-      const height = classicChrome ? Math.max(1, Math.round(c.clientHeight * dpr / grainSize)) : 512;
-      if (painted && c.width === width && c.height === height) return;
-      c.width = width;
-      c.height = height;
-      const img = ctx.createImageData(width, height);
+    // One tile of noise, repeated: white noise shows no seam, and the screen
+    // is filled without a random value per pixel (2.7 million on a phone).
+    const TILE = 512;
+    const tile = document.createElement("canvas");
+    tile.width = tile.height = TILE;
+    const tileCtx = tile.getContext("2d");
+    if (tileCtx) {
+      const img = tileCtx.createImageData(TILE, TILE);
       for (let i = 0; i < img.data.length; i += 4) {
         const v = Math.random() * 255;
         img.data[i] = v;
@@ -604,7 +905,22 @@ export function BlobScene({
         img.data[i + 2] = v;
         img.data[i + 3] = 42;
       }
-      ctx.putImageData(img, 0, 0);
+      tileCtx.putImageData(img, 0, 0);
+    }
+    const paint = () => {
+      // A grain per device pixel (to 3×): fine paper, never stretched, so it
+      // stays as fine on a phone's dense screen as on a laptop's.
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      const width = classicChrome ? Math.max(1, Math.round(c.clientWidth * dpr)) : TILE;
+      const height = classicChrome ? Math.max(1, Math.round(c.clientHeight * dpr)) : TILE;
+      if (painted && c.width === width && c.height === height) return;
+      c.width = width;
+      c.height = height;
+      const pattern = ctx.createPattern(tile, "repeat");
+      if (!pattern) return;
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = pattern;
+      ctx.fillRect(0, 0, width, height);
       painted = true;
     };
     paint();
@@ -705,11 +1021,11 @@ export function BlobScene({
             el.style.width = `${blob.size * scale}px`;
             el.style.height = `${blob.size * scale}px`;
             el.style.opacity = `${blob.opacity}`;
-            el.style.filter = `blur(${blob.blur * scale}px)`;
+            el.style.filter = `blur(${blobBlur(blob.blur)}px)`;
             el.style.mixBlendMode = "multiply";
             el.style.transform = `translate(-50%, -50%) rotate(${blob.rotate}deg)`;
             el.style.boxShadow = "none";
-            el.style.animation = `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite, blobMorph ${blob.animDuration * 1.3}s ease-in-out ${blob.animDelay}s infinite, blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`;
+            el.style.animation = blobAnimation(blob);
           }
         }
         const morphBucket = Math.round(mp * 50);
@@ -790,7 +1106,7 @@ export function BlobScene({
           ? 1
           : lerp(0.35, 0.55, Math.max(0, 1 - Math.abs(slot - carouselIdx.current) * 0.3));
         el.style.opacity = `${lerp(blob.opacity, galOp, mp)}`;
-        el.style.filter = `blur(${lerp(blob.blur * scale, Math.min(blob.blur * 0.12, 3), mp)}px)`;
+        el.style.filter = `blur(${lerp(blobBlur(blob.blur), Math.min(blob.blur * 0.12, 3), mp)}px)`;
         el.style.mixBlendMode = mp > 0.55 ? "normal" : "multiply";
 
         const breathe =
@@ -847,22 +1163,44 @@ export function BlobScene({
       let cx = 0, cy = 0, n = 0;
       for (const p of ps) if (p.w > 0) { cx += p.cx; cy += p.cy; n++; }
       if (n) { cx /= n; cy /= n; }
-      const anns: AnnPos[] = ps.map((p) => {
+      const anns: AnnPos[] = ps.map((p, i) => {
         if (p.w === 0) return { dotX: 0, dotY: 0, textAlign: "left" as const, anchorX: 0, anchorY: 0 };
         let dx = p.cx - cx, dy = p.cy - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d > 0) { dx /= d; dy /= d; } else { dx = 1; dy = 0; }
-        const rad = Math.min(p.w, p.h) / 2;
+        // the wash fades well inside its box; the dot sits on its body
+        const rad = Math.min(p.w, p.h) / 2 * WASH_BODY;
         const dotX = p.cx + dx * rad * 0.85;
         const dotY = p.cy + dy * rad * 0.85;
-        return { dotX, dotY, textAlign: (dx >= 0 ? "left" : "right") as "left" | "right", anchorX: dotX + dx * 8, anchorY: dotY + dy * 8 + 18 };
+        const a: AnnPos = { dotX, dotY, textAlign: dx >= 0 ? "left" : "right", anchorX: dotX + dx * 8, anchorY: dotY + dy * 8 + 18 };
+        if (!classicChrome) return a;
+        const caption = captionEls.current[i];
+        if (!caption) return a;
+        // Measure the complete text even between its entrance waves. The
+        // padding/margin and right-aligned transform belong to this box too.
+        const { width, height } = caption.getBoundingClientRect();
+        const left = a.anchorX - 8 - (a.textAlign === "right" ? width : 0);
+        const top = a.anchorY - 4;
+        const insetX = captionSafe(cr.width, LANDING_CAPTION_SAFE.x);
+        const insetY = captionSafe(cr.height, LANDING_CAPTION_SAFE.y);
+        const shiftX = clamp(left, insetX, Math.max(insetX, cr.width - insetX - width)) - left;
+        const shiftY = clamp(top, insetY, Math.max(insetY, cr.height - insetY - height)) - top;
+        return {
+          ...a,
+          anchorX: a.anchorX + shiftX,
+          anchorY: a.anchorY + shiftY,
+          dotX: clamp(dotX + shiftX, insetX, cr.width - insetX),
+          dotY: clamp(dotY + shiftY, insetY, cr.height - insetY),
+          fitted: true,
+        };
       });
       setAnnotations(anns);
+      setCaptionNow(performance.now());
       annRafRef.current = requestAnimationFrame(update);
     };
     annRafRef.current = requestAnimationFrame(update);
     return () => cancelAnimationFrame(annRafRef.current);
-  }, [morphVal, hideAnnotations]);
+  }, [morphVal, hideAnnotations, classicChrome]);
 
   /* ─── capture positions ─── */
   const capture = useCallback(() => {
@@ -1077,13 +1415,14 @@ export function BlobScene({
         const el = blobEls.current[i];
         if (!el) continue;
         const br = el.getBoundingClientRect();
-        const rx = br.width / 2 || 1;
-        const ry = br.height / 2 || 1;
-        const nx = (px - (br.left + rx)) / rx;
-        const ny = (py - (br.top + ry)) / ry;
+        const rx = br.width / 2 * WASH_BODY || 1;
+        const ry = br.height / 2 * WASH_BODY || 1;
+        const nx = (px - (br.left + br.width / 2)) / rx;
+        const ny = (py - (br.top + br.height / 2)) / ry;
         if (nx * nx + ny * ny > 1) continue;
         const hex = COLOR_PALETTE[blobs[i].shape.colorIndex % COLOR_PALETTE.length].color;
-        luma = Math.min(luma, hexLuma(hex) * blobs[i].opacity);
+        const field = washTuneRef.current.fieldOpacity;
+        luma = Math.min(luma, hexLuma(hex) * blobs[i].opacity * field + PAPER_LUMA * (1 - field));
       }
       return luma;
     };
@@ -1115,7 +1454,8 @@ export function BlobScene({
           n++;
         }
       }
-      const headerDark = onDarkFrom(sum / (n || 1), headerOnDarkRef.current);
+      // the landing's line and Enter keep their dark ink over any wash
+      const headerDark = !classicChrome && onDarkFrom(sum / (n || 1), headerOnDarkRef.current);
       if (headerDark !== headerOnDarkRef.current) {
         headerOnDarkRef.current = headerDark;
         setHeaderOnDark(headerDark);
@@ -1123,7 +1463,7 @@ export function BlobScene({
 
       const laid = blobs.map((_, i) => {
         const cap = captionEls.current[i];
-        if (!cap) return null;
+        if (!cap || !captionShownRef.current[i]) return null;
         const cr = cap.getBoundingClientRect();
         if (cr.width < 2 || cr.height < 2) return null;
         const cx = cr.left + cr.width / 2;
@@ -1198,12 +1538,45 @@ export function BlobScene({
   }, [classicChrome, blobs]);
 
   /* ─── derived ─── */
-  const showGooey = morphVal < 0.5 && entryShrink < 0.34;
+  // the gooey threshold firms every edge into a clean contour; the landing's
+  // washes keep their own uneven, fading edge instead
+  const showGooey = !lite && !classicChrome && morphVal < 0.5 && entryShrink < 0.34;
   const gooeyT = clamp(Math.max(morphVal * 2.2, entryShrink * 3), 0, 1);
+  const gooey = { sigma: lerp(18, 2, gooeyT), alphaMul: lerp(22, 1, gooeyT), alphaOff: lerp(-9, 0, gooeyT) };
+  /* The goo is drawn in WebGL (GooeyBlobCanvas) so Safari, which skips the
+     SVG filter over these animated blobs, pools them as Chrome does; the SVG
+     filter stays as the fallback where WebGL2 is missing. ?goo=svg forces it. */
+  const gooeyInGl = showGooey && gooeyGl === true;
 
   // Connection lines: from hovered event's dot to each connected event's dot
   const hoveredConns = hoveredIdx !== null ? getConnections(hoveredIdx) : [];
   const labelsFade = clamp(1 - morphVal * 5, 0, 1) * entryLabels;
+  // Only the legacy blend field pans; landing marks stay in screen coordinates.
+  const labelShift = !classicChrome && morphVal < 0.05 ? `translate(${panState.x}px, ${panState.y}px)` : undefined;
+  const captionShows = classicChrome && captionWaves ? captionWaves.at(captionNow) : [];
+  const showOf = new Map(captionShows.map((s) => [s.idx, s]));
+  captionShownRef.current = blobs.map((_, i) => showOf.has(i));
+  captionWords.current = blobs.map((_, i) => captionPresence(showOf.get(i), captionNow, captionReduced));
+  const ink = parseInk(classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR);
+  /** One caption's text, a character at a time, as its wave has it at this moment. */
+  const typed = (text: string, from: number, show: CaptionShow | undefined, soften: number) => {
+    if (!show) return text;
+    return Array.from(text).map((ch, k) => {
+      const look = captionCharLook(show, from + k, captionNow, captionReduced);
+      const blur = Math.max(look.blur, soften);
+      const glyph = soften >= 0.5 ? 0 : look.a * (1 - Math.min(1, look.blur / 5));
+      const halo = look.a * Math.min(1, blur / 3) * 0.85;
+      return (
+        <span key={k} style={{
+          color: inkAlpha(ink, glyph),
+          textShadow: blur > 0.25 ? `0 0 ${blur.toFixed(1)}px ${inkAlpha(ink, halo)}` : undefined,
+          position: look.dx || look.dy ? "relative" : undefined,
+          left: look.dx ? `${look.dx.toFixed(2)}px` : undefined,
+          top: look.dy ? `${look.dy.toFixed(2)}px` : undefined,
+        }}>{ch}</span>
+      );
+    });
+  };
   const renderAnnotationMarks = (bind: boolean) => blobs.map((blob, i) => {
     const a = annotations[i];
     if (!a || (a.dotX === 0 && a.dotY === 0)) {
@@ -1222,8 +1595,35 @@ export function BlobScene({
     const captionColor = classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR;
     const dotColor = classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR;
     const visible = dimmed ? 0.2 : 1;
-    const soften = Math.max(headerNear, overlap) * 6;
-    const softenFilter = soften > 0.1 ? `blur(${soften}px)` : "none";
+    /* Softening without a CSS filter: a blur() inside the difference-blended
+       layer gets its own GPU surface, and on some GPUs that surface's
+       expanded edge was drawn from uninitialised memory — the stray RGB lines
+       over buried captions. A text-shadow and a widened gradient dot paint
+       in place instead. Quantised so a near-settled overlap does not
+       repaint every frame at sub-pixel radii. */
+    const soften = Math.round(Math.max(headerNear, overlap) * 6 * 4) / 4;
+    const softened = soften >= 0.5;
+    const show = showOf.get(i);
+    const waved = classicChrome;
+    // a memory not on show leaves its dot soft and half as present
+    const resting = waved ? 1 - captionPresence(show, captionNow, captionReduced) : 0;
+    const dotSoften = Math.max(soften, Math.round(resting * washTune.dotRestBlur * 4) / 4);
+    const dotSoftened = dotSoften >= 0.5;
+    const dotR = dotSize / 2;
+    const dotBox = dotSoftened ? dotSize + dotSoften * 4 : dotSize;
+    const dotFill = dotSoftened
+      ? `radial-gradient(circle closest-side, ${dotColor} ${Math.max(0, dotR - dotSoften) / (dotBox / 2) * 100}%, transparent 100%)`
+      : undefined;
+    const dotSpread = (softened ? Math.min(1, (dotR / (dotR + soften)) ** 2 * 2) : 1) * (1 - (1 - washTune.dotRestOpacity) * resting);
+    const ringSoft = softened ? clamp(1 - soften / 4, 0, 1) : 1;
+    const shown = !waved || !!show;
+    const softText = softened && !waved
+      ? { color: "transparent", textShadow: `0 0 ${soften * 2}px ${captionColor}` }
+      : undefined;
+    const charSoften = softened ? soften * 2 : 0;
+    const yearLen = Array.from(blob.year).length;
+    const eventLen = Array.from(blob.event).length;
+    const arrived = washOn ? (washPresence.current[i] ?? 0) : 1;
 
     return (
       <div
@@ -1234,21 +1634,25 @@ export function BlobScene({
           e.stopPropagation();
           if (!classicChrome) morphToGalleryAt(i);
         } : undefined}
-        style={{ pointerEvents: bind && !buried ? "auto" : "none" }}
+        style={{
+          pointerEvents: bind && !buried && shown && arrived > 0.5 ? "auto" : "none",
+          visibility: classicChrome && !a.fitted ? "hidden" : undefined,
+          ...(arrived < 1 ? { opacity: arrived } : {}),
+        }}
       >
         <div
           className="absolute"
           style={{
             left: `${a.dotX}px`,
             top: `${a.dotY}px`,
-            width: BLOB_DOT,
-            height: BLOB_DOT,
+            width: dotBox,
+            height: dotBox,
             borderRadius: "50%",
-            backgroundColor: dotColor,
+            backgroundColor: dotFill ? undefined : dotColor,
+            backgroundImage: dotFill,
             transform: "translate(-50%, -50%)",
             zIndex: 22 + stack,
-            opacity: dimmed ? 0.25 : 1,
-            filter: softenFilter,
+            opacity: (classicChrome ? visible * BLOB_DOT_OPACITY : (dimmed ? 0.25 : 1)) * dotSpread,
           }}
         />
         {isPulsating && (
@@ -1257,19 +1661,18 @@ export function BlobScene({
             style={{
               left: `${a.dotX}px`,
               top: `${a.dotY}px`,
-              width: BLOB_DOT,
-              height: BLOB_DOT,
+              width: dotSize,
+              height: dotSize,
               borderRadius: "50%",
               border: `${BLOB_RING_STROKE}px solid ${dotColor}`,
               backgroundColor: "transparent",
               boxSizing: "content-box",
               transform: "translate(-50%, -50%)",
               zIndex: 21 + stack,
-              opacity: dimmed ? 0.15 : 1,
-              filter: softenFilter,
+              opacity: (dimmed ? 0.15 : 1) * (classicChrome ? BLOB_DOT_OPACITY : 1) * ringSoft,
               animation: "ringPulse 2.5s ease-in-out infinite",
-              ["--ring-from" as string]: `${BLOB_DOT}px`,
-              ["--ring-to" as string]: `${BLOB_DOT * 5.6}px`,
+              ["--ring-from" as string]: `${dotSize}px`,
+              ["--ring-to" as string]: `${dotSize * 5.6}px`,
             }}
           />
         )}
@@ -1284,11 +1687,14 @@ export function BlobScene({
             cursor: "pointer",
             padding: "4px 8px",
             margin: "-4px -8px",
+            width: classicChrome ? "max-content" : undefined,
+            maxWidth: classicChrome ? LANDING_CAPTION_MAX_WIDTH : undefined,
+            boxSizing: classicChrome ? "border-box" : undefined,
             color: captionColor,
-            pointerEvents: buried ? "none" : "auto",
+            pointerEvents: buried || !shown ? "none" : "auto",
           }}
         >
-          <div style={{ opacity: visible, filter: softenFilter }}>
+          <div style={{ opacity: shown ? visible : 0, ...softText }}>
             <div
               style={{
                 fontFamily: SERIF_CJK,
@@ -1301,7 +1707,7 @@ export function BlobScene({
                 whiteSpace: "nowrap",
               }}
             >
-              {blob.year}
+              {typed(blob.year, 0, show, charSoften)}
             </div>
             <div
               style={{
@@ -1309,13 +1715,14 @@ export function BlobScene({
                 fontStyle: "italic",
                 fontSize: BLOB_CAPTION_SIZE,
                 color: "inherit",
-                opacity: 0.9,
+                opacity: BLOB_LABEL_OPACITY,
                 lineHeight: blob.event.includes("\n") ? 1.5 : "normal",
-                whiteSpace: blob.event.includes("\n") ? "pre-line" : "nowrap",
+                whiteSpace: classicChrome || blob.event.includes("\n") ? "pre-line" : "nowrap",
+                overflowWrap: classicChrome ? "anywhere" : undefined,
                 letterSpacing: SERIF_ITALIC_TRACKING,
               }}
             >
-              {blob.event}
+              {typed(blob.event, yearLen, show, charSoften)}
             </div>
             {blob.year === "2026" && (
               <div
@@ -1329,7 +1736,7 @@ export function BlobScene({
                   whiteSpace: "nowrap",
                 }}
               >
-                ...
+                {typed("...", yearLen + eventLen, show, charSoften)}
               </div>
             )}
           </div>
@@ -1345,19 +1752,21 @@ export function BlobScene({
       data-ink-stage={!landingArrival ? "field" : entryTime < INK_ENTRY.descEnd ? "desc" : entryTime < INK_ENTRY.headerEnd ? "header" : entryTime < INK_ENTRY.labelsEnd ? "labels"
         : entryTime < INK_ENTRY.shrinkEnd ? "shrink" : entryTime < INK_ENTRY.pathEnd ? "gather" : entryTime < INK_ENTRY.pathHoldEnd ? "curve"
         : entryTime < INK_ENTRY.unfoldEnd ? "unfold" : "artifacts"}
-      className="relative w-full h-screen overflow-hidden cursor-pointer select-none"
+      className={`relative w-full h-dvh overflow-hidden select-none ${classicChrome ? "cursor-default" : "cursor-pointer"}`}
       style={{
         background: classicChrome
           ? (landingArrival ? `rgba(228,228,230,${entryPaper})` : LANDING_PAPER)
           : (landingArrival ? `rgba(237,237,238,${entryPaper})` : PAPER),
         isolation: classicChrome ? "isolate" : undefined,
+        touchAction: classicChrome ? "auto" : "none",
       }}
       onClick={handleClick}
-      onWheel={handleWheel}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseUp}
+      onWheel={classicChrome ? undefined : handleWheel}
+      onPointerDown={classicChrome ? undefined : handleMouseDown}
+      onPointerMove={classicChrome ? undefined : handleMouseMove}
+      onPointerUp={classicChrome ? undefined : handleMouseUp}
+      onPointerCancel={classicChrome ? undefined : handleMouseUp}
+      onPointerLeave={classicChrome ? undefined : handleMouseUp}
     >
       {/* SVG Filters */}
       <svg className="absolute w-0 h-0" aria-hidden="true">
@@ -1375,7 +1784,7 @@ export function BlobScene({
       </svg>
 
       <div style={{ position: "absolute", inset: 0, ...fieldFadeStyle }}>
-      {/* ═══ PANNABLE INNER CANVAS ═══ */}
+      {/* ═══ FIELD CANVAS ═══ */}
       <div
         ref={containerRef}
         style={{
@@ -1384,7 +1793,7 @@ export function BlobScene({
           top: 0,
           width: `${canvasWidth}px`,
           height: `${canvasHeight}px`,
-          transform: classicChrome && morphVal < 0.05 && !panState.x && !panState.y
+          transform: classicChrome
             ? undefined
             : morphVal < 0.05
               ? `translate(${panState.x}px, ${panState.y}px)`
@@ -1394,7 +1803,14 @@ export function BlobScene({
         }}
       >
         {/* ═══ BLOB LAYER ═══ */}
-        <div className="absolute inset-0" style={{ filter: showGooey ? "url(#gooey)" : "none" }}>
+        <div
+          className="absolute inset-0"
+          style={{
+            filter: showGooey && !gooeyInGl ? "url(#gooey)" : "none",
+            visibility: gooeyInGl ? "hidden" : undefined,
+            opacity: washTune.fieldOpacity,
+          }}
+        >
           {blobs.map((blob, i) => (
             <div
               key={blob.id}
@@ -1405,25 +1821,40 @@ export function BlobScene({
                 top: `${blob.y}%`,
                 width: `${blob.size * scale}px`,
                 height: `${blob.size * scale}px`,
-                background: blob.color,
-                borderRadius: blob.borderRadius,
+                // with the field painting the washes, these only carry the drift
+                background: washOn ? undefined : blob.color,
+                borderRadius: washOn ? undefined : blob.borderRadius,
                 opacity: blob.opacity,
-                filter: `blur(${blob.blur * scale}px)`,
+                filter: washOn ? undefined : `blur(${blobBlur(blob.blur)}px)`,
                 mixBlendMode: "multiply",
                 transform: `translate(-50%, -50%) rotate(${blob.rotate}deg)`,
-                animation: `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite,
-                  blobMorph ${blob.animDuration * 1.3}s ease-in-out ${blob.animDelay}s infinite,
-                  blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`,
+                animation: blobAnimation(blob),
                 willChange: classicChrome ? undefined : "transform, left, top, width, height",
               }}
             />
           ))}
         </div>
+        {!lite && !gooeySvgOnly && gooeyGl !== false && (
+          <GooeyBlobCanvas
+            els={blobEls}
+            colors={blobColors}
+            width={canvasWidth}
+            height={canvasHeight}
+            active={showGooey}
+            params={gooey}
+            onSupport={setGooeyGl}
+          />
+        )}
 
         {/* ═══ AMBIENT BLOBS ═══ */}
         <div
           className="absolute inset-0 pointer-events-none"
-          style={{ opacity: clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1) }}
+          style={{
+            opacity: washTune.fieldOpacity * clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1)
+              * (classicChrome && !ambientIn ? 0 : 1),
+            // the ambient light comes up with the washes, from clear paper
+            transition: classicChrome ? "opacity 6.8s cubic-bezier(.45, 0, .2, 1)" : undefined,
+          }}
         >
           <div className="absolute" style={{
             left: "20%", top: "30%",
@@ -1450,6 +1881,12 @@ export function BlobScene({
             animationPlayState: hoveredIdx !== null ? "paused" : "running",
           }} />
         </div>
+
+        {classicChrome && (
+          <WatercolorField width={canvasWidth} height={canvasHeight} blobs={washBlobs}
+            blobEls={blobEls} containerRef={containerRef} tune={washTune}
+            resolution={fieldResolution} presenceRef={washPresence} wordsRef={captionWords} cutsRef={washCuts} onReady={onWashReady} onSettling={onWashesSettling} />
+        )}
 
         {/* ═══ CONNECTION LINES (SVG overlay) ═══ */}
         {hoveredIdx !== null && annotations.length > 0 && morphVal < 0.05 && (
@@ -1493,16 +1930,16 @@ export function BlobScene({
             {renderAnnotationMarks(!classicChrome)}
           </div>
         )}
-      </div>{/* end pannable inner canvas */}
+      </div>{/* end field canvas */}
 
       {/* Grain sits on the blobs, under the landing type so exclusion can read the field. */}
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.48]"
-        style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryPaper : undefined }}
+        style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
       />
       <div className="absolute inset-0 pointer-events-none" style={{
-        opacity: entryPaper,
+        opacity: entryVignette,
         background: classicChrome
           ? "radial-gradient(ellipse at center, transparent 22%, rgba(0,0,0,0.2) 100%)"
           : "radial-gradient(ellipse at center, transparent 32%, rgba(0,0,0,0.14) 100%)",
@@ -1542,6 +1979,7 @@ export function BlobScene({
               pointerEvents: "auto",
             }}
           >
+            <Suspense fallback={null}>
             <SceneViewer
               form={blobs[activeIdx].shape.form}
               fluidity={blobs[activeIdx].shape.fluidity}
@@ -1560,6 +1998,7 @@ export function BlobScene({
                 height: "100%",
               }}
             />
+            </Suspense>
           </div>
         )}
       </div>
@@ -1582,7 +2021,7 @@ export function BlobScene({
       {/* Wordmark stays through gallery; the rest of the homescreen chrome dissolves.
           The classic landing overlay carries its own mark, so skip this one there. */}
       {onNewMemory && !classicChrome && (
-        <PageHeader layout="absolute" link={false} style={{ zIndex: 26 }} />
+        <PageHeader layout="absolute" style={{ zIndex: 26 }} />
       )}
 
       <GalleryViewToggle
@@ -1615,6 +2054,7 @@ export function BlobScene({
                 top: 0,
                 width: canvasWidth,
                 height: canvasHeight,
+                transform: labelShift,
                 ...(labelsFade < 1 ? { opacity: labelsFade } : {}),
               }}
             >
@@ -1680,6 +2120,7 @@ export function BlobScene({
               top: 0,
               width: canvasWidth,
               height: canvasHeight,
+              transform: labelShift,
               ...(labelsFade < 1 ? { opacity: labelsFade } : {}),
             }}
           >
@@ -1720,6 +2161,10 @@ export function BlobScene({
                 alignItems: "stretch",
                 gap: 28,
                 width: "fit-content",
+                opacity: introWaiting ? 0 : undefined,
+                animation: landingIntro && !introWaiting
+                  ? `landingIntro ${LANDING_INTRO.durationMs}ms ${LANDING_INTRO.ease} ${LANDING_INTRO.delayMs}ms both`
+                  : undefined,
               }}
             >
               <p
@@ -1746,7 +2191,7 @@ export function BlobScene({
               <button
                 type="button"
                 className="landing-enter-btn"
-                disabled={!!landingArrival}
+                disabled={!!landingArrival || introWaiting}
                 onClick={(e) => {
                   e.stopPropagation();
                   onNewMemory();
@@ -1763,7 +2208,7 @@ export function BlobScene({
                   appearance: "none",
                   WebkitAppearance: "none",
                   cursor: "pointer",
-                  pointerEvents: landingArrival || (returnReveal && !headerShown) ? "none" : "auto",
+                  pointerEvents: landingArrival || introWaiting || (returnReveal && !headerShown) ? "none" : "auto",
                   color: headerOnDark ? HEADER_LIGHT.mark : HEADER_INK.mark,
                   fontSize: "clamp(12px, calc(12px + (16 - 12) * ((100vw - 390px) / (1024 - 390))), 16px)",
                   lineHeight: 1.5,
@@ -1804,8 +2249,11 @@ export function BlobScene({
                   </span>
                 )}
                 <span className="landing-enter-arrow" aria-hidden style={{ opacity: entryHeader }}>
-                  <span className="landing-enter-stem" />
-                  <span className="landing-enter-caret" />
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}
+                    strokeLinecap="round" strokeLinejoin="round">
+                    <path className="landing-enter-stem" d="M19 12H5" pathLength={1} />
+                    <path d="m12 5 7 7-7 7" />
+                  </svg>
                 </span>
               </button>
             </div>
@@ -1841,8 +2289,20 @@ export function BlobScene({
         </div>
       )}
 
+      {classicChrome && TUNE_PANEL && <WashTunePanel tune={washTune} onChange={setWashTune} />}
+
       {/* ═══ KEYFRAMES ═══ */}
       <style>{`
+        @keyframes landingIntro {
+          from { opacity: 0; transform: scale(${LANDING_INTRO.from}); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes landingIntro {
+            from { opacity: 0; transform: none; }
+            to { opacity: 1; transform: none; }
+          }
+        }
         @keyframes blobFloat0 {
           0%, 100% { transform: translate(-50%, -50%) rotate(0deg) translateX(0) translateY(0); }
           25% { transform: translate(-50%, -50%) rotate(15deg) translateX(40px) translateY(-60px); }
@@ -1904,32 +2364,37 @@ export function BlobScene({
           animation: connDash 1.2s linear infinite;
         }
         .landing-enter-arrow {
-          display: flex;
-          align-items: center;
+          position: relative;
+          display: block;
           width: 0.42em;
           height: 0.7em;
           overflow: visible;
         }
+        .landing-enter-arrow svg {
+          position: absolute;
+          left: -0.5em;
+          top: 50%;
+          width: 1em;
+          height: 1em;
+          margin-top: -0.5em;
+          overflow: visible;
+          transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+        }
         .landing-enter-stem {
-          display: block;
-          height: 1.25px;
-          width: 0;
-          flex-shrink: 0;
-          background: currentColor;
-          margin-right: -0.1em;
-          transition: width 0.28s ease;
+          stroke-dasharray: 1 2;
+          stroke-dashoffset: 1;
+          transition: stroke-dashoffset 0.36s cubic-bezier(0.22, 1, 0.36, 1);
         }
-        .landing-enter-caret {
-          flex-shrink: 0;
-          width: 0.36em;
-          height: 0.36em;
-          border-top: 1.25px solid currentColor;
-          border-right: 1.25px solid currentColor;
-          transform: rotate(45deg);
-          box-sizing: border-box;
+        .landing-enter-btn:focus-visible .landing-enter-stem {
+          stroke-dashoffset: 0;
         }
-        .landing-enter-btn:hover .landing-enter-stem {
-          width: 0.78em;
+        .landing-enter-btn:focus-visible .landing-enter-arrow svg {
+          transform: translateX(3px);
+        }
+        /* a mouse only: a tap would leave the stem drawn */
+        @media (hover: hover) and (pointer: fine) {
+          .landing-enter-btn:hover .landing-enter-stem { stroke-dashoffset: 0; }
+          .landing-enter-btn:hover .landing-enter-arrow svg { transform: translateX(3px); }
         }
         div::-webkit-scrollbar { display: none; }
       `}</style>

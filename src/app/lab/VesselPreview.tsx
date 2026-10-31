@@ -118,9 +118,8 @@ export interface VesselTune {
   // refraction (the second glass look)
   envAbove: number; envBelow: number; horizon: number; horizonSoft: number;
   bend: number; glassSoft: number; bodyAlpha: number; thickDark: number; highlight: number;
-  // A saved feeling stains selected walls without adding opacity.
-  // memoryTintSpread 1 lays that stain over the whole body; 0 keeps it to one shoulder.
-  memoryTintHue: number; memoryTintChroma: number; memoryTintAmount: number; memoryTintSpread: number;
+  // A saved feeling stains the glass from its foot up to half its height, without adding opacity.
+  memoryTintHue: number; memoryTintChroma: number; memoryTintAmount: number;
   /* …and its highlights carry that colour (memoryFlash 1, set with the memory's
      colour; 0 leaves them the flow's own), swelling into it every so often */
   memoryFlash: number; flashEvery: number; flashGain: number;
@@ -180,7 +179,7 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   mono: 0, negative: 0,
   envAbove: 1, envBelow: 0.84, horizon: 0.06, horizonSoft: 0.35,
   bend: 0.75, glassSoft: 0.64, bodyAlpha: 0.85, thickDark: 0.21, highlight: 0.34,
-  memoryTintHue: 0, memoryTintChroma: 0, memoryTintAmount: 0, memoryTintSpread: 0,
+  memoryTintHue: 0, memoryTintChroma: 0, memoryTintAmount: 0,
   memoryFlash: 0, flashEvery: 4.5, flashGain: 1.1,
   keyAzimuth: -32, keyElevation: 64, keyIntensity: 1.08,
   flowGain: 1.21, flowSpeed: 0.8, flowSoft: 0.3, flowLift: 0.49, flowRise: 0.35, flowApart: 2.15,
@@ -917,7 +916,7 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform float uWarmth;
   uniform vec3 uMemoryTint;
   uniform float uMemoryTintAmount;
-  uniform float uMemoryTintSpread;
+  uniform vec2 uTintSpan;
   uniform vec3 uPatch[3];
   /* distance (each already scaled by the haze): the view through the glass smeared
      further, the rim lines and the gathering of alpha at the silhouette letting go,
@@ -1204,19 +1203,13 @@ const GLASS_COMMON_GLSL = /* glsl */ `
     }
     return clamp(breath, 0.0, 1.0) * uFrostStrength * (.7 + .3 * gNoise(vModel * 9.0 - uSeed));
   }
-  // A broad stain fixed to the glass: clear through the center and on the
-  // opposite wall, faintly colored on one shoulder and its grazing edges.
-  // uMemoryTintSpread 1 drops the shoulder: the colour gathers all the way
-  // round where the wall turns edge-on, and the face stays clear.
+  // A stain fixed to the glass that rises from its foot: the full colour at the
+  // lowest point, thinning in a straight line to nothing half-way up.
+  // uTintSpan is the glass's lowest and highest y in model space.
   vec3 feelingTint(vec3 color, float facing) {
     if (uMemoryTintAmount <= 0.0) return color;
-    vec3 dir = normalize(vModel + vec3(.001));
-    float stainMask = smoothstep(-.15, .65, dot(dir, normalize(vec3(.8, .55, .15)))
-      + (gNoise(vModel * 1.3) - .5) * .25);
-    float g = clamp(1.0 - facing, 0.0, 1.0);
-    float shoulder = stainMask * (.18 + .82 * pow(g, .8));
-    float around = pow(g, 1.45);
-    float coverage = mix(shoulder * uMemoryTintAmount, around * min(1.0, uMemoryTintAmount * 1.75), uMemoryTintSpread);
+    float up = clamp((vModel.y - uTintSpan.x) / max(1e-3, uTintSpan.y - uTintSpan.x), 0.0, 1.0);
+    float coverage = clamp(1.0 - up * 2.0, 0.0, 1.0) * uMemoryTintAmount;
     vec3 dye = uMemoryTint / max(.001, max(uMemoryTint.r, max(uMemoryTint.g, uMemoryTint.b)));
     return color * mix(vec3(1.0), dye, coverage);
   }
@@ -1367,8 +1360,7 @@ export const glassRefractFragment = /* glsl */ `
     vec3 color = mix(body, refl, mirror);
     // the live bubble's rim: a dark line just inside the silhouette (its rimPower
     // 3.3) — here the frame itself, darkened, so it still reads as glass.
-    // the stain comes after it, so a spread stain stays on the rim instead of
-    // being mixed back out to the untinted body
+    // the stain comes after it, so it is not mixed back out to the untinted body
     float rimLine = pow(g, 3.3) * uRim * (1.0 - uHazeEdge * .85);
     color = mix(color, body * .55, rimLine * .5);
     color = feelingTint(color, facing);
@@ -1709,7 +1701,7 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uReveal: { value: 1 },
     uMemoryTint: { value: new THREE.Color("#ffffff") },
     uMemoryTintAmount: { value: 0 },
-    uMemoryTintSpread: { value: 0 },
+    uTintSpan: { value: new THREE.Vector2(-1, 1) },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
     uHazeWash: { value: 0 },
@@ -1813,6 +1805,8 @@ export function writeSheetUniforms(u: SheetUniformSet, w: SheetWrite) {
 
 export interface GlassWrite {
   tune: VesselTune; seed: number; key: THREE.Vector3; patches: THREE.Vector3[]; room: Room; groundY: number; reflect: number;
+  /** The glass's lowest and highest y in model space: the stain rises from `lo` to half-way. */
+  span: { lo: number; hi: number };
   /** What the glass fades toward at a distance, and the mist's colour (`airFor`). */
   air: readonly [number, number, number];
 }
@@ -1845,7 +1839,7 @@ export function flashColor(hue: number, stainChroma: number): Rgb {
 export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   const { tune } = w;
   u.uMemoryTintAmount.value = tune.memoryTintAmount ?? 0;
-  u.uMemoryTintSpread.value = tune.memoryTintSpread ?? 0;
+  u.uTintSpan.value.set(w.span.lo, w.span.hi);
   u.uMemoryTint.value.set(oklchToHex({ l: .86, c: tune.memoryTintChroma ?? 0, h: tune.memoryTintHue ?? 0 }));
   u.uHazePhoto.value = tune.haze * tune.hazePhoto;
   u.uHazeEdge.value = tune.haze * tune.hazeEdge;
@@ -2122,7 +2116,7 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
     tune, seed, sheet, sheetMode, face, key, edgePrint, groundY, reflect: i === 0 ? -1 : 0.22 * tune.ground * tableFade.current, air,
   }));
   glassUniformSets.forEach((u, i) => writeGlassUniforms(u, {
-    tune, seed, key, patches, room, groundY, reflect: i === 0 ? -1 : 0.22 * tune.ground * tableFade.current, air,
+    tune, seed, key, patches, room, groundY, reflect: i === 0 ? -1 : 0.22 * tune.ground * tableFade.current, air, span: glass,
   }));
   groundUniforms.uGround.value = tune.ground * tableFade.current;
   groundUniforms.uWarmth.value = tune.warmth;
@@ -2471,7 +2465,7 @@ export interface VesselState {
   size?: number;
   /** The wall angle a gallery seat opens on, when the picture is hung away from it (the gallery library's). */
   facing?: number;
-  /** The eye's height a gallery seat opens at (degrees), and whether that view is locked against turning. */
+  /** The eye's height a gallery seat opens at (degrees), and whether that view is the library's own: held against the hover turn, still turned by a drag. */
   viewPitch?: number;
   viewLocked?: boolean;
 }

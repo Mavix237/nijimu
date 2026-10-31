@@ -69,6 +69,8 @@ export interface VesselArtifactProps {
   viewToken?: string;
   /** The view is held: a drag no longer turns it (a press and release still picks). */
   locked?: boolean;
+  /** The view it opens at is kept while the mouse rests on it (no hover turn); a drag still turns it. */
+  holdView?: boolean;
   /** As a drag turns the eye: the wall angle it now faces and its height, in degrees. */
   onView?: (facing: number, pitch: number) => void;
   /** Depth softness in CSS pixels of this canvas, before the seat's scale.
@@ -161,7 +163,7 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
 }
 
 function VesselObject({
-  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth,
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
@@ -183,6 +185,8 @@ function VesselObject({
   }
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
+  const holdViewRef = useRef(holdView);
+  holdViewRef.current = holdView;
   const onViewRef = useRef(onView);
   onViewRef.current = onView;
 
@@ -355,7 +359,7 @@ function VesselObject({
   // the air a receded memory fades toward: the room, as the lab's backdrop would show it
   const air = airFor(tune, glassMode, room);
   writeSheetUniforms(sheetU, { tune, seed, sheet: built.sheet, sheetMode, face, key, edgePrint, groundY, reflect: -1, air });
-  writeGlassUniforms(glassU, { tune, seed, key, patches, room, groundY, reflect: -1, air });
+  writeGlassUniforms(glassU, { tune, seed, key, patches, room, groundY, reflect: -1, air, span: built.glass });
 
   // the picture, from the shared stock: already there if it was preloaded, else set as it arrives
   const photo = photoUrl ? peekSeatPhoto(photoUrl) : undefined;
@@ -404,7 +408,7 @@ function VesselObject({
     h.amount += (want - h.amount) * (1 - Math.exp(-step / HOVER_EASE_S));
     if (h.amount > 1e-3) {
       h.phase += step * (2 * Math.PI / HOVER_BOB_S);
-      if (!lockedRef.current) yaw.current -= HOVER_SPIN * h.amount * step;
+      if (!lockedRef.current && !holdViewRef.current) yaw.current -= HOVER_SPIN * h.amount * step;
       invalidate();
     }
     // the glow's clock: it moves only while the seat's frameloop runs (focused or moving); a still seat holds its frame

@@ -105,7 +105,7 @@ function NeighborBody({ index, state, place, stage, anchor, depth: chosenDepth, 
     const haze = distancePreviewSeat(index, place, FIELD_FOCAL, { w: 1000, h: 800 }).haze;
     const tune = { ...state.tune, haze: 1 - (1 - state.tune.haze) * (1 - haze * .38), ground: 0 };
     const air = [0.8, 0.82, 0.82] as const;
-    writeGlassUniforms(g, { tune, seed: state.seed, key, patches: seedDirections(state.seed, 3, 1.1), room: state.room, groundY: -100, reflect: -1, air });
+    writeGlassUniforms(g, { tune, seed: state.seed, key, patches: seedDirections(state.seed, 3, 1.1), room: state.room, groundY: -100, reflect: -1, air, span: { lo: built.glass.lo, hi: built.glass.hi } });
     writeSheetUniforms(s, { tune, seed: state.seed, key, sheet: built.sheet, sheetMode: state.sheetMode, face: state.face, edgePrint, groundY: -100, reflect: -1, air });
     s.uPhoto.value = BLANK_PHOTO;
     s.uDevelop.value = 1.45;

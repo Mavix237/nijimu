@@ -13,6 +13,10 @@ import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival }
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
 import { carouselSeat, carouselContainsOffset, inkUnfoldSeat } from "../lib/carouselLayout";
 import { GooeyBlobCanvas } from "./GooeyBlobCanvas";
+import { captionCharLook, captionPresence, createCaptionWaves, type CaptionShow } from "../lib/captionWaves";
+import { WatercolorField, type WashBlob } from "./WatercolorField";
+import { WashTunePanel } from "./WashTunePanel";
+import { initialWashTune } from "../lib/washTune";
 
 /* Only the field's own gallery mode draws a 3D form; the landing never does,
    so three.js is not loaded with it. */
@@ -29,7 +33,6 @@ const HEADER_DESC_SIZE = 12;
 /** Blob year + title — restored clamp, a step above the header description. */
 const BLOB_CAPTION_SIZE =
   "clamp(13px, calc(13px + 2 * ((100vw - 390px) / (1024 - 390))), 15px)";
-const BLOB_DOT = 8;
 /** Radiating ring — kept as a painted width so scale() cannot fatten it. */
 const BLOB_RING_STROKE = 0.6;
 
@@ -41,6 +44,9 @@ interface BlobData {
   y: number;
   size: number;
   color: string;
+  /** WatercolorField's character for it: 1 complete, 0 free and diffuse. */
+  comp: number;
+  seed: number;
   blur: number;
   opacity: number;
   borderRadius: string;
@@ -124,6 +130,24 @@ function computeGalleryOrder(events: { year: string }[]) {
 }
 
 /* ───────── helpers ───────── */
+/** Each blob's box is this much larger than it used to be: the washes are broad. */
+const BLOB_SPREAD = 1.3;
+/** The wash's body, as a share of its box's half-width (WatercolorField's reach and edge). */
+const WASH_BODY = 0.7;
+/** The tune panel shows in development, or anywhere with ?tune on the URL. */
+/** Most canvas pixels the field may paint each frame. */
+const FIELD_PX = 7_500_000;
+const FIELD_PX_PHONE = 3_000_000;
+const TUNE_PANEL = import.meta.env.DEV || new URLSearchParams(window.location.search).has("tune");
+
+/** Between a complete wash (1) with a drying edge and a free, diffuse one (0). */
+function washCharacter(): number {
+  const r = Math.random();
+  if (r < 0.4) return 0.75 + Math.random() * 0.25;
+  if (r < 0.75) return Math.random() * 0.3;
+  return 0.35 + Math.random() * 0.35;
+}
+
 function generateBorderRadius(): string {
   const v = Array.from({ length: 8 }, () => 30 + Math.random() * 40);
   return `${v[0]}% ${v[1]}% ${v[2]}% ${v[3]}% / ${v[4]}% ${v[5]}% ${v[6]}% ${v[7]}%`;
@@ -157,8 +181,10 @@ function generateBlobs(
       id: i,
       x,
       y: y + 10, // Shift all blobs down (10% = approx 100px at 1080p height)
-      size: 180 + Math.random() * 300,
+      size: (180 + Math.random() * 300) * BLOB_SPREAD,
       color: COLORS[colorIndex % COLORS.length],
+      comp: washCharacter(),
+      seed: Math.random() * 10,
       blur: 8 + Math.random() * 30,
       opacity: 0.55 + Math.random() * 0.35,
       borderRadius: generateBorderRadius(),
@@ -262,6 +288,16 @@ function hexLuma(hex: string): number {
 
 const PAPER_LUMA = hexLuma(LANDING_PAPER);
 
+type Ink = { r: number; g: number; b: number; a: number };
+function parseInk(color: string): Ink {
+  const m = color.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/);
+  if (m) return { r: +m[1], g: +m[2], b: +m[3], a: m[4] === undefined ? 1 : +m[4] };
+  return { ...parseHex(color), a: 1 };
+}
+function inkAlpha(ink: Ink, a: number) {
+  return `rgba(${ink.r}, ${ink.g}, ${ink.b}, ${(ink.a * a).toFixed(3)})`;
+}
+
 interface CaptionFx {
   /** How far the caption sits in the header keep-out — blur only. */
   progress: number;
@@ -341,6 +377,29 @@ export function BlobScene({
   const [gooeyGl, setGooeyGl] = useState<boolean | null>(null);
   const gooeySvgOnly = useMemo(() => new URLSearchParams(window.location.search).get("goo") === "svg", []);
   const blobColors = useMemo(() => blobs.map((b) => b.color), [blobs]);
+  /* While the field is starting, the blob elements stay unpainted too, so the
+     landing never opens on plain circles that then jump into washes; they
+     paint themselves only if the field cannot. */
+  const [washState, setWashState] = useState<"starting" | "on" | "off">("starting");
+  const washOn = washState !== "off" && classicChrome;
+  const onWashReady = useCallback((ok: boolean) => setWashState(ok ? "on" : "off"), []);
+  /** How far each wash has arrived; its dot and caption come with it. */
+  const washPresence = useRef<number[]>([]);
+  const captionWords = useRef<number[]>([]);
+  const [ambientIn, setAmbientIn] = useState(false);
+  useEffect(() => {
+    // two frames, so the cleared state is painted before the fade begins
+    let b = 0;
+    const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => setAmbientIn(true)); });
+    return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
+  }, []);
+  const washBlobs = useMemo<WashBlob[]>(() => blobs.map((b) => {
+    const [lit, deep] = (b.color.match(/#[0-9a-f]{6}/gi) ?? ["#9496a6", "#7a7c8c"]).map((hex) => {
+      const { r, g, b: bl } = parseHex(hex);
+      return [r / 255, g / 255, bl / 255] as [number, number, number];
+    });
+    return { color: lit, deep: deep ?? lit, comp: b.comp, seed: b.seed, opacity: b.opacity };
+  }), [blobs]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const blobEls = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -414,6 +473,18 @@ export function BlobScene({
   annotationsRef.current = annotations;
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
   const [panState, setPanState] = useState({ x: 0, y: 0 });
+  const [washTune, setWashTune] = useState(initialWashTune);
+  const washTuneRef = useRef(washTune);
+  washTuneRef.current = washTune;
+  const [captionReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  const [captionWaves] = useState(() => createCaptionWaves(
+    events.map((e) => e.year + e.event + (e.year === "2026" ? "..." : "")),
+    performance.now(),
+    captionReduced,
+  ));
+  const [captionNow, setCaptionNow] = useState(() => performance.now());
+  /** Which captions a wave is showing; the rest take no part in the overlap blur. */
+  const captionShownRef = useRef<boolean[]>([]);
   const headerCopyRef = useRef<HTMLDivElement>(null);
   const headerOnDarkRef = useRef(false);
   const [headerOnDark, setHeaderOnDark] = useState(false);
@@ -500,14 +571,20 @@ export function BlobScene({
      transform only, so each blob's blur is drawn once and moved by the GPU;
      the soft blur and multiply still pool them. */
   const lite = isMobile;
+  // the wash's own mask is its shape, so there is no border-radius to morph
   const blobAnimation = (blob: BlobData) =>
     `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite, `
-    + (lite ? "" : `blobMorph ${blob.animDuration * 1.3}s ease-in-out ${blob.animDelay}s infinite, `)
     + `blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`;
-  const dotSize = isMobile ? 5 : BLOB_DOT;
+  const dotSize = washTune.dotSize * (isMobile ? 0.625 : 1);
   const canvasWidth = isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
   // never shorter than the screen: the pan's bounds assume the field covers it
   const canvasHeight = isMobile ? vh : vh * 1.5 * 0.9;
+  /* The field at the screen's own density, within a pixel budget: the
+     canvas spans the whole pannable paper, larger than the view. */
+  const fieldResolution = Math.min(
+    Math.min(window.devicePixelRatio || 1, 2) * washTune.sharpness,
+    Math.sqrt((isMobile ? FIELD_PX_PHONE : FIELD_PX) / Math.max(1, canvasWidth * canvasHeight)),
+  );
   const baseSize = 120 * scale;
   const selSize = 260 * scale;
   const gap = 36 * scale;
@@ -911,12 +988,14 @@ export function BlobScene({
         let dx = p.cx - cx, dy = p.cy - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d > 0) { dx /= d; dy /= d; } else { dx = 1; dy = 0; }
-        const rad = Math.min(p.w, p.h) / 2;
+        // the wash fades well inside its box; the dot sits on its body
+        const rad = Math.min(p.w, p.h) / 2 * WASH_BODY;
         const dotX = p.cx + dx * rad * 0.85;
         const dotY = p.cy + dy * rad * 0.85;
         return { dotX, dotY, textAlign: (dx >= 0 ? "left" : "right") as "left" | "right", anchorX: dotX + dx * 8, anchorY: dotY + dy * 8 + 18 };
       });
       setAnnotations(anns);
+      setCaptionNow(performance.now());
       annRafRef.current = requestAnimationFrame(update);
     };
     annRafRef.current = requestAnimationFrame(update);
@@ -1136,13 +1215,14 @@ export function BlobScene({
         const el = blobEls.current[i];
         if (!el) continue;
         const br = el.getBoundingClientRect();
-        const rx = br.width / 2 || 1;
-        const ry = br.height / 2 || 1;
-        const nx = (px - (br.left + rx)) / rx;
-        const ny = (py - (br.top + ry)) / ry;
+        const rx = br.width / 2 * WASH_BODY || 1;
+        const ry = br.height / 2 * WASH_BODY || 1;
+        const nx = (px - (br.left + br.width / 2)) / rx;
+        const ny = (py - (br.top + br.height / 2)) / ry;
         if (nx * nx + ny * ny > 1) continue;
         const hex = COLOR_PALETTE[blobs[i].shape.colorIndex % COLOR_PALETTE.length].color;
-        luma = Math.min(luma, hexLuma(hex) * blobs[i].opacity);
+        const field = washTuneRef.current.fieldOpacity;
+        luma = Math.min(luma, hexLuma(hex) * blobs[i].opacity * field + PAPER_LUMA * (1 - field));
       }
       return luma;
     };
@@ -1174,7 +1254,8 @@ export function BlobScene({
           n++;
         }
       }
-      const headerDark = onDarkFrom(sum / (n || 1), headerOnDarkRef.current);
+      // the landing's line and Enter keep their dark ink over any wash
+      const headerDark = !classicChrome && onDarkFrom(sum / (n || 1), headerOnDarkRef.current);
       if (headerDark !== headerOnDarkRef.current) {
         headerOnDarkRef.current = headerDark;
         setHeaderOnDark(headerDark);
@@ -1182,7 +1263,7 @@ export function BlobScene({
 
       const laid = blobs.map((_, i) => {
         const cap = captionEls.current[i];
-        if (!cap) return null;
+        if (!cap || !captionShownRef.current[i]) return null;
         const cr = cap.getBoundingClientRect();
         if (cr.width < 2 || cr.height < 2) return null;
         const cx = cr.left + cr.width / 2;
@@ -1257,7 +1338,9 @@ export function BlobScene({
   }, [classicChrome, blobs]);
 
   /* ─── derived ─── */
-  const showGooey = !lite && morphVal < 0.5 && entryShrink < 0.34;
+  // the gooey threshold firms every edge into a clean contour; the landing's
+  // washes keep their own uneven, fading edge instead
+  const showGooey = !lite && !classicChrome && morphVal < 0.5 && entryShrink < 0.34;
   const gooeyT = clamp(Math.max(morphVal * 2.2, entryShrink * 3), 0, 1);
   const gooey = { sigma: lerp(18, 2, gooeyT), alphaMul: lerp(22, 1, gooeyT), alphaOff: lerp(-9, 0, gooeyT) };
   /* The goo is drawn in WebGL (GooeyBlobCanvas) so Safari, which skips the
@@ -1268,6 +1351,32 @@ export function BlobScene({
   // Connection lines: from hovered event's dot to each connected event's dot
   const hoveredConns = hoveredIdx !== null ? getConnections(hoveredIdx) : [];
   const labelsFade = clamp(1 - morphVal * 5, 0, 1) * entryLabels;
+  // the marks are drawn over the field, not in it: they take its pan
+  const labelShift = morphVal < 0.05 ? `translate(${panState.x}px, ${panState.y}px)` : undefined;
+  const captionShows = classicChrome ? captionWaves.at(captionNow) : [];
+  const showOf = new Map(captionShows.map((s) => [s.idx, s]));
+  captionShownRef.current = blobs.map((_, i) => showOf.has(i));
+  captionWords.current = blobs.map((_, i) => captionPresence(showOf.get(i), captionNow, captionReduced));
+  const ink = parseInk(classicChrome ? LANDING_INK.color : BLOB_CAPTION_COLOR);
+  /** One caption's text, a character at a time, as its wave has it at this moment. */
+  const typed = (text: string, from: number, show: CaptionShow | undefined, soften: number) => {
+    if (!show) return text;
+    return Array.from(text).map((ch, k) => {
+      const look = captionCharLook(show, from + k, captionNow, captionReduced);
+      const blur = Math.max(look.blur, soften);
+      const glyph = soften >= 0.5 ? 0 : look.a * (1 - Math.min(1, look.blur / 5));
+      const halo = look.a * Math.min(1, blur / 3) * 0.85;
+      return (
+        <span key={k} style={{
+          color: inkAlpha(ink, glyph),
+          textShadow: blur > 0.25 ? `0 0 ${blur.toFixed(1)}px ${inkAlpha(ink, halo)}` : undefined,
+          position: look.dx || look.dy ? "relative" : undefined,
+          left: look.dx ? `${look.dx.toFixed(2)}px` : undefined,
+          top: look.dy ? `${look.dy.toFixed(2)}px` : undefined,
+        }}>{ch}</span>
+      );
+    });
+  };
   const renderAnnotationMarks = (bind: boolean) => blobs.map((blob, i) => {
     const a = annotations[i];
     if (!a || (a.dotX === 0 && a.dotY === 0)) {
@@ -1294,16 +1403,27 @@ export function BlobScene({
        repaint every frame at sub-pixel radii. */
     const soften = Math.round(Math.max(headerNear, overlap) * 6 * 4) / 4;
     const softened = soften >= 0.5;
+    const show = showOf.get(i);
+    const waved = classicChrome;
+    // a memory not on show leaves its dot soft and half as present
+    const resting = waved ? 1 - captionPresence(show, captionNow, captionReduced) : 0;
+    const dotSoften = Math.max(soften, Math.round(resting * washTune.dotRestBlur * 4) / 4);
+    const dotSoftened = dotSoften >= 0.5;
     const dotR = dotSize / 2;
-    const dotBox = softened ? dotSize + soften * 4 : dotSize;
-    const dotFill = softened
-      ? `radial-gradient(circle closest-side, ${dotColor} ${Math.max(0, dotR - soften) / (dotBox / 2) * 100}%, transparent 100%)`
+    const dotBox = dotSoftened ? dotSize + dotSoften * 4 : dotSize;
+    const dotFill = dotSoftened
+      ? `radial-gradient(circle closest-side, ${dotColor} ${Math.max(0, dotR - dotSoften) / (dotBox / 2) * 100}%, transparent 100%)`
       : undefined;
-    const dotSpread = softened ? Math.min(1, (dotR / (dotR + soften)) ** 2 * 2) : 1;
+    const dotSpread = (softened ? Math.min(1, (dotR / (dotR + soften)) ** 2 * 2) : 1) * (1 - (1 - washTune.dotRestOpacity) * resting);
     const ringSoft = softened ? clamp(1 - soften / 4, 0, 1) : 1;
-    const softText = softened
+    const shown = !waved || !!show;
+    const softText = softened && !waved
       ? { color: "transparent", textShadow: `0 0 ${soften * 2}px ${captionColor}` }
       : undefined;
+    const charSoften = softened ? soften * 2 : 0;
+    const yearLen = Array.from(blob.year).length;
+    const eventLen = Array.from(blob.event).length;
+    const arrived = washOn ? (washPresence.current[i] ?? 0) : 1;
 
     return (
       <div
@@ -1314,7 +1434,10 @@ export function BlobScene({
           e.stopPropagation();
           if (!classicChrome) morphToGalleryAt(i);
         } : undefined}
-        style={{ pointerEvents: bind && !buried ? "auto" : "none" }}
+        style={{
+          pointerEvents: bind && !buried && shown && arrived > 0.5 ? "auto" : "none",
+          ...(arrived < 1 ? { opacity: arrived } : {}),
+        }}
       >
         <div
           className="absolute"
@@ -1364,10 +1487,10 @@ export function BlobScene({
             padding: "4px 8px",
             margin: "-4px -8px",
             color: captionColor,
-            pointerEvents: buried ? "none" : "auto",
+            pointerEvents: buried || !shown ? "none" : "auto",
           }}
         >
-          <div style={{ opacity: visible, ...softText }}>
+          <div style={{ opacity: shown ? visible : 0, ...softText }}>
             <div
               style={{
                 fontFamily: SERIF_CJK,
@@ -1380,7 +1503,7 @@ export function BlobScene({
                 whiteSpace: "nowrap",
               }}
             >
-              {blob.year}
+              {typed(blob.year, 0, show, charSoften)}
             </div>
             <div
               style={{
@@ -1394,7 +1517,7 @@ export function BlobScene({
                 letterSpacing: SERIF_ITALIC_TRACKING,
               }}
             >
-              {blob.event}
+              {typed(blob.event, yearLen, show, charSoften)}
             </div>
             {blob.year === "2026" && (
               <div
@@ -1408,7 +1531,7 @@ export function BlobScene({
                   whiteSpace: "nowrap",
                 }}
               >
-                ...
+                {typed("...", yearLen + eventLen, show, charSoften)}
               </div>
             )}
           </div>
@@ -1481,6 +1604,7 @@ export function BlobScene({
           style={{
             filter: showGooey && !gooeyInGl ? "url(#gooey)" : "none",
             visibility: gooeyInGl ? "hidden" : undefined,
+            opacity: washTune.fieldOpacity,
           }}
         >
           {blobs.map((blob, i) => (
@@ -1493,10 +1617,11 @@ export function BlobScene({
                 top: `${blob.y}%`,
                 width: `${blob.size * scale}px`,
                 height: `${blob.size * scale}px`,
-                background: blob.color,
-                borderRadius: blob.borderRadius,
+                // with the field painting the washes, these only carry the drift
+                background: washOn ? undefined : blob.color,
+                borderRadius: washOn ? undefined : blob.borderRadius,
                 opacity: blob.opacity,
-                filter: `blur(${blobBlur(blob.blur)}px)`,
+                filter: washOn ? undefined : `blur(${blobBlur(blob.blur)}px)`,
                 mixBlendMode: "multiply",
                 transform: `translate(-50%, -50%) rotate(${blob.rotate}deg)`,
                 animation: blobAnimation(blob),
@@ -1520,7 +1645,12 @@ export function BlobScene({
         {/* ═══ AMBIENT BLOBS ═══ */}
         <div
           className="absolute inset-0 pointer-events-none"
-          style={{ opacity: clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1) }}
+          style={{
+            opacity: washTune.fieldOpacity * clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1)
+              * (classicChrome && !ambientIn ? 0 : 1),
+            // the ambient light comes up with the washes, from clear paper
+            transition: classicChrome ? "opacity 6.8s cubic-bezier(.45, 0, .2, 1)" : undefined,
+          }}
         >
           <div className="absolute" style={{
             left: "20%", top: "30%",
@@ -1547,6 +1677,12 @@ export function BlobScene({
             animationPlayState: hoveredIdx !== null ? "paused" : "running",
           }} />
         </div>
+
+        {classicChrome && (
+          <WatercolorField width={canvasWidth} height={canvasHeight} blobs={washBlobs}
+            blobEls={blobEls} containerRef={containerRef} tune={washTune}
+            resolution={fieldResolution} presenceRef={washPresence} wordsRef={captionWords} onReady={onWashReady} />
+        )}
 
         {/* ═══ CONNECTION LINES (SVG overlay) ═══ */}
         {hoveredIdx !== null && annotations.length > 0 && morphVal < 0.05 && (
@@ -1714,6 +1850,7 @@ export function BlobScene({
                 top: 0,
                 width: canvasWidth,
                 height: canvasHeight,
+                transform: labelShift,
                 ...(labelsFade < 1 ? { opacity: labelsFade } : {}),
               }}
             >
@@ -1779,6 +1916,7 @@ export function BlobScene({
               top: 0,
               width: canvasWidth,
               height: canvasHeight,
+              transform: labelShift,
               ...(labelsFade < 1 ? { opacity: labelsFade } : {}),
             }}
           >
@@ -1942,6 +2080,8 @@ export function BlobScene({
           )}
         </div>
       )}
+
+      {classicChrome && TUNE_PANEL && <WashTunePanel tune={washTune} onChange={setWashTune} />}
 
       {/* ═══ KEYFRAMES ═══ */}
       <style>{`

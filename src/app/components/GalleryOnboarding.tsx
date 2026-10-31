@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CHROME_GRAY } from "../lib/colors";
-import { SERIF, TEXT_ENTER_MS } from "../lib/theme";
+import { GALLERY_TRANSCRIPT, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { INK_ENTRY, flowProgress } from "../lib/landingTransition";
 import { PAGE_HEADER_MARK } from "./PageHeader";
 
@@ -14,12 +14,12 @@ const INTRO_TO = INK_ENTRY.growEnd - 270;
 const INTRO_FADE = 520;
 
 const HINT_DELAY_MS = 3500;
-/** How far round the tip a pointer, or a word of the transcript trail, makes
+/** One breath of the tip: full transcript ink, then a dip, and back. */
+const HINT_BREATHE_S = 5.4;
+/** How far round the tip a pointer or finger makes
     it step aside: its padding, as a trigger zone that blocks nothing (the
     vessels under it stay reachable). */
 const HINT_NEAR_PX = 32;
-/** How often, while the tip is up, the trail's words are looked for in its zone. */
-const HINT_CHECK_MS = 150;
 
 const LINE_STYLE: CSSProperties = {
   position: "absolute",
@@ -91,8 +91,8 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
     : touch ? "swipe-mid" : "scroll-mid";
   const ready = visible && settled && !leaving;
   const [rested, setRested] = useState(false);
-  // the tip steps aside while the pointer (or a finger) or any of the trail's
-  // words are in its zone, and comes back once the zone is clear
+  // the tip steps aside while the pointer (or a finger) is in its zone,
+  // and comes back once the zone is clear
   const [occupied, setOccupied] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -111,12 +111,7 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
       const top = words.top - HINT_NEAR_PX, bottom = words.bottom + HINT_NEAR_PX;
       const inZone = (r: { left: number; right: number; top: number; bottom: number }) =>
         r.left < right && r.right > left && r.top < bottom && r.bottom > top;
-      let near = !!pointer && inZone({ left: pointer.x, right: pointer.x, top: pointer.y, bottom: pointer.y });
-      if (!near) {
-        for (const word of document.querySelectorAll("[data-transcript-trail] [data-face]")) {
-          if (inZone(word.getBoundingClientRect())) { near = true; break; }
-        }
-      }
+      const near = !!pointer && inZone({ left: pointer.x, right: pointer.x, top: pointer.y, bottom: pointer.y });
       setOccupied(near);
     };
     const move = (e: PointerEvent) => { pointer = { x: e.clientX, y: e.clientY }; check(); };
@@ -128,15 +123,12 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
     document.addEventListener("mouseout", out);
-    // the trail's words come and go on their own clock
-    const timer = window.setInterval(check, HINT_CHECK_MS);
     return () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerdown", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
       document.removeEventListener("mouseout", out);
-      window.clearInterval(timer);
     };
   }, [rested]);
   const [shown, setShown] = useState(kind);
@@ -153,11 +145,12 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
       top: "14.5vh",
       // the size of the wordmark just above it
       fontSize: PAGE_HEADER_MARK.fontSize,
+      color: GALLERY_TRANSCRIPT.color,
       zIndex: 31, opacity: on ? 1 : 0,
       filter: on ? "none" : "blur(4px)", transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease` }}>
       <style>{`
         @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .566; } }
-        .gallery-hint-breathe { animation: galleryHintBreathe 3.6s ease-in-out infinite; }
+        .gallery-hint-breathe { animation: galleryHintBreathe ${HINT_BREATHE_S}s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .gallery-hint-breathe { animation: none; } }
       `}</style>
       <span className="gallery-hint-breathe">{copy}</span>

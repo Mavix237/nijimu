@@ -40,9 +40,10 @@ export function HeaderIconLabel({ name, shown }: { name: string; shown: boolean 
         fontSize: 11,
         fontWeight: 400,
         letterSpacing: "0.04em",
-        lineHeight: 1,
+        lineHeight: name.includes("\n") ? 1.15 : 1,
         color: CHROME_GRAY,
-        whiteSpace: "nowrap",
+        whiteSpace: "pre",
+        textAlign: "center",
         textTransform: "lowercase",
         opacity: shown ? 1 : 0,
         transition: !shown ? "opacity 150ms ease"

@@ -239,7 +239,7 @@ function GlobalControls({
         onMouseLeave={() => setNameShown(null)}
         onFocus={() => setNameShown("music")}
         onBlur={() => setNameShown(null)}
-        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)" }}
+        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)", opacity: 0.85 }}
       >
         <HeaderIconLabel name="music" shown={nameShown === "music"} />
         {musicGlyph}

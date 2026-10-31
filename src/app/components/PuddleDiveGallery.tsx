@@ -1,13 +1,12 @@
-import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode, type Ref } from "react";
+import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
 import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
 import { BackButton } from "./BackButton";
-import { GalleryScrollHint, useTouchFirst } from "./GalleryOnboarding";
+import { GalleryScrollHint } from "./GalleryOnboarding";
 import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
-import { TranscriptTrail } from "./TranscriptTrail";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
 import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
@@ -144,16 +143,16 @@ export const CAPTION_YEAR_STYLE: CSSProperties = {
 
 /** Space kept between the memory's words and the timescale. */
 const TRANSCRIPT_CLEARANCE = 24;
+const TRANSCRIPT_DWELL_MS = 3000;
 
 /** The memory's own words, under its year. */
 const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
   ...GALLERY_TRANSCRIPT,
   margin: "1.6em auto 0",
   maxWidth: "60ch",
-  lineHeight: 1.45,
-  letterSpacing: "0.01em",
-  textAlign: "justify",
-  textAlignLast: "center",
+  lineHeight: 1.4,
+  letterSpacing: "0.012em",
+  textAlign: "center",
   textWrap: "pretty",
   transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
 };
@@ -225,8 +224,6 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
         ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
       }}>
         {lines.map((line, i, all) => {
-          // Each animated line is its own block; justify all but the final one.
-          const textAlignLast = i === all.length - 1 ? "center" : "justify";
           const firstWords = all[0].split(" ").length;
           const wordStep = Math.min(WORD_STAGGER_MS, FIRST_LINE_MAX_MS / firstWords);
           // shown afresh each time: the lines come in again
@@ -236,7 +233,7 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
           if (i === 0) {
             const first = line.split(" ");
             return (
-              <span key={i} style={{ display: "block", textAlignLast }}>
+              <span key={i} style={{ display: "block", textAlign: "center" }}>
                 {first.map((word, j) => (
                   <Fragment key={j}>
                     {/* each word slides down out of its own mask */}
@@ -252,7 +249,7 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
           const after = firstWords * wordStep;
           return (
             <span key={i} style={{ display: "block", overflow: "hidden" }}>
-              <span style={{ display: "block", textAlignLast, animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
+              <span style={{ display: "block", textAlign: "center", animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
             </span>
           );
         })}
@@ -356,10 +353,6 @@ export function PuddleDiveGallery({
   const rimIdxRef = useRef(activeIdx);
   /** Where a press on the backdrop began, so a drag is never read as a click. */
   const backdropDownRef = useRef<{ x: number; y: number } | null>(null);
-  /** The caption block and the timeline, which the transcript trail keeps its words out of. */
-  const captionRef = useRef<HTMLDivElement>(null);
-  const timeScaleRef = useRef<SVGSVGElement>(null);
-  const trailAvoid = useMemo(() => [captionRef, timeScaleRef], []);
   const activeIdxRef = useRef(activeIdx);
   activeIdxRef.current = activeIdx;
   /* The naming year rebuilds the archive around the memory already at the
@@ -418,13 +411,18 @@ export function PuddleDiveGallery({
   if (captionItem) lastCaptionRef.current = captionItem;
   const shownCaption = captionItem ?? lastCaptionRef.current;
   const rimSettled = Math.abs(rimAt - activeIdx) < 0.04;
-  /** The memory whose whole transcript the pointer's journey has opened (TranscriptTrail). */
+  /** The memory whose full transcript has opened after resting at the apex. */
   const [revealedId, setRevealedId] = useState<string | null>(null);
-  // selecting another memory closes it; that memory's count starts from nothing
-  useEffect(() => setRevealedId(null), [focusId]);
-  const touchFirst = useTouchFirst();
   // a phone shows only the name and year; the vessel opens the words (MemoryReadingPane)
   const compact = useCompact();
+  const transcriptReady = phase === "gallery" && growth >= 1 && pondDeparture === 0
+    && !inField && !caption && !compact && rimSettled;
+  useEffect(() => {
+    setRevealedId(null);
+    if (!transcriptReady || !focusId) return;
+    const timer = window.setTimeout(() => setRevealedId(focusId), TRANSCRIPT_DWELL_MS);
+    return () => window.clearTimeout(timer);
+  }, [focusId, transcriptReady]);
   useEffect(() => () => setApexHover(false), []);
   const rimSettledRef = useRef(rimSettled);
   rimSettledRef.current = rimSettled;
@@ -806,14 +804,16 @@ export function PuddleDiveGallery({
   const arrowStyle = (side: "left" | "right"): CSSProperties => ({
     position: "absolute",
     top: geo.apexY,
-    // --gallery-arrow-inset (responsive.css): a phone's sit nearer the edge;
-    // the triangle inside scales by --gallery-arrow-scale, the padding (the
-    // part a finger hits) stays as it is
+    // Desktop shares the create icon's centerline; phones keep their wider hit area.
     [side]: "var(--gallery-arrow-inset)",
+    width: "var(--gallery-arrow-width)",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
     transform: "translateY(-50%)",
     background: "none",
     border: "none",
-    padding: 16,
+    padding: "16px 0",
     cursor: "pointer",
     color: "#4a4a4a",
     opacity: yearsVisible ? 0.35 : 0,
@@ -874,22 +874,6 @@ export function PuddleDiveGallery({
           willChange: waterEffect ? "background-color, opacity" : undefined,
         }}
       />
-
-      {/* ═══ TRANSCRIPT — the selected memory's words, found by the pointer.
-             Over the wash and under the dome. Not on the naming step, whose
-             memory is still being made, nor in the field, where no memory is
-             selected. ═══ */}
-      {/* not on a phone, nor any touch-first screen (a phone held sideways is wider than `compact`) */}
-      {!caption && !compact && !touchFirst && items[activeIdx] && (
-        <TranscriptTrail
-          memoryId={items[activeIdx].id}
-          transcript={items[activeIdx].transcript}
-          visible={yearsVisible && !field?.on}
-          avoid={trailAvoid}
-          revealed={revealedId === items[activeIdx].id}
-          onReveal={() => setRevealedId(items[activeIdx].id)}
-        />
-      )}
 
       {/* Refraction filter def, shared by whichever artifact holds the apex.
           Mounted only while it has something to do; remounting restarts its
@@ -1114,7 +1098,6 @@ export function PuddleDiveGallery({
       {/* ═══ TIMESCALE — one line across the foot of the screen ═══ */}
       {showTimeScale && (
         <TimeScale
-          svgRef={timeScaleRef}
           items={items}
           activeIdx={rimAt}
           viewport={viewport}
@@ -1132,7 +1115,6 @@ export function PuddleDiveGallery({
 
       {/* ═══ CAPTION — between the dome and the timescale ═══ */}
       <div
-        ref={captionRef}
         className="absolute left-0 right-0 text-center"
         style={{
           top: (CAPTION_TOP_VH + CAPTION_DOWN_VH + (caption ? 0 : 0.02)) * viewport.h,
@@ -1161,7 +1143,7 @@ export function PuddleDiveGallery({
         >
           {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
           {!caption && !field?.on && !compact && shownCaption.transcript && (
-            <CaptionTranscript text={shownCaption.transcript} visible={rimSettled && (touchFirst || revealedId === shownCaption.id)}
+            <CaptionTranscript text={shownCaption.transcript} visible={transcriptReady && revealedId === shownCaption.id}
               floorY={viewport.h - (showTimeScale ? timeScaleInset(viewport) + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
           )}
         </div>}
@@ -1453,7 +1435,6 @@ function magnetize(t: number, positions: number[], inner: number) {
 }
 
 function TimeScale({
-  svgRef,
   items,
   activeIdx,
   viewport,
@@ -1463,7 +1444,6 @@ function TimeScale({
   enterAnimation,
   onSeek,
 }: {
-  svgRef?: Ref<SVGSVGElement>;
   items: DiveGalleryItem[];
   activeIdx: number;
   viewport: { w: number; h: number };
@@ -1568,7 +1548,6 @@ function TimeScale({
 
   return (
     <svg
-      ref={svgRef}
       className="absolute inset-0"
       width="100%"
       height="100%"

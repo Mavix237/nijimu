@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode
 import { memoryColorOf, vesselTint } from "../lib/vesselTint";
 import { MemoryCarouselPage } from "../components/MemoryCarouselPage";
 import { LIFE_EVENTS } from "../data/memoryData";
-import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
+import { COLOR_PALETTE } from "../lib/colors";
 import { buildArchive, type ArchiveArtifact } from "../lib/archive";
 import { carouselContainsOffset, portraitTall } from "../lib/carouselLayout";
 import {
@@ -29,6 +29,8 @@ import {
 } from "./vesselField";
 import photoA from "../../assets/memory-photo.jpg";
 import photoB from "../../assets/memory-photo-02.jpg";
+import constellationIcon from "../../../constellation icon.svg";
+import timelineIcon from "../../../timeline icon.svg";
 
 /*
  * Lab: the dive gallery with the vessel on every seat. The gallery itself —
@@ -330,26 +332,12 @@ class FieldDriver {
 function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   const [nameShown, setNameShown] = useState(false);
   const title = on ? "back along the years" : "see them in the air";
-  const name = on ? "timeline" : "constellation";
+  const name = on ? "timeline\nview" : "constellation\nview";
   const { list } = useHeaderMenu();
   const glyph = (
-    on ? (
-      // the years: the curve with its seats along it
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <path d="M1.5 12.5 C 5 12.5, 6 3.5, 9.5 3.5 S 13 8, 14.5 8" stroke={CHROME_GRAY} strokeWidth="1.1" />
-        <circle cx="3.2" cy="12.2" r="1.1" fill={CHROME_GRAY} />
-        <circle cx="8" cy="6" r="1.5" fill={CHROME_GRAY} />
-        <circle cx="13" cy="7.6" r="1.1" fill={CHROME_GRAY} />
-      </svg>
-    ) : (
-      // From constellation icon.svg; pad for a 1.2px rendered stroke, matching the header controls.
-      <svg width="16" height="16" viewBox="-3 -3 110 119" fill="none" stroke={CHROME_GRAY} strokeWidth={1.2 * 119 / 16} aria-hidden>
-        <circle cx="74.5" cy="56.5" r="27.5" />
-        <circle cx="22.5" cy="22.5" r="20.5" />
-        <circle cx="27" cy="82" r="11" />
-        <circle cx="50" cy="106" r="5" />
-      </svg>
-    )
+    // The create icon's visible square is 13px plus its 1.2px stroke.
+    <img src={on ? timelineIcon : constellationIcon} width="14.2" height="14.2" alt="" aria-hidden
+      style={{ objectFit: "contain" }} />
   );
   // folded into the header menu on a phone
   if (list) return <HeaderMenuRow order={HEADER_MENU_ORDER.field} icon={glyph} label={on ? "timeline view" : "constellation view"}

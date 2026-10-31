@@ -249,7 +249,7 @@ export function StyleGuidePage() {
           <Specimen name="gallery hint" note="body, plus mark, 3.5s late, slow blink">
             <p style={{
               margin: 0, fontFamily: SERIF, fontSize: BODY_SIZE, lineHeight: 1.5,
-              color: CHROME_GRAY,
+              color: GALLERY_TRANSCRIPT.color,
             }}>
               keep scrolling or click <PlusMark /> to leave a memory of your own
             </p>
@@ -455,7 +455,7 @@ export function StyleGuidePage() {
           <Heading>motion</Heading>
           <Token name="copy.enter" value={`${TEXT_ENTER_MS}ms fade + 4px blur, no rise`} />
           <Token name="hint.enter" value="3.5s after the rim rests, then 700ms fade + blur" />
-          <Token name="hint.breathe" value="3.6s, opacity 1 ↔ 0.566" />
+          <Token name="hint.breathe" value="5.4s, opacity 1 ↔ 0.566, gallery transcript ink" />
           <Token name="trail.stagger" value="140ms after the pointer sets a word down" />
           <Token name="timescale.magnet" value="34px pull, playhead pulse 720ms on settle" />
           <Token name="pane.leave" value={`${LANDING_RETURN.profileLeaveMs}ms`} />

@@ -6,6 +6,13 @@
 
 ## Gallery artifact width cap (2026-10-30)
 
+Gallery transcripts no longer follow the cursor. On wider screens,
+`PuddleDiveGallery` reveals the centered full transcript after the selected
+artifact has rested at the apex for `TRANSCRIPT_DWELL_MS` (3 seconds).
+Switching memories, entering constellation view, or leaving the gallery cancels
+and resets the delay. The existing word/line entrance remains; phones retain
+their tap-to-read pane. `TranscriptTrail.tsx` is no longer mounted by the gallery.
+
 Gallery vessels fit within 100% of their allocated seat width, before the extra
 canvas room for superformula spikes or the library's size multiplier.
 `GALLERY_VESSEL_MAX_WIDTH` in `lib/vesselFraming.ts` is the shared limit.
@@ -21,8 +28,12 @@ The first right seat is now about 4% larger than the centre; the second is
 reduced a further 5% (`adjustCurveSeat` in
 `VesselGalleryPreview.tsx`). The two right seats move
 inward by 3% and 5% of screen width; smooth offset weights preserve scrolling
-and the phone's additional clearance. The constellation glyph uses the latest
-root `constellation icon.svg` geometry, with a 1.2px rendered header stroke.
+and the phone's additional clearance. The view toggle imports the root
+`constellation icon.svg` and `timeline icon.svg` directly, fitting each within
+14.2px (the create icon's visible extent) while preserving the SVG proportions.
+Its hover labels use two centered lines: "constellation / view" and "timeline / view".
+The desktop arrows share the create button's horizontal centerline, mirrored
+on the left; phone arrow placement is unchanged.
 
 ## UI motion pass (2026-10-22)
 

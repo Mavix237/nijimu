@@ -20,8 +20,10 @@
      from the screen's edge to the back arrow's glyph and to the burger's
      (the buttons' seats plus the air inside them). The flow's side columns. */
   --chrome-inset: 20px;
-  /* The gallery's older / newer triangles, from the screen's sides. */
-  --gallery-arrow-inset: clamp(28px, 6vw, 96px);
+  /* Share the create button's width and horizontal anchor so their glyphs
+     sit on the same centerline; mirror that anchor for the left arrow. */
+  --gallery-arrow-inset: var(--chrome-r1);
+  --gallery-arrow-width: var(--chrome-icon);
   /* Their triangle's size; the button around it does not change. */
   --gallery-arrow-scale: 0.65;
 }
@@ -35,6 +37,7 @@
     --chrome-r3: calc(104px + env(safe-area-inset-right, 0px));
     --chrome-left: calc(12px + env(safe-area-inset-left, 0px));
     --gallery-arrow-inset: 6px;
+    --gallery-arrow-width: 50px;
     /* 12px seat + 6px inside the 32px back button = 8px seat + 10px inside the 36px burger */
     --chrome-inset: calc(18px + env(safe-area-inset-left, 0px));
     --gallery-arrow-scale: 0.5;

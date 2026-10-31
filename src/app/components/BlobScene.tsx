@@ -9,6 +9,8 @@ import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
+import { HOME_FIELD_STOPS, sampleHomePalette } from "../lib/homePaletteField";
+import { oklchToHex } from "../lib/oklch";
 import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, type InkArrival } from "../lib/landingTransition";
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
 import { carouselSeat, carouselContainsOffset, inkUnfoldSeat } from "../lib/carouselLayout";
@@ -35,6 +37,8 @@ const BLOB_CAPTION_SIZE =
   "clamp(13px, calc(13px + 2 * ((100vw - 390px) / (1024 - 390))), 15px)";
 /** Radiating ring — kept as a painted width so scale() cannot fatten it. */
 const BLOB_RING_STROKE = 0.6;
+/** Room for the drifting caption's glyphs and soft edges at the viewport rim. */
+const LANDING_CAPTION_INSET = 20;
 
 
 /* ───────── types ───────── */
@@ -66,18 +70,32 @@ interface BlobData {
 }
 
 /* ───────── constants ───────── */
-const COLORS = [
-  "radial-gradient(ellipse at 30% 30%, #9496a6, #7a7c8c)",
-  "radial-gradient(ellipse at 40% 40%, #D6DADB, #bcc0c1)",
-  "radial-gradient(ellipse at 60% 60%, #C8D0D4, #aeb6ba)",
-  "radial-gradient(ellipse at 50% 50%, #CBBFBC, #b1a5a2)",
-  "radial-gradient(ellipse at 35% 45%, #A4B6BE, #8a9ca4)",
-  "radial-gradient(ellipse at 55% 35%, #B8969A, #9e7c80)",
-  "radial-gradient(ellipse at 45% 55%, #8C9FA8, #72858e)",
-  "radial-gradient(ellipse at 40% 60%, #6488A0, #4a6e86)",
-  "radial-gradient(ellipse at 50% 40%, #9496a6, #7a7c8c)",
-  "radial-gradient(ellipse at 60% 40%, #1C2C35, #34444F)",
+/*
+ * The washes wear the colour step's tones (homePaletteField), not the raw
+ * home palette, so the landing reads as colourful as the picker. Each entry
+ * is MEMORY_COLORS' slot, as a region of that field and how far down it (0 the
+ * pale top, 1 the deep, strengthened bottom). Cloud has no region of its own:
+ * it is mist's pale top. The second slate is the field's purple, a little
+ * quieter here (the optional last value scales its chroma).
+ */
+const WASH_TONES: [stop: (typeof HOME_FIELD_STOPS)[number], v: number, at: string, chroma?: number][] = [
+  ["slate", 1, "30% 30%"],
+  ["mist", 0, "40% 40%"],
+  ["mist", 1, "60% 60%"],
+  ["sand", 1, "50% 50%"],
+  ["sky", 1, "35% 45%"],
+  ["rose", 1, "55% 35%"],
+  ["sage", 1, "45% 55%"],
+  ["ocean", 1, "40% 60%"],
+  ["purple", 1, "50% 40%", 0.8],
+  ["night", 1, "60% 40%"],
 ];
+const COLORS = WASH_TONES.map(([stop, v, at, chroma = 1]) => {
+  const field = sampleHomePalette(HOME_FIELD_STOPS.indexOf(stop) / (HOME_FIELD_STOPS.length - 1), v);
+  const lit = { ...field, c: field.c * chroma };
+  const deep = { ...lit, l: Math.max(0.2, lit.l - 0.07) };
+  return `radial-gradient(ellipse at ${at}, ${oklchToHex(lit)}, ${oklchToHex(deep)})`;
+});
 
 /*
  * Connection graph (edges):
@@ -132,6 +150,8 @@ function computeGalleryOrder(events: { year: string }[]) {
 /* ───────── helpers ───────── */
 /** Each blob's box is this much larger than it used to be: the washes are broad. */
 const BLOB_SPREAD = 1.3;
+/** Nearest two wash centres may sit, in % of the field. */
+const BLOB_MIN_GAP = 12;
 /** The wash's body, as a share of its box's half-width (WatercolorField's reach and edge). */
 const WASH_BODY = 0.7;
 /** The tune panel shows in development, or anywhere with ?tune on the URL. */
@@ -161,12 +181,12 @@ function generateBlobs(
   const raw = Array.from({ length: events.length }, (_, i) => {
     let x, y;
     if (isMobile) {
-      // Mobile: 2x width, blobs spread over most of it, a little in from the
+      // Mobile: blobs spread over most of the field, a little in from the
       // edges so neighbours overlap and pool rather than sit apart
       x = 8 + Math.random() * 84;
       y = 10 + Math.random() * 70;
     } else {
-      // Desktop: 1.5x size canvas
+      // Desktop: keep the washes inset from the field's edges.
       x = 10 + Math.random() * 70;
       y = 10 + Math.random() * 70;
     }
@@ -211,6 +231,25 @@ function generateBlobs(
           },
     };
   });
+  // a little room between centres, so fewer washes pool into one large field
+  const [xMin, xMax] = isMobile ? [8, 92] : [10, 80];
+  for (let pass = 0; pass < 4; pass++) {
+    for (let i = 0; i < raw.length; i++) {
+      for (let j = i + 1; j < raw.length; j++) {
+        const a = raw[i], b = raw[j];
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 0.01;
+        if (d >= BLOB_MIN_GAP) continue;
+        const push = (BLOB_MIN_GAP - d) / 2 / d;
+        a.x -= dx * push; a.y -= dy * push;
+        b.x += dx * push; b.y += dy * push;
+      }
+    }
+    for (const b of raw) {
+      b.x = clamp(b.x, xMin, xMax);
+      b.y = clamp(b.y, 20, 90);
+    }
+  }
   const cx = raw.reduce((s, b) => s + b.x, 0) / raw.length;
   const cy = raw.reduce((s, b) => s + b.y, 0) / raw.length;
   for (const b of raw) {
@@ -313,6 +352,7 @@ interface AnnPos {
   textAlign: "left" | "right";
   anchorX: number;
   anchorY: number;
+  fitted?: boolean;
 }
 
 /* ───────── text scale by connections ───────── */
@@ -576,11 +616,12 @@ export function BlobScene({
     `blobFloat${blob.id % 4} ${blob.animDuration}s ease-in-out ${blob.animDelay}s infinite, `
     + `blobScale ${blob.animDuration * 0.8}s ease-in-out ${blob.animDelay * 0.5}s infinite`;
   const dotSize = washTune.dotSize * (isMobile ? 0.625 : 1);
-  const canvasWidth = isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
-  // never shorter than the screen: the pan's bounds assume the field covers it
-  const canvasHeight = isMobile ? vh : vh * 1.5 * 0.9;
+  // The landing is a fixed, screen-sized composition. Legacy blend previews
+  // retain their larger, pannable field.
+  const canvasWidth = classicChrome ? vw : isMobile ? vw * 2 * 0.9 : vw * 1.5 * 0.9;
+  const canvasHeight = classicChrome || isMobile ? vh : vh * 1.5 * 0.9;
   /* The field at the screen's own density, within a pixel budget: the
-     canvas spans the whole pannable paper, larger than the view. */
+     canvas spans the field, which is viewport-sized on the landing. */
   const fieldResolution = Math.min(
     Math.min(window.devicePixelRatio || 1, 2) * washTune.sharpness,
     Math.sqrt((isMobile ? FIELD_PX_PHONE : FIELD_PX) / Math.max(1, canvasWidth * canvasHeight)),
@@ -677,6 +718,7 @@ export function BlobScene({
 
   /* ─── pan momentum animation ─── */
   useEffect(() => {
+    if (classicChrome) return;
     let raf = 0;
     const decay = () => {
       const vx = panVelocity.current.x;
@@ -701,7 +743,7 @@ export function BlobScene({
       raf = requestAnimationFrame(decay);
     }
     return () => cancelAnimationFrame(raf);
-  }, [panState, canvasWidth, canvasHeight, vw, vh]);
+  }, [classicChrome, panState, canvasWidth, canvasHeight, vw, vh]);
 
   /* ─── grain canvas ─── */
   useEffect(() => {
@@ -983,7 +1025,7 @@ export function BlobScene({
       let cx = 0, cy = 0, n = 0;
       for (const p of ps) if (p.w > 0) { cx += p.cx; cy += p.cy; n++; }
       if (n) { cx /= n; cy /= n; }
-      const anns: AnnPos[] = ps.map((p) => {
+      const anns: AnnPos[] = ps.map((p, i) => {
         if (p.w === 0) return { dotX: 0, dotY: 0, textAlign: "left" as const, anchorX: 0, anchorY: 0 };
         let dx = p.cx - cx, dy = p.cy - cy;
         const d = Math.sqrt(dx * dx + dy * dy);
@@ -992,7 +1034,26 @@ export function BlobScene({
         const rad = Math.min(p.w, p.h) / 2 * WASH_BODY;
         const dotX = p.cx + dx * rad * 0.85;
         const dotY = p.cy + dy * rad * 0.85;
-        return { dotX, dotY, textAlign: (dx >= 0 ? "left" : "right") as "left" | "right", anchorX: dotX + dx * 8, anchorY: dotY + dy * 8 + 18 };
+        const a: AnnPos = { dotX, dotY, textAlign: dx >= 0 ? "left" : "right", anchorX: dotX + dx * 8, anchorY: dotY + dy * 8 + 18 };
+        if (!classicChrome) return a;
+        const caption = captionEls.current[i];
+        if (!caption) return a;
+        // Measure the complete text even between its entrance waves. The
+        // padding/margin and right-aligned transform belong to this box too.
+        const { width, height } = caption.getBoundingClientRect();
+        const left = a.anchorX - 8 - (a.textAlign === "right" ? width : 0);
+        const top = a.anchorY - 4;
+        const inset = LANDING_CAPTION_INSET;
+        const shiftX = clamp(left, inset, Math.max(inset, cr.width - inset - width)) - left;
+        const shiftY = clamp(top, inset, Math.max(inset, cr.height - inset - height)) - top;
+        return {
+          ...a,
+          anchorX: a.anchorX + shiftX,
+          anchorY: a.anchorY + shiftY,
+          dotX: clamp(dotX + shiftX, inset, cr.width - inset),
+          dotY: clamp(dotY + shiftY, inset, cr.height - inset),
+          fitted: true,
+        };
       });
       setAnnotations(anns);
       setCaptionNow(performance.now());
@@ -1000,7 +1061,7 @@ export function BlobScene({
     };
     annRafRef.current = requestAnimationFrame(update);
     return () => cancelAnimationFrame(annRafRef.current);
-  }, [morphVal, hideAnnotations]);
+  }, [morphVal, hideAnnotations, classicChrome]);
 
   /* ─── capture positions ─── */
   const capture = useCallback(() => {
@@ -1351,8 +1412,8 @@ export function BlobScene({
   // Connection lines: from hovered event's dot to each connected event's dot
   const hoveredConns = hoveredIdx !== null ? getConnections(hoveredIdx) : [];
   const labelsFade = clamp(1 - morphVal * 5, 0, 1) * entryLabels;
-  // the marks are drawn over the field, not in it: they take its pan
-  const labelShift = morphVal < 0.05 ? `translate(${panState.x}px, ${panState.y}px)` : undefined;
+  // Only the legacy blend field pans; landing marks stay in screen coordinates.
+  const labelShift = !classicChrome && morphVal < 0.05 ? `translate(${panState.x}px, ${panState.y}px)` : undefined;
   const captionShows = classicChrome ? captionWaves.at(captionNow) : [];
   const showOf = new Map(captionShows.map((s) => [s.idx, s]));
   captionShownRef.current = blobs.map((_, i) => showOf.has(i));
@@ -1436,6 +1497,7 @@ export function BlobScene({
         } : undefined}
         style={{
           pointerEvents: bind && !buried && shown && arrived > 0.5 ? "auto" : "none",
+          visibility: classicChrome && !a.fitted ? "hidden" : undefined,
           ...(arrived < 1 ? { opacity: arrived } : {}),
         }}
       >
@@ -1486,6 +1548,9 @@ export function BlobScene({
             cursor: "pointer",
             padding: "4px 8px",
             margin: "-4px -8px",
+            width: classicChrome ? "max-content" : undefined,
+            maxWidth: classicChrome ? `calc(100vw - ${LANDING_CAPTION_INSET * 2}px)` : undefined,
+            boxSizing: classicChrome ? "border-box" : undefined,
             color: captionColor,
             pointerEvents: buried || !shown ? "none" : "auto",
           }}
@@ -1513,7 +1578,8 @@ export function BlobScene({
                 color: "inherit",
                 opacity: BLOB_LABEL_OPACITY,
                 lineHeight: blob.event.includes("\n") ? 1.5 : "normal",
-                whiteSpace: blob.event.includes("\n") ? "pre-line" : "nowrap",
+                whiteSpace: classicChrome || blob.event.includes("\n") ? "pre-line" : "nowrap",
+                overflowWrap: classicChrome ? "anywhere" : undefined,
                 letterSpacing: SERIF_ITALIC_TRACKING,
               }}
             >
@@ -1547,22 +1613,21 @@ export function BlobScene({
       data-ink-stage={!landingArrival ? "field" : entryTime < INK_ENTRY.descEnd ? "desc" : entryTime < INK_ENTRY.headerEnd ? "header" : entryTime < INK_ENTRY.labelsEnd ? "labels"
         : entryTime < INK_ENTRY.shrinkEnd ? "shrink" : entryTime < INK_ENTRY.pathEnd ? "gather" : entryTime < INK_ENTRY.pathHoldEnd ? "curve"
         : entryTime < INK_ENTRY.unfoldEnd ? "unfold" : "artifacts"}
-      className="relative w-full h-dvh overflow-hidden cursor-pointer select-none"
+      className={`relative w-full h-dvh overflow-hidden select-none ${classicChrome ? "cursor-default" : "cursor-pointer"}`}
       style={{
         background: classicChrome
           ? (landingArrival ? `rgba(228,228,230,${entryPaper})` : LANDING_PAPER)
           : (landingArrival ? `rgba(237,237,238,${entryPaper})` : PAPER),
         isolation: classicChrome ? "isolate" : undefined,
-        // a finger pans the field (it is wider than a phone) rather than the page
-        touchAction: "none",
+        touchAction: classicChrome ? "auto" : "none",
       }}
       onClick={handleClick}
-      onWheel={handleWheel}
-      onPointerDown={handleMouseDown}
-      onPointerMove={handleMouseMove}
-      onPointerUp={handleMouseUp}
-      onPointerCancel={handleMouseUp}
-      onPointerLeave={handleMouseUp}
+      onWheel={classicChrome ? undefined : handleWheel}
+      onPointerDown={classicChrome ? undefined : handleMouseDown}
+      onPointerMove={classicChrome ? undefined : handleMouseMove}
+      onPointerUp={classicChrome ? undefined : handleMouseUp}
+      onPointerCancel={classicChrome ? undefined : handleMouseUp}
+      onPointerLeave={classicChrome ? undefined : handleMouseUp}
     >
       {/* SVG Filters */}
       <svg className="absolute w-0 h-0" aria-hidden="true">
@@ -1580,7 +1645,7 @@ export function BlobScene({
       </svg>
 
       <div style={{ position: "absolute", inset: 0, ...fieldFadeStyle }}>
-      {/* ═══ PANNABLE INNER CANVAS ═══ */}
+      {/* ═══ FIELD CANVAS ═══ */}
       <div
         ref={containerRef}
         style={{
@@ -1589,7 +1654,7 @@ export function BlobScene({
           top: 0,
           width: `${canvasWidth}px`,
           height: `${canvasHeight}px`,
-          transform: classicChrome && morphVal < 0.05 && !panState.x && !panState.y
+          transform: classicChrome
             ? undefined
             : morphVal < 0.05
               ? `translate(${panState.x}px, ${panState.y}px)`
@@ -1726,7 +1791,7 @@ export function BlobScene({
             {renderAnnotationMarks(!classicChrome)}
           </div>
         )}
-      </div>{/* end pannable inner canvas */}
+      </div>{/* end field canvas */}
 
       {/* Grain sits on the blobs, under the landing type so exclusion can read the field. */}
       <canvas

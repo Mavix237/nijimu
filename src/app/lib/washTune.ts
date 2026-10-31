@@ -33,6 +33,8 @@ export interface WashTune {
 
   brushPx: number;
   grip: number;
+  /** How much clear paper a quick stroke brings into the washes it cuts through. */
+  wipe: number;
   curl: number;
   velFadeS: number;
   relaxS: number;
@@ -62,8 +64,9 @@ export const WASH_TUNE_DEFAULT: WashTune = {
   saturation: 1.38,
   sharpness: 0.7,
 
-  brushPx: 38,
+  brushPx: 52,
   grip: 0.1,
+  wipe: 0.45,
   curl: 0,
   velFadeS: 0.7,
   relaxS: 1.6,
@@ -91,7 +94,7 @@ export const WASH_KNOBS: { group: string; knobs: WashKnob[] }[] = [
       { key: "fieldOpacity", label: "field opacity", min: 0, max: 1, step: 0.01 },
       { key: "reach", label: "size (grows from 0)", min: 0.6, max: 2, step: 0.01 },
       { key: "threshold", label: "threshold", min: 0.08, max: 0.7, step: 0.01 },
-      { key: "join", label: "join (apart ↔ merged)", min: 1, max: 6, step: 0.1 },
+      { key: "join", label: "join (merged ↔ apart)", min: 1, max: 6, step: 0.1 },
       { key: "warp", label: "outline wander", min: 0, max: 2.5, step: 0.01 },
       { key: "morph", label: "shape change speed", min: 0, max: 4, step: 0.05 },
       { key: "fringe", label: "fringe", min: 0, max: 3, step: 0.01 },
@@ -110,6 +113,7 @@ export const WASH_KNOBS: { group: string; knobs: WashKnob[] }[] = [
     knobs: [
       { key: "brushPx", label: "brush size (px)", min: 10, max: 200, step: 1 },
       { key: "grip", label: "brush grip", min: 0, max: 1, step: 0.01 },
+      { key: "wipe", label: "paper drawn in", min: 0, max: 1, step: 0.01 },
       { key: "curl", label: "eddies", min: 0, max: 60, step: 0.5 },
       { key: "velFadeS", label: "flow lasts (s)", min: 0.1, max: 5, step: 0.05 },
       { key: "relaxS", label: "returns over (s)", min: 0.2, max: 10, step: 0.05 },

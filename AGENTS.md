@@ -4,6 +4,27 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Fixed landing field (2026-10-30)
+
+The landing (`BlobScene` with `classicChrome`) uses a viewport-sized field and
+caption layers. Dragging, touch gestures and wheel input do not pan it; its
+blobs and captions retain their ambient animation. Legacy blend previews keep
+their existing larger field and movement controls.
+Landing caption boxes are measured against the viewport with a 20px inset;
+long titles wrap, and their text and dots shift inward as the washes drift.
+
+The landing's washes (`WatercolorField`, tuned live by the "tune" panel,
+`WashTunePanel`/`lib/washTune.ts`, kept in localStorage `nijimu.landing.wash`)
+wear the colour step's tones: `WASH_TONES` in `BlobScene` samples
+`lib/homePaletteField.ts` per `MEMORY_COLORS` slot (cloud is mist's pale top;
+the second slate is the field's purple at .8 chroma). A cursor stroke thins
+the paint under it (`wipe`, "paper drawn in", 1.3× the brush) so clear paper
+is carried into the washes; tide lines are drawn only near a wash's resting
+rim, never where stirred paint thins inside one. Paint stirred while the
+washes open follows them with a 0.3 s lag (`GROW_RELAX_S`) instead of snapping
+back when the stirring stops. Wash centres keep `BLOB_MIN_GAP` (12% of the
+field) apart, so fewer pool into one field.
+
 ## Gallery artifact width cap (2026-10-30)
 
 Gallery transcripts no longer follow the cursor. On wider screens,

@@ -33,6 +33,8 @@ const FRAME_MS = 1000 / 30;
 const STIR_FRAME_MS = 1000 / 60;
 /** After the last stroke the flow is let go, once it has had this many lifetimes to die down. */
 const SETTLE_LIVES = 4;
+/** While the washes open, stirred paint returns this quickly (s), so it keeps up with the growth. */
+const GROW_RELAX_S = 0.3;
 const SEGS = 8;
 /** The tide line follows its caption a little behind, so it deepens and settles like water. */
 const TIDE_EASE_MS = 450;
@@ -360,19 +362,45 @@ void main() {
 }
 `;
 
-/** The dye is carried by the flow and drawn back toward the undisturbed washes. */
-const DYE3 = `${H3}
+/**
+ * The dye is carried by the flow and drawn back toward the undisturbed washes.
+ * A stroke brings clear water with it: under the brush the paint thins, in
+ * uneven streaks and more for a quick stroke, and the flow then carries that
+ * paper on into the washes.
+ */
+const DYE3 = `${H3}${NOISE}
+#define SEGS ${SEGS}
 uniform sampler2D uA, uB, uC, uTA, uTB, uTC, uVel;
-uniform vec2 uVelTexel;
+uniform vec2 uVelTexel, uRes;
 uniform float uDt, uRelax;
+uniform vec4 uSeg[SEGS];
+uniform float uSegSpeed[SEGS];
+uniform int uSegs;
+uniform float uRadius, uWipe;
 layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
 layout(location = 2) out vec4 o2;
 void main() {
   vec2 back = vUv - uDt * texture(uVel, vUv).xy * uVelTexel;
-  o0 = mix(texture(uA, back), texture(uTA, vUv), uRelax);
-  o1 = mix(texture(uB, back), texture(uTB, vUv), uRelax);
-  o2 = mix(texture(uC, back), texture(uTC, vUv), uRelax);
+  vec2 p = vec2(vUv.x, 1. - vUv.y) * uRes;
+  float keep = 1.;
+  for (int k = 0; k < SEGS; k++) {
+    if (k >= uSegs) break;
+    vec2 a = uSeg[k].xy, ab = uSeg[k].zw - a;
+    float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-4), 0., 1.);
+    vec2 d = p - (a + ab * t);
+    float r = uRadius * 1.3;
+    float g = exp(-dot(d, d) / (r * r));
+    // streaks run along the stroke: noise across it, stretched along it
+    vec2 dir = ab / max(length(ab), 1e-3);
+    vec2 q = vec2(dot(p, dir) * .01, dot(p, vec2(-dir.y, dir.x)) * .035);
+    float streak = smoothstep(.3, .75, fbm(q + float(k) * 3.1));
+    float pace = smoothstep(60., 900., uSegSpeed[k]);
+    keep *= 1. - clamp(uWipe * g * pace * (.35 + .65 * streak), 0., 1.);
+  }
+  o0 = mix(texture(uA, back) * keep, texture(uTA, vUv), uRelax);
+  o1 = mix(texture(uB, back) * keep, texture(uTB, vUv), uRelax);
+  o2 = mix(texture(uC, back) * keep, texture(uTC, vUv), uRelax);
 }
 `;
 
@@ -388,6 +416,9 @@ void main() {
   // the tide follows the words at once, from the washes as they lie, not as the flow has carried them
   float TD = texture(uTA, vUv).a;
   float tide = TD > .004 ? texture(uTC, vUv).g / TD : uEdge;
+  // the tide line belongs to a wash's own rim: where the undisturbed paint is
+  // well inside a wash, paint thinned by a stroke shows paper, not a dark line
+  tide *= 1. - smoothstep(uThresh + .12, uThresh + .32, TD);
   o = look(p, D, clamp(B.a / D, 0., 1.), A.rgb / D, B.rgb / D, clamp(texture(uC, vUv).r / D, 0., 1.), tide);
 }
 `;
@@ -664,6 +695,8 @@ export function WatercolorField({
       let sim = { w: 1, h: 1 }, dyeGrid = { w: 1, h: 1 };
       let fresh = true;
       let flowing = false;
+      /** Whether the pointer has stirred the paint since it was laid down; from then on it never snaps. */
+      let stirred = false;
       const freeAll = () => {
         [...vel, ...pres, ...dye, target, curl, div].forEach((t) => dropTarget(g, t));
         vel = []; pres = []; dye = []; target = curl = div = null;
@@ -714,6 +747,9 @@ export function WatercolorField({
       const swap = (pair: Target[]) => { const t = pair[0]; pair[0] = pair[1]; pair[1] = t; };
       const segData = new Float32Array(SEGS * 4);
       const segVel = new Float32Array(SEGS * 2);
+      /** This frame's strokes, for the dye pass to thin the paint under. */
+      const segSpeed = new Float32Array(SEGS);
+      let wipeSegs = 0;
 
       const step = (dt: number) => {
         const texel = [1 / sim.w, 1 / sim.h] as const;
@@ -724,7 +760,9 @@ export function WatercolorField({
             segData.set([s.x0, s.y0, s.x1, s.y1], k * 4);
             // container px/s, y down → grid cells/s, y up
             segVel.set([s.vx / cell[0], -s.vy / cell[1]], k * 2);
+            segSpeed[k] = Math.hypot(s.vx, s.vy);
           });
+          wipeSegs = segs.length;
           pass(P.splat, vel[1], () => {
             tex(P.splat, "uVel", vel[0].tex[0]);
             g.uniform2f(P.splat.u("uRes"), canvas.clientWidth, canvas.clientHeight);
@@ -803,6 +841,7 @@ export function WatercolorField({
         if (stirring) {
           step(dt);
           flowing = true;
+          stirred = true;
         } else if (flowing) {
           clearFlow();
           flowing = false;
@@ -818,9 +857,19 @@ export function WatercolorField({
           tex(P.dye, "uVel", vel[0].tex[0]);
           g.uniform2f(P.dye.u("uVelTexel"), 1 / sim.w, 1 / sim.h);
           g.uniform1f(P.dye.u("uDt"), flowing ? dt : 0);
-          // opening, unstirred paint follows the growth exactly rather than trailing it
-          g.uniform1f(P.dye.u("uRelax"), fresh || (growing && !flowing) ? 1 : 1 - Math.exp(-dt / tuneRef.current.relaxS));
+          // opening, unstirred paint follows the growth exactly rather than trailing it;
+          // once stirred it follows closely but continuously, so it never jumps
+          // back onto the growth when the stirring stops
+          const relaxS = growing ? Math.min(GROW_RELAX_S, tuneRef.current.relaxS) : tuneRef.current.relaxS;
+          g.uniform1f(P.dye.u("uRelax"), fresh || (growing && !stirred) ? 1 : 1 - Math.exp(-dt / relaxS));
+          g.uniform2f(P.dye.u("uRes"), canvas.clientWidth, canvas.clientHeight);
+          g.uniform4fv(P.dye.u("uSeg"), segData);
+          g.uniform1fv(P.dye.u("uSegSpeed"), segSpeed);
+          g.uniform1i(P.dye.u("uSegs"), flowing ? wipeSegs : 0);
+          g.uniform1f(P.dye.u("uRadius"), tuneRef.current.brushPx);
+          g.uniform1f(P.dye.u("uWipe"), tuneRef.current.wipe);
         });
+        wipeSegs = 0;
         swap(dye);
         fresh = false;
 

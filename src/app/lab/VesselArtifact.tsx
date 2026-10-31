@@ -6,6 +6,7 @@ import { prepareFilmPhoto } from "../lib/filmLook";
 import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
 import { setApexHover } from "../lib/apexHover";
+import { cappedVesselDistance, frameVessel } from "../lib/vesselFraming";
 import { useVesselParts, type VesselParts } from "./vesselBuilds";
 import { createEdgePrint } from "./filmStrip";
 import {
@@ -73,13 +74,16 @@ export interface VesselArtifactProps {
   /** Depth softness in CSS pixels of this canvas, before the seat's scale.
       Drawn here so the blur is the same pixels in Safari and Chrome. */
   blurPx?: number;
+  /** Optional maximum width as a share of this canvas. The gallery divides
+      its seat-width cap by any canvas expansion and library size multiplier. */
+  maxViewportWidth?: number;
   /** A press and release without a drag at the apex — the seat is being asked for. */
   onPick?: () => void;
   /** Called after the first complete frame, so arrivals wait for the actual vessel. */
   onReady?: (canvas: HTMLCanvasElement) => void;
 }
 
-interface Built { glass: Glass; sheet: Sheet; distance: number }
+interface Built { glass: Glass; sheet: Sheet; distance: number; radius: number }
 
 interface Soften {
   frame: THREE.WebGLRenderTarget;
@@ -142,36 +146,6 @@ export function preloadSeatPhotos(urls: string[]) {
   for (const url of urls) loadSeatPhoto(url).catch(() => undefined);
 }
 
-/**
- * How far back the eye sits, and how much the gallery canvas has to grow.
- * The body is framed as before — by its height and a typical radius — so a
- * round form is not shrunk by one spike. A point that still falls outside
- * that frame (a star's arm, a gear's tooth) steps the eye back and widens
- * the canvas by the same amount, so the body stays the size it was and the
- * whole shape stays inside the canvas.
- */
-function frameVessel(positions: ArrayLike<number>) {
-  let halfHeight = 0.5;
-  let radial = 0;
-  let n = 0;
-  let bound = 0.5;
-  for (let k = 0; k < positions.length; k += 3) {
-    const x = positions[k];
-    const y = positions[k + 1] - LOOK_Y;
-    const z = positions[k + 2];
-    halfHeight = Math.max(halfHeight, Math.abs(y));
-    radial += Math.hypot(x, z);
-    n++;
-    bound = Math.max(bound, Math.hypot(x, y, z));
-  }
-  const body = Math.max(halfHeight, (radial / Math.max(n, 1)) * 1.45);
-  const reach = Math.max(body, bound);
-  return {
-    distance: (reach * 1.12) / Math.sin((FOV / 2) * (Math.PI / 180)),
-    canvasScale: reach / body,
-  };
-}
-
 const canvasScales = new Map<string, number>();
 
 /** How much this form's gallery canvas grows so its furthest point stays in frame. */
@@ -180,14 +154,14 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
   const hit = canvasScales.get(key);
   if (hit !== undefined) return hit;
   const glass = buildGlass(form, morph);
-  const scale = frameVessel(glass.positions).canvasScale;
+  const scale = frameVessel(glass.positions, LOOK_Y, FOV).canvasScale;
   glass.geometry.dispose();
   canvasScales.set(key, scale);
   return scale;
 }
 
 function VesselObject({
-  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady, blurPx = 0,
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
@@ -358,7 +332,19 @@ function VesselObject({
     invalidate();
   }, [pass, gl, size, invalidate]);
 
-  const built = useMemo<Built>(() => ({ ...parts, distance: frameVessel(parts.glass.positions).distance }), [parts]);
+  const framing = useMemo(() => frameVessel(parts.glass.positions, LOOK_Y, FOV), [parts]);
+  const built = useMemo<Built>(() => ({
+    ...parts,
+    radius: framing.radius,
+    distance: cappedVesselDistance(framing, FOV, size.width / Math.max(1, size.height), maxViewportWidth, HOVER_BOB),
+  }), [parts, framing, size.width, size.height, maxViewportWidth]);
+  useEffect(() => {
+    // Large library multipliers may require a longer orbit than the old far plane.
+    const view = camera as THREE.PerspectiveCamera;
+    view.far = Math.max(50, built.distance * (1 + HOVER_BOB) + built.radius * 2);
+    view.updateProjectionMatrix();
+    invalidate();
+  }, [camera, built.distance, built.radius, invalidate]);
   const edgePrint = useMemo(() => createEdgePrint(1 + Math.floor(hash2(seed, 7.7) * 36)), [seed]);
   useEffect(() => () => edgePrint.dispose(), [edgePrint]);
   const key = keyFrom(tune.keyAzimuth, tune.keyElevation);

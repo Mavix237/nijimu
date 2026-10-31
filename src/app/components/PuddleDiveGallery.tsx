@@ -52,10 +52,17 @@ export const CAPTION_TOP_VH = 0.62;
 /** Extra downward sit of the title + year. Shared by the carousel and the
     naming step — both draw this caption from the same seat. */
 export const CAPTION_DOWN_VH = 0.07;
-/** Height of the timescale above the bottom of the viewport; a phone's sits
-    lower, nearer its thumb and further from the caption. */
-const TS_BOTTOM_PX = 78;
+/** Height of the timescale line above the bottom of the viewport. A phone
+    keeps a fixed inset, nearer its thumb. Wider screens leave 2vh under the
+    slider's hit area — less than the old fixed 42px — and the line sits
+    36px above that, where the 68px hit rect extends past it. */
+const TS_BELOW_VH = 0.02;
+const TS_HIT_BELOW_PX = 36;
 const TS_BOTTOM_PX_PHONE = 54;
+
+function timeScaleInset(viewport: { w: number; h: number }) {
+  return viewport.w <= 600 ? TS_BOTTOM_PX_PHONE : viewport.h * TS_BELOW_VH + TS_HIT_BELOW_PX;
+}
 
 function useViewport() {
   const [size, setSize] = useState(() => ({
@@ -144,7 +151,9 @@ const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
   margin: "1.6em auto 0",
   maxWidth: "60ch",
   lineHeight: 1.45,
-  textAlign: "center",
+  letterSpacing: "0.01em",
+  textAlign: "justify",
+  textAlignLast: "center",
   textWrap: "pretty",
   transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
 };
@@ -216,6 +225,8 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
         ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
       }}>
         {lines.map((line, i, all) => {
+          // Each animated line is its own block; justify all but the final one.
+          const textAlignLast = i === all.length - 1 ? "center" : "justify";
           const firstWords = all[0].split(" ").length;
           const wordStep = Math.min(WORD_STAGGER_MS, FIRST_LINE_MAX_MS / firstWords);
           // shown afresh each time: the lines come in again
@@ -225,7 +236,7 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
           if (i === 0) {
             const first = line.split(" ");
             return (
-              <span key={i} style={{ display: "block", textAlign: "center" }}>
+              <span key={i} style={{ display: "block", textAlignLast }}>
                 {first.map((word, j) => (
                   <Fragment key={j}>
                     {/* each word slides down out of its own mask */}
@@ -241,7 +252,7 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
           const after = firstWords * wordStep;
           return (
             <span key={i} style={{ display: "block", overflow: "hidden" }}>
-              <span style={{ display: "block", textAlign: "center", animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
+              <span style={{ display: "block", textAlignLast, animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
             </span>
           );
         })}
@@ -1151,7 +1162,7 @@ export function PuddleDiveGallery({
           {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
           {!caption && !field?.on && !compact && shownCaption.transcript && (
             <CaptionTranscript text={shownCaption.transcript} visible={rimSettled && (touchFirst || revealedId === shownCaption.id)}
-              floorY={viewport.h - (showTimeScale ? TS_BOTTOM_PX + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
+              floorY={viewport.h - (showTimeScale ? timeScaleInset(viewport) + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
           )}
         </div>}
       </div>
@@ -1497,7 +1508,7 @@ function TimeScale({
 
   const pad = Math.max(TS_SIDE_PAD_MIN, TS_SIDE_PAD_VW * viewport.w);
   const inner = Math.max(1, viewport.w - pad * 2);
-  const y = viewport.h - (viewport.w <= 600 ? TS_BOTTOM_PX_PHONE : TS_BOTTOM_PX);
+  const y = viewport.h - timeScaleInset(viewport);
   const x = (t: number) => pad + t * inner;
   const [dragT, setDragT] = useState<number | null>(null);
   const [pulse, setPulse] = useState(0);

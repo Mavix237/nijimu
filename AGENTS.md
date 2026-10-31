@@ -4,6 +4,26 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Gallery artifact width cap (2026-10-30)
+
+Gallery vessels fit within 100% of their allocated seat width, before the extra
+canvas room for superformula spikes or the library's size multiplier.
+`GALLERY_VESSEL_MAX_WIDTH` in `lib/vesselFraming.ts` is the shared limit.
+`VesselGalleryProvider` converts it to the expanded canvas's fraction and
+`VesselArtifact` pulls the camera back only when needed. A fixed geometry bound
+accounts for perspective and hover bob, so turning a vessel never pumps its
+scale. Naming and other consumers retain their existing framing. Run
+`node scripts/check-vessel-framing.mjs` for projection checks across shapes,
+aspect ratios, library sizes and orbit angles.
+
+The capped gallery's centre is enlarged 3%, easing out before adjacent seats.
+The first right seat is now about 4% larger than the centre; the second is
+reduced a further 5% (`adjustCurveSeat` in
+`VesselGalleryPreview.tsx`). The two right seats move
+inward by 3% and 5% of screen width; smooth offset weights preserve scrolling
+and the phone's additional clearance. The constellation glyph uses the latest
+root `constellation icon.svg` geometry, with a 1.2px rendered header stroke.
+
 ## UI motion pass (2026-10-22)
 
 Chrome motion follows the animation rules (press feedback, interruptible,

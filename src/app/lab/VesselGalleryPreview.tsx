@@ -11,6 +11,7 @@ import {
 import { pushGalleryPanel, readGalleryPush, useGalleryPush, type GalleryPanel, type GalleryPanelPush } from "../lib/labPush";
 import { entrySignature, galleryLibrary, librarySavedAt, libraryVersion, useGalleryLibrary, type LibraryEntry } from "../lib/galleryLibrary";
 import { formKey } from "../lib/superformula";
+import { GALLERY_VESSEL_MAX_WIDTH } from "../lib/vesselFraming";
 import {
   DISTANCE_FADE, VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
   type Room, type VesselState, type VesselTune,
@@ -174,29 +175,29 @@ function overCurated(base: VesselState, panel: GalleryPanel | undefined, pushedA
   return { ...state, form: base.form, size: base.size, tune: { ...state.tune, morph, sheetSize, anchorHeight, anchorAngle } };
 }
 
-/**
- * The seats on the near side of the apex, drawn back. The curve's perspective
- * makes the first newer neighbour larger than the apex and lays it over it
- * (nearer seats draw on top), and the vessel fills its seat where the crystal
- * did not — so the one being looked at was half covered. From the apex out
- * the newer seats shrink (22% by the first neighbour, 28% by the second) and
- * move out toward the lower right (.045w/.025h at the first, .09w/.1h at the
- * second, so the first keeps clear of the apex and the second stays mostly
- * off the frame); and the apex draws over its neighbours, the order falling
- * off smoothly so a step never swaps two seats while they overlap.
- */
 /** A wider canvas for a form whose points would otherwise leave the seat. The body stays put; the extra is the room the points need. */
 function withCanvasRoom(seat: SeatPlace, room: number): SeatPlace {
   if (Math.abs(room - 1) < 0.001) return seat;
   return { ...seat, scale: seat.scale * room, size: seat.size * room, blurPx: seat.blurPx / room };
 }
 
+/** With capped vessels, the first right seat is about 4% larger than
+ * focus. Both right seats sit nearer the centre; the apex retains draw priority.
+ * Smooth weights keep these adjustments continuous while scrolling. */
 function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number; h: number }): SeatPlace {
+  const focusWeight = Math.max(0, 1 - offset * offset);
+  const focusBoost = 1 + 0.03 * focusWeight * focusWeight;
+  depth = {
+    ...depth,
+    scale: depth.scale * focusBoost,
+    size: depth.size * focusBoost,
+    blurPx: depth.blurPx / focusBoost,
+  };
   const order = Math.round(offset * 100 + 140 * Math.max(0, 1 - Math.abs(offset) / 0.8));
   if (offset <= 0) return { ...depth, order };
   const w1 = smooth01(Math.min(offset, 1));
   const w2 = smooth01(Math.max(0, offset - 1));
-  const shrink = 0.22 * w1 + 0.06 * w2;
+  const shrink = 0.065 * w1 + 0.251 * w2;
   const scale = depth.scale * (1 - shrink);
   // an upright phone has height to spare and no width: the newer ones step
   // further down and out, so the one in hand stays clear
@@ -205,7 +206,7 @@ function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number
     ...depth,
     scale,
     size: depth.size * (1 - shrink),
-    x: depth.x + viewport.w * (0.045 * w1 + 0.045 * w2 + 0.06 * w1 * tall),
+    x: depth.x + viewport.w * (0.015 * w1 + 0.025 * w2 + 0.06 * w1 * tall),
     y: depth.y + viewport.h * (0.025 * w1 + 0.075 * w2 + (0.07 * w1 + 0.05 * w2) * tall),
     blurPx: depth.blurPx * (depth.scale / scale),
     order,
@@ -341,14 +342,12 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
         <circle cx="13" cy="7.6" r="1.1" fill={CHROME_GRAY} />
       </svg>
     ) : (
-      // the field: near and far
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
-        <circle cx="3.6" cy="4.2" r="2.1" stroke={CHROME_GRAY} strokeWidth="1.1" />
-        <circle cx="12" cy="11.2" r="2.6" stroke={CHROME_GRAY} strokeWidth="1.1" />
-        <circle cx="11.4" cy="3.6" r="1" fill={CHROME_GRAY} opacity="0.75" />
-        <circle cx="6.8" cy="9.4" r="0.8" fill={CHROME_GRAY} opacity="0.6" />
-        <circle cx="3.4" cy="12.6" r="1.2" fill={CHROME_GRAY} opacity="0.8" />
-        <circle cx="8.6" cy="6.6" r="0.55" fill={CHROME_GRAY} opacity="0.5" />
+      // From constellation icon.svg; pad for a 1.2px rendered stroke, matching the header controls.
+      <svg width="16" height="16" viewBox="-3 -3 110 119" fill="none" stroke={CHROME_GRAY} strokeWidth={1.2 * 119 / 16} aria-hidden>
+        <circle cx="74.5" cy="56.5" r="27.5" />
+        <circle cx="22.5" cy="22.5" r="20.5" />
+        <circle cx="27" cy="82" r="11" />
+        <circle cx="50" cy="106" r="5" />
       </svg>
     )
   );
@@ -639,6 +638,7 @@ export function VesselGalleryProvider({
         still={seat.still}
         frameloop={field.busy ? "always" : seat.frameloop}
         blurPx={seat.blurPx}
+        maxViewportWidth={GALLERY_VESSEL_MAX_WIDTH / (vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1))}
         onPick={pickRef.current ? pick : undefined}
       />
     );

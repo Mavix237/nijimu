@@ -4,6 +4,25 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Pond panel and its light (2026-11-01)
+
+The pond has its own DialKit panels (dev only, `components/PondDials.tsx`,
+mounted by `MemoryPondPage` while the pond is in front): "pond" bottom right
+(sun, surface, waves, rings, sphere, light, sky) and "pond ink" bottom left
+(drops, ink, tone). `lib/pondTune.ts` holds `POND_TUNE_DEFAULT`; its shader
+knobs are shared uniform objects (`POND_TUNE_UNIFORMS`, spread into every
+pond wave uniform set and the cursor sphere's), read in GLSL through
+`TUNE(built, knob)` macros declared at the head of `POND_WAVES_GLSL`, so a
+material without them (uTuneOn 0) keeps its built values. The settled look:
+a softer, wider sun path (sun .7, glow 1.63, sharpness 147, path 8 × 28.5);
+highlights ease toward .975 (`shoulder` .85) instead of clipping; warm light
+(#eee9e8) and cool shade (#d7e0e8) laid back over the grey; the rings' light
+.76 and a little warm; a cooler grey (paper #e4e8e9, natural #e2eced, sky
+#ebeeee → #e1e5e6 → #bfc6c8, `pondBackdropCss`) with a soft glow over the
+horizon where the sun's path begins, so the light in the water has a source.
+The pigment drops, their ink and the water's stain are off by default
+(`drops.show`, `ink.show`, `tone.show`); the prompts' ripples still come.
+
 ## Landing opening and look panels (2026-11-01)
 
 Two DialKit panels share a shell at the landing's top left (dev only,

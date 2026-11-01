@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useHoldToCreate } from "../hooks/useHoldToCreate";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, RECORD_START_PATH } from "../lib/routes";
@@ -6,10 +6,14 @@ import { CHROME_GRAY } from "../lib/colors";
 import { INSTRUCTION_SIZE, POND_PROMPT_SIZE, SANS, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { POND_THOUGHTS, hasSeenPondInstruction, markPondInstructionSeen, pondPromptCue } from "../lib/pondPrompts";
 import { POND_DROP_FALL_S } from "../lib/pondPigment";
-import { POND_BACKDROP, PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
+import { PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
+import { pondBackdropCss, pondTune, usePondTune } from "../lib/pondTune";
 import { PondRecordingOverlay } from "./PondRecordingOverlay";
 import { PondNamingOverlay } from "./PondNamingOverlay";
 import type { NamingSession } from "./NamingRim";
+
+/** The pond's dev panel (DialKit), development only. */
+const PondDials = import.meta.env.DEV ? lazy(() => import("./PondDials")) : null;
 
 export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = false, recording = false, naming = null, onReady, onLeave, onNamingSaved, namingBackRef, covered = false, renderScene }: {
   /** Another step owns the controls while the pond stays mounted underneath. */
@@ -27,6 +31,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
 }) {
   const navigate = useNavigate();
   const location = useLocation();
+  const tune = usePondTune();
   const overlaid = covered || recording || !!naming;
   const sinkRef = useRef(0);
   const [touch, setTouch] = useState<PondTouch | null>(null);
@@ -167,7 +172,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     promptRipples: !overlaid && active, sinkRef };
 
   return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
-    style={{ position: "absolute", inset: 0, overflow: "hidden", background: POND_BACKDROP, WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
+    style={{ position: "absolute", inset: 0, overflow: "hidden", background: pondBackdropCss(tune.sky), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
     {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
     {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
 
@@ -186,7 +191,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
         setCursor(e);
         const r = e.currentTarget.getBoundingClientRect();
         // a press stirs the water gently: a low ring that spreads slowly
-        setTouch({ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, serial: performance.now(), strength: .7, slow: true });
+        setTouch({ x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, serial: performance.now(), strength: pondTune().waves.press, slow: true });
         hold.start();
       }}
       onPointerMove={e => {
@@ -218,6 +223,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     {recording && <PondRecordingOverlay reducedMotion={reducedMotion} onVoicePulse={pulseWater} />}
     {naming && onNamingSaved && <PondNamingOverlay key={naming.draftId} session={naming} reducedMotion={reducedMotion} sinkRef={sinkRef} onSaved={onNamingSaved} backRef={namingBackRef} />}
     <span className="sr-only" role="status">{recording ? "ready to record" : ""}</span>
+    {PondDials && active && !naming && <Suspense fallback={null}><PondDials /></Suspense>}
   </section>;
 }
 

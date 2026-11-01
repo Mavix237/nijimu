@@ -41,7 +41,8 @@ import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE, UNDER
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
-import { PondWater, type PondProps, POND_BACKDROP, POND_WAVES_GLSL, POND_SURFACE_GLSL } from "../components/PerspectivePond";
+import { PondWater, type PondProps, POND_WAVES_GLSL, POND_SURFACE_GLSL } from "../components/PerspectivePond";
+import { pondBackdropCss, usePondTune } from "../lib/pondTune";
 import { POND_PIGMENT_GLSL, createPondPigmentUniforms } from "../lib/pondPigment";
 import { PAGE_HEADER_MARK, PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
@@ -477,7 +478,7 @@ const waterFragment = /* glsl */ `
     vec3 sky = vec3(.888, .902, .897);
     vec3 above = pondAboveColor(p, pondSurfaceColor(p, flow, n, eye), n, eye);
     above = pondPigment(p, n, eye, above);
-    above += (hash(gl_FragCoord.xy) - .5) * .017;
+    above += (hash(gl_FragCoord.xy) - .5) * T_GRAIN;
     float aboveAlpha = 1.0 - smoothstep(140.0, 400.0, -p.y);
     // Above the crossing the frame is the pond, and nothing else.
     if (cameraPosition.y > .12) {
@@ -2383,6 +2384,7 @@ interface PondEntryProps { arrival?: number; active?: boolean; onReady?: () => v
 
 function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport>; pondEntry?: PondEntryProps }) {
   const compact = useCompact();
+  const pondSky = usePondTune().sky;
   // a phone's slider spans the side margins its wrapper keeps
   const sliderFill = compact ? { width: "100%" } : undefined;
   const navigate = useNavigate();
@@ -2965,7 +2967,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   return (
     <main ref={hostRef} style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
       pointerEvents: leaving ? "none" : undefined,
-      background: resume ? SINK_WASH : POND_BACKDROP }}
+      background: resume ? SINK_WASH : pondBackdropCss(pondSky) }}
       onPointerMove={pointerAsHand}
       onPointerLeave={pointerOut}>
       <MemoryPondPage {...pondEntry} active={invitation && (pondEntry?.active ?? true)}

@@ -5,6 +5,10 @@ import { ascentLightAt, ASCENT_LIGHT_GLSL, ASCENT_INTERIOR_GLSL } from "../lib/a
 import { FlowPageGrid } from "../components/FlowPageGrid";
 import { vesselTint } from "../lib/vesselTint";
 import { holdSurfaceFrame } from "../lib/surfaceHandoff";
+import { captureFragScaleFor, markCaptureTargets, useExportDrawingDpr } from "../lib/renderExport";
+import { CAPTURE_SCALE_GLSL } from "../lib/captureScale";
+import { captureFrozen } from "../lib/captureFreeze";
+import { CaptureFrame } from "../components/CaptureFrame";
 import { pondCameraPose, POND_CAMERA_HEIGHT, POND_CAMERA_Z, POND_LOOK as SURFACE_LOOK, SINK_WASH } from "../lib/pondCamera";
 import { DistanceConstellation } from "./DistanceConstellation";
 import { FIELD_FOCAL, memoryDepth, type FieldTextBounds } from "./vesselField";
@@ -405,7 +409,7 @@ const CEILING_GLSL = /* glsl */ `
   // as far as reach, strongest just under the surface and thinning with depth.
   vec3 ceilingRays(vec3 dir, float reach) {
     vec3 lightDir = normalize(vec3(0.42, -1.0, 0.55));
-    float jitter = hash(gl_FragCoord.xy);
+    float jitter = hash(capturePx());
     vec3 rays = vec3(0.0);
     const int STEPS = 16;
     for (int i = 0; i < STEPS; i++) {
@@ -465,6 +469,7 @@ const waterVertex = /* glsl */ `
 const waterFragment = /* glsl */ `
   ${POND_WAVES_GLSL}
   ${POND_SURFACE_GLSL}
+  ${CAPTURE_SCALE_GLSL}
   ${POND_PIGMENT_GLSL}
   ${VOLUME_GLSL}
   ${CEILING_GLSL}
@@ -477,7 +482,7 @@ const waterFragment = /* glsl */ `
     vec3 sky = vec3(.888, .902, .897);
     vec3 above = pondAboveColor(p, pondSurfaceColor(p, flow, n, eye), n, eye);
     above = pondPigment(p, n, eye, above);
-    above += (hash(gl_FragCoord.xy) - .5) * .017;
+    above += (hash(capturePx()) - .5) * .017;
     float aboveAlpha = 1.0 - smoothstep(140.0, 400.0, -p.y);
     // Above the crossing the frame is the pond, and nothing else.
     if (cameraPosition.y > .12) {
@@ -507,7 +512,7 @@ const waterFragment = /* glsl */ `
     float horizonBlend = mix(1.0, smoothstep(0.0, .38, up.y), ceilingOn);
     float surfaceVisibility = exp(-dist * hazeRate) * horizonBlend;
     below = mix(underwaterBodyColor(up), below, surfaceVisibility);
-    below += (hash(gl_FragCoord.xy) - .5) * .017;
+    below += (hash(capturePx()) - .5) * .017;
     // Still the pond as the eye meets the surface; the quieter body only once it is under.
     // The ascent ends below the surface. Keep the underwater treatment until
     // the white handoff; mixing the above-water colour here created a slab.
@@ -535,6 +540,7 @@ const volumeVertex = /* glsl */ `
 const volumeFragment = /* glsl */ `
   ${POND_WAVES_GLSL}
   ${POND_SURFACE_GLSL}
+  ${CAPTURE_SCALE_GLSL}
   ${VOLUME_GLSL}
   ${CEILING_GLSL}
   uniform mat4 uInvProjection;
@@ -545,7 +551,7 @@ const volumeFragment = /* glsl */ `
     vec4 v = uInvProjection * vec4(vNdc, 1.0, 1.0);
     vec3 dir = normalize((uCameraWorld * vec4(v.xyz / v.w, 0.0)).xyz);
     vec3 color = underwaterBodyColor(dir);
-    color += (hash(gl_FragCoord.xy) - .5) * .017;
+    color += (hash(capturePx()) - .5) * .017;
     gl_FragColor = vec4(color, uUnder);
   }
 `;
@@ -923,8 +929,21 @@ function useKept<T>(make: () => T): T {
   return kept.current;
 }
 
+/** Screen-sized 4K keeps multisampling. Larger exports drop it, or the half-float targets never allocate. */
+const CAPTURE_MSAA_PIXELS = 3840 * 2160;
+
+function fitCaptureTarget(target: THREE.WebGLRenderTarget, w: number, h: number) {
+  const samples = w * h > CAPTURE_MSAA_PIXELS ? 0 : RT_SAMPLES;
+  if (target.samples !== samples) {
+    target.samples = samples;
+    target.dispose();
+  }
+  target.setSize(w, h);
+}
+
 function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, haloRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onAscended, onRewound }: StageProps) {
-  const { camera, size, gl, scene } = useThree();
+  const { camera, size, gl, scene, viewport, invalidate } = useThree();
+  const exportDpr = useExportDrawingDpr(gl.domElement, viewport.dpr);
   const time = useRef(0);
   const jumped = useRef(false);
   const dropIndex = useRef(0);
@@ -1090,11 +1109,12 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     uShapePush: { value: 0 },
     uShapeRay: { value: new THREE.Vector3(0, 0, -1) },
   }), []);
-  const surfaceUniforms = useMemo(() => ({ ...waves, ...water }), [waves, water]);
+  const surfaceUniforms = useMemo(() => ({ ...waves, ...water, uCaptureScale: { value: 1 } }), [waves, water]);
   const volumeUniforms = useMemo(() => ({
     ...waves, ...water, uUnder: under,
     uInvProjection: { value: new THREE.Matrix4() },
     uCameraWorld: { value: new THREE.Matrix4() },
+    uCaptureScale: { value: 1 },
   }), [waves, water, under]);
   const filmUniforms = useKept(() => {
     // one seed for the strip's tears and stains and for where the light gets in
@@ -1228,15 +1248,28 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   }, []);
   useEffect(() => () => { touch.target.dispose(); touch.material.dispose(); touch.quad.geometry.dispose(); }, [touch]);
   useEffect(() => {
-    const dpr = gl.getPixelRatio();
-    const w = Math.max(1, Math.round(size.width * dpr)), h = Math.max(1, Math.round(size.height * dpr));
-    touch.target.setSize(w, h);
+    const w = Math.max(1, Math.round(size.width * exportDpr)), h = Math.max(1, Math.round(size.height * exportDpr));
+    // 4× MSAA half-float at 8K is about a gigabyte a target and the frame comes back blank.
+    // Above the screen's own 4K buffer, allocate a plain target. While the glass is not
+    // on screen the refraction target stays at the live size, so a transcript or a photo
+    // does not allocate a second full frame.
+    const formOn = Boolean(form.current?.visible) || stage.current.step === "distance";
+    fitCaptureTarget(touch.target, w, h);
     ascentBloom.resize(w, h);
     silhouetteBlur.resize(w, h);
-    refract.target.setSize(w, h);
+    const live = Math.min(exportDpr, MAX_DPR);
+    fitCaptureTarget(
+      refract.target,
+      formOn ? w : Math.max(1, Math.round(size.width * live)),
+      formOn ? h : Math.max(1, Math.round(size.height * live)),
+    );
     touch.material.uniforms.uAspect.value = size.width / size.height;
+    // Touch bends in UV, so the lens stays the same fraction of the picture
+    // when the buffer grows. uViewport stays the CSS size.
     touch.material.uniforms.uViewport.value.set(size.width, size.height);
-  }, [touch, refract, ascentBloom, silhouetteBlur, gl, size]);
+    markCaptureTargets(gl.domElement, w, h);
+    invalidate();
+  }, [touch, refract, ascentBloom, silhouetteBlur, exportDpr, size, gl, invalidate]);
   /* Three binds a material's uniform holders once, when its program is first
      acquired, and never reads `material.uniforms` again. A Fast Refresh (any
      save while the lab is open) recomputes every memo above, so the materials
@@ -1267,6 +1300,11 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     void pending;
   }, [gl, scene, camera]);
   useFrame(({ gl: renderer, scene, camera: view }) => {
+    const frag = captureFragScaleFor(renderer.domElement);
+    surfaceUniforms.uCaptureScale.value = frag;
+    volumeUniforms.uCaptureScale.value = frag;
+    sheetU.uCaptureScale.value = frag;
+    motesUniforms.uPixel.value = renderer.getPixelRatio();
     const body = form.current;
     if ((body && body.visible) || stage.current.step === "distance") {
       glassU.uResolution.value.set(refract.target.width, refract.target.height);
@@ -1339,8 +1377,8 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   useFrame((_, delta) => {
     const tr = transport.current;
     const knobs = tune.current;
-    const dt = tr.paused ? 0 : Math.min(delta, 0.05) * tr.speed;
-    if (!document.hidden) time.current += dt;
+    const dt = tr.paused || captureFrozen() ? 0 : Math.min(delta, 0.05) * tr.speed;
+    if (!document.hidden && dt > 0) time.current += dt;
     const s = stage.current;
 
     /* The seek. The wrap and the rise are functions of the time since
@@ -1830,7 +1868,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
         : 0;
       const visibleHaze = Math.max(sm.frost, arrivalHaze);
       if (settledPose.current !== targetPose || Math.abs(sm.morph - written.current) > 0.0015) {
-        writeMorph(sm.morph, delta, false);
+        writeMorph(sm.morph, dt, false);
       }
       const air = 1 - smoothProgress(-formAt.y, -0.2, 0.3);
       const { roomAbove, roomBelow, roomAir } = scratch;
@@ -2963,7 +3001,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   };
 
   return (
-    <main ref={hostRef} style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
+    <main ref={hostRef} data-capture-root="descent" style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
       pointerEvents: leaving ? "none" : undefined,
       background: resume ? SINK_WASH : POND_BACKDROP }}
       onPointerMove={pointerAsHand}
@@ -2973,6 +3011,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         renderScene={pond => ready ? (<Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
         onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
         dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
+        <CaptureFrame />
         <PortraitFit />
         <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef} haloRef={haloRef}
           onFallStart={() => setPhase("falling")}
@@ -3167,7 +3206,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {step === "color" && (
         <div style={{ opacity: leaving ? 0 : 1, transition: "opacity 1400ms ease" }}>
           {/* a pale veil under the wash, so the band reads as light on the paper rather than a strip */}
-          <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "30vh", zIndex: 9, pointerEvents: "none",
+          <div aria-hidden data-capture-plate="" style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "30vh", zIndex: 9, pointerEvents: "none",
             background: "linear-gradient(to bottom, rgba(236,237,238,0) 0%, rgba(236,237,238,.55) 45%, rgba(236,237,238,.7) 100%)" }} />
           <OklchColorField opacity={0.85} sample={sampleHomePalette} u={colorUv.u} v={colorUv.v} held={colorHeld} onPick={({ u, v }) => pickColor(u, v)} />
         </div>

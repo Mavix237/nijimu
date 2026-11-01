@@ -5,6 +5,9 @@ import { formKey, type ArtifactForm } from "../lib/superformula";
 import { prepareFilmPhoto } from "../lib/filmLook";
 import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
+import { captureFragScaleFor, markCaptureTargets, useExportDrawingDpr } from "../lib/renderExport";
+import { captureFrozen } from "../lib/captureFreeze";
+import { CaptureFrame } from "../components/CaptureFrame";
 import { setApexHover } from "../lib/apexHover";
 import { cappedVesselDistance, frameVessel } from "../lib/vesselFraming";
 import { useVesselParts, type VesselParts } from "./vesselBuilds";
@@ -165,7 +168,8 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
 function VesselObject({
   parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth,
 }: VesselArtifactProps & { parts: VesselParts }) {
-  const { camera, gl, scene, size, invalidate } = useThree();
+  const { camera, gl, scene, size, viewport, invalidate } = useThree();
+  const exportDpr = useExportDrawingDpr(gl.domElement, viewport.dpr);
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
   // the pressed sheet has no one place, so it opens at a turn of its own
   const faceAngle = facing ?? tune.anchorAngle;
@@ -327,14 +331,14 @@ function VesselObject({
     return soften.current;
   };
   useEffect(() => {
-    const dpr = gl.getPixelRatio();
-    const w = Math.max(1, Math.round(size.width * dpr));
-    const h = Math.max(1, Math.round(size.height * dpr));
+    const w = Math.max(1, Math.round(size.width * exportDpr));
+    const h = Math.max(1, Math.round(size.height * exportDpr));
     pass.target.setSize(w, h);
     const s = soften.current;
     if (s) { s.frame.setSize(w, h); s.pong.setSize(w, h); }
+    markCaptureTargets(gl.domElement, w, h);
     invalidate();
-  }, [pass, gl, size, invalidate]);
+  }, [pass, exportDpr, size, gl, invalidate]);
 
   const framing = useMemo(() => frameVessel(parts.glass.positions, LOOK_Y, FOV), [parts]);
   const built = useMemo<Built>(() => ({
@@ -400,8 +404,9 @@ function VesselObject({
   const reportReady = () => { if (!didRender.current && photoReady.current) { didRender.current = true; readyRef.current?.(gl.domElement); } };
   const refract = glassMode === "refract";
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
+    sheetU.uCaptureScale.value = captureFragScaleFor(renderer.domElement);
     if (compiledFor.current !== glassMode) return;
-    const step = Math.min(dt, 0.1);
+    const step = captureFrozen() ? 0 : Math.min(dt, 0.1);
     if (focused && !still) yaw.current += tune.turn * step;
     const h = hover.current;
     const want = focused && h.over && !h.held && !reducedMotion ? 1 : 0;
@@ -487,6 +492,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
       dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       style={{ width: "100%", height: "100%" }}>
+      <CaptureFrame />
       <VesselObject {...props} parts={parts} />
     </Canvas>
   );

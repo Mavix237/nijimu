@@ -4,6 +4,50 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Memory image card and film grain study (2026-11-01)
+
+Naming's "preview image" (`MemoryImagePreview`) shows the downloaded card.
+`lib/memoryImage.ts`: `memoryCard` composes it (a photographed-studio light
+field in OKLab; "Tonal Contrast" 0–200 scales the depth/ground
+fields and, past 100, keeps some colour in them), `memoryImage` adds the
+chosen grain at full size and returns a PNG. The preview's settings (contrast,
+grain) are kept in localStorage so "Download as image" matches the preview.
+`lib/filmGrain.ts` is the grain study, on plain RGBA buffers (ready for the
+grade/Snapshot pipeline): Off, A Uniform, B Tonal, C Spatial (correlated,
+clumped), D Hybrid (finer correlated grain, tonal, local contrast, faint
+colour); fixed seed, source never written, fields cached per kind and size.
+The preview draws the composed pixels to a canvas, with fit/100/200/400% zoom
+(device pixels; pan by drag), keys 0–4 for the treatments and O held for the
+original. `node scripts/check-film-grain.mjs` checks determinism, source
+preservation, monochrome grain, the tonal response and timings.
+
+The card's ground is a wall, not a perfect gradient (`SURFACE` in
+`memoryImage.ts`; the fields themselves are unchanged). A very broad,
+slightly warped FBM (`surfaceDensity`, octaves .9/.44/.2 page widths) moves
+lightness ±.0065, up to .006 more inside the depth/ground fields, and holds
+±8% of the colour already there, adding no hue. Then, at full size and on the
+ground alone (before the vessel and the words), `surfaceTooth` — three turned
+octaves of soft noise at 1.35/3.4/9 px weighted as the landing's paper tooth,
+σ .38%, plus a static grain, σ .22% — multiplies the pixels (σ about one
+level of 255 on the ground). Both are static, the tooth cached per size
+(~70 ms once, cards ~50 ms after); tonal contrast moves the tooth by a tenth
+either way. Measured against the smooth ground: rms 1.1–1.6 levels, max ~6,
+no more at 200 than at 100; it also dissolves the old 8-bit banding.
+
+A coloured vessel is lit by three lights in the shared glass shader
+(`GLASS_COMMON_GLSL`); its material is not recoloured. The bottom colour is
+the existing stain (`feelingTint`, unchanged, the reference). Above it a tint
+fill (`fillLight`/`lightByFill`, tune `tintFill`, `tintFillSoft`,
+`tintFillChroma`; colour `fillLightColor`, the hue at l .95 and a share of the
+pick's chroma): a broad soft light from high front-left whose light colours
+what the glass passes and reflects where it falls, reaching little of the
+foot. Over it a neutral white key (`whiteLight`, tune `whiteLight`,
+`whiteSharp`): crisp specular and a bright line inside the lit silhouette, on
+both walls (weaker through the far one), so the brightest light is white.
+Both follow the stain's strength (`memoryTintAmount / MEMORY_STAIN`), so an
+uncoloured vessel is unchanged. The fill is fixed at strength .5 and a .2
+share of the pick's chroma. Knob group "colour lights" in `/lab/vessel`.
+
 ## Pigment drops on the pond (2026-10-31)
 
 The pond's prompt ripples are no longer spontaneous: each is made by a drop

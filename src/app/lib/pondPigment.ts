@@ -267,7 +267,7 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
     // The paper's tooth, as the landing's washes have it (WatercolorField's
     // look): value noise laid in screen pixels at ${POND_INK_GRAIN_PX} px, three
     // octaves turned against each other, lifting and thinning the paint's cover.
-    vec2 gp = gl_FragCoord.xy / ${POND_INK_GRAIN_PX.toFixed(2)};
+    vec2 gp = capturePx() / ${POND_INK_GRAIN_PX.toFixed(2)};
     float tooth = noise(gp) * .45 + noise(mat2(.8, -.6, .6, .8) * gp * .43 + 7.7) * .35
       + noise(mat2(.28, -.96, .96, .28) * gp * .16 + 3.1) * .2;
     float grain = 1.0 + .28 * ${POND_INK_GRAIN.toFixed(2)} * (tooth - .5);

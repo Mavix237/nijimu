@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { CHROME_GRAY } from "../lib/colors";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./HeaderIconLabel";
-import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "./HeaderMenu";
+import { HEADER_MENU_ORDER, HeaderMenuRow, useCornerSeat, useHeaderMenu } from "./HeaderMenu";
 
 /** Top-right switch between the G-key carousel and the card grid.
  *  Sits left of the music control (see --chrome-r* in responsive.css).
@@ -26,6 +26,7 @@ export function GalleryViewToggle({
 }) {
   const [nameShown, setNameShown] = useState(false);
   const { list } = useHeaderMenu();
+  useCornerSeat("gallery", visible && !list);
   if (!visible) return null;
 
   const toGrid = view === "carousel";

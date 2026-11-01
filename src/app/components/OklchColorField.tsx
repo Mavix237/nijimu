@@ -357,6 +357,7 @@ export function OklchColorField({ u, v, held = false, onPick, sample = sampleFie
     >
       <canvas
         ref={canvasRef}
+        data-capture-frame=""
         style={{
           width: "100%",
           height: "100%",
@@ -371,6 +372,7 @@ export function OklchColorField({ u, v, held = false, onPick, sample = sampleFie
       />
       <canvas
         ref={waterRef}
+        data-capture-frame=""
         aria-hidden
         style={{
           position: "absolute",
@@ -389,6 +391,7 @@ export function OklchColorField({ u, v, held = false, onPick, sample = sampleFie
       />
       <div
         aria-hidden
+        data-capture-plate=""
         style={{
           position: "absolute",
           left: 0,

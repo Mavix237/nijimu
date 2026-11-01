@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from "react";
+import { registerCaptureRedraw, type CapturePixels } from "../lib/renderExport";
 
 /* The landing's gooey field, drawn in WebGL so every browser shows it.
 
@@ -322,9 +323,9 @@ function makeTarget(g: Gl, w: number, h: number): Target {
   return { tex, fb, w, h };
 }
 
-function sizeTargets(g: Gl, fieldW: number, fieldH: number) {
-  const w = Math.max(1, Math.round((fieldW + 2 * PAD) * LAYER_RES));
-  const h = Math.max(1, Math.round((fieldH + 2 * PAD) * LAYER_RES));
+function sizeTargets(g: Gl, fieldW: number, fieldH: number, layerRes = LAYER_RES) {
+  const w = Math.max(1, Math.round((fieldW + 2 * PAD) * layerRes));
+  const h = Math.max(1, Math.round((fieldH + 2 * PAD) * layerRes));
   const key = `${w}x${h}`;
   if (g.key === key) return;
   for (const t of g.targets) {
@@ -336,16 +337,16 @@ function sizeTargets(g: Gl, fieldW: number, fieldH: number) {
     // the float target would not attach: fall back to 8-bit sRGB
     g.linear = false;
     g.key = "";
-    sizeTargets(g, fieldW, fieldH);
+    sizeTargets(g, fieldW, fieldH, layerRes);
     return;
   }
   g.key = key;
 }
 
 function draw(g: Gl, canvas: HTMLCanvasElement, data: Float32Array, count: number,
-  fieldW: number, fieldH: number, p: GooeyParams) {
+  fieldW: number, fieldH: number, p: GooeyParams, layerRes = LAYER_RES) {
   const { gl } = g;
-  sizeTargets(g, fieldW, fieldH);
+  sizeTargets(g, fieldW, fieldH, layerRes);
   const [layer, half, blurred] = g.targets;
   gl.bindVertexArray(g.vao);
   gl.disable(gl.BLEND);
@@ -367,7 +368,7 @@ function draw(g: Gl, canvas: HTMLCanvasElement, data: Float32Array, count: numbe
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
   // 2. its blur, across then down
-  const sigma = Math.max(0.01, p.sigma * LAYER_RES);
+  const sigma = Math.max(0.01, p.sigma * layerRes);
   gl.useProgram(g.blur);
   gl.uniform1i(gl.getUniformLocation(g.blur, "uTex"), 0);
   gl.uniform1f(gl.getUniformLocation(g.blur, "uSigma"), sigma);
@@ -409,6 +410,7 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
   const gradients = useRef<{ css: string; g: Gradient }[]>([]);
   const last = useRef<{ data: Float32Array; key: string } | null>(null);
   const failed = useRef(false);
+  const captureSize = useRef<CapturePixels | null>(null);
 
   // Draws one frame if anything changed since the last one.
   const frame = useRef(() => {});
@@ -418,7 +420,15 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
     if (!g || !canvas) return;
     const { colors: bg, width: fw, height: fh, params: p } = live.current;
     const dpr = window.devicePixelRatio || 1;
-    const res = Math.min(dpr, Math.sqrt(OUT_PIXELS / Math.max(1, fw * fh)));
+    const normal = Math.min(dpr, Math.sqrt(OUT_PIXELS / Math.max(1, fw * fh)));
+    const capture = captureSize.current;
+    const maxEdge = 8192;
+    const res = capture
+      ? Math.min(capture.width / Math.max(1, fw), maxEdge / Math.max(fw, fh))
+      : normal;
+    // The blur is measured in layer pixels. Raising the layer with the output
+    // keeps the same CSS-sized pool while the edge is drawn at the new size.
+    const layerRes = capture ? LAYER_RES * (res / Math.max(normal, 1e-3)) : LAYER_RES;
     const cw = Math.max(1, Math.round(fw * res));
     const ch = Math.max(1, Math.round(fh * res));
     if (canvas.width !== cw || canvas.height !== ch) {
@@ -441,7 +451,7 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
     const prev = last.current;
     if (prev && prev.key === key && prev.data.length === data.length && prev.data.every((v, i) => v === data[i])) return;
     last.current = { data, key };
-    draw(g, canvas, data, count, fw, fh, p);
+    draw(g, canvas, data, count, fw, fh, p, Math.min(layerRes, maxEdge / Math.max(fw + 2 * PAD, fh + 2 * PAD)));
   };
 
   useLayoutEffect(() => {
@@ -463,7 +473,13 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
     canvas.addEventListener("webglcontextlost", lost);
     frame.current();
     live.current.onSupport(true);
+    registerCaptureRedraw(canvas, (pixels) => {
+      captureSize.current = pixels ?? null;
+      last.current = null;
+      frame.current();
+    });
     return () => {
+      registerCaptureRedraw(canvas, null);
       canvas.removeEventListener("webglcontextlost", lost);
       g.gl.getExtension("WEBGL_lose_context")?.loseContext();
       glRef.current = null;
@@ -492,6 +508,7 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
     <canvas
       ref={canvasRef}
       data-gooey-field=""
+      data-capture-frame=""
       aria-hidden="true"
       className="absolute inset-0 pointer-events-none"
       style={{ width: "100%", height: "100%", display: active ? "block" : "none" }}

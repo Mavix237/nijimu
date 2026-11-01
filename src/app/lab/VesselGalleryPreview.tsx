@@ -18,7 +18,7 @@ import {
 } from "./VesselPreview";
 import { VesselArtifact, loadSeatPhoto, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
 import { vesselParts } from "./vesselBuilds";
-import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "../components/HeaderMenu";
+import { HEADER_MENU_ORDER, HeaderMenuRow, useCornerSeat, useHeaderMenu } from "../components/HeaderMenu";
 import { MemoryReadingPane, type ReadableMemory } from "../components/MemoryReadingPane";
 import { useCompact } from "../hooks/useCompact";
 import { LabPushButton } from "./LabPushButton";
@@ -334,6 +334,7 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   const title = on ? "back along the years" : "see them in the air";
   const name = on ? "timeline\nview" : "constellation\nview";
   const { list } = useHeaderMenu();
+  useCornerSeat("field", !list);
   const glyph = (
     // The create icon's visible square is 13px plus its 1.2px stroke.
     <img src={on ? timelineIcon : constellationIcon} width="14.2" height="14.2" alt="" aria-hidden

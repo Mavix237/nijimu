@@ -6,6 +6,7 @@ import { galleryStateFor } from "./VesselGalleryPreview";
 import { FIELD_FOCAL, distancePreviewSeat, memoryFieldPlace, type FieldTextBounds } from "./vesselField";
 import { loadSeatPhoto } from "./VesselArtifact";
 import { viewHalfTan } from "../lib/portraitView";
+import { captureFrozen } from "../lib/captureFreeze";
 import { useVesselParts, type VesselParts } from "./vesselBuilds";
 import {
   BLANK_PHOTO, FRONT_LAYER,
@@ -153,7 +154,7 @@ function NeighborBody({ index, state, place, stage, anchor, depth: chosenDepth, 
     const below = copyTop === undefined ? 1
       : Math.min(1, Math.max(0, (y - seat.size / 2 - (copyTop - PHONE_TOP_FADE)) / PHONE_TOP_FADE));
     uniforms.g.uReveal.value = uniforms.s.uReveal.value = seat.opacity * below;
-    uniforms.g.uTime.value += dt;
+    if (!captureFrozen()) uniforms.g.uTime.value += dt;
     gl.getDrawingBufferSize(uniforms.g.uResolution.value);
   });
   return <group ref={root} visible={false}>

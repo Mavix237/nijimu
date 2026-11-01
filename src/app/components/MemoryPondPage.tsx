@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useHoldToCreate } from "../hooks/useHoldToCreate";
-import { CAROUSEL_PATH, MEMORY_POND_PATH, RECORD_START_PATH, SHAPE_GROW_PATH, TRANSCRIPT_PATH } from "../lib/routes";
+import { CAROUSEL_PATH, MEMORY_POND_PATH, RECORD_START_PATH } from "../lib/routes";
 import { CHROME_GRAY } from "../lib/colors";
 import { INSTRUCTION_SIZE, POND_PROMPT_SIZE, SANS, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { POND_THOUGHTS, hasSeenPondInstruction, markPondInstructionSeen, pondPromptCue } from "../lib/pondPrompts";
 import { POND_DROP_FALL_S } from "../lib/pondPigment";
+import { captureFrozen } from "../lib/captureFreeze";
 import { POND_BACKDROP, PerspectivePond, type PondTouch, type PondProps } from "./PerspectivePond";
 import { PondRecordingOverlay } from "./PondRecordingOverlay";
 import { PondNamingOverlay } from "./PondNamingOverlay";
@@ -30,48 +31,6 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
   const overlaid = covered || recording || !!naming;
   const sinkRef = useRef(0);
   const [touch, setTouch] = useState<PondTouch | null>(null);
-  // The picture chosen for this memory, on its way down to (or resting on) the water.
-  const [paper, setPaper] = useState<PondPaper | null>(null);
-  const [paperLanded, setPaperLanded] = useState(false);
-  const [submerging, setSubmerging] = useState(false);
-  const [handoff, setHandoff] = useState<UnderwaterHandoff | null>(null);
-  const handoffState = useRef<Record<string, unknown>>({});
-  const choosePaper = useCallback((url: string) => {
-    setPaperLanded(false);
-    setPaper({ url, serial: performance.now() });
-  }, []);
-  const clearPaper = useCallback(() => { setPaper(null); setPaperLanded(false); }, []);
-  const markPaperLanded = useCallback(() => setPaperLanded(true), []);
-  useEffect(() => { if (!photo) clearPaper(); }, [photo, clearPaper]);
-  const beginSubmerge = useCallback((photoUrl?: string) => {
-    const { photoUrl: _previous, ...carried } =
-      (location.state as Record<string, unknown> | null) ?? {};
-    // Settle now what the shape page would otherwise choose on arrival, so the
-    // form seen on the way down is the one waiting there.
-    const draft = loadFormDraft();
-    const form = formFromState(carried) ?? draft?.form ?? createArtifactForm();
-    setHandoff({
-      form,
-      lights: (carried.lights as EditableLight[] | undefined) ?? draft?.lights ?? DEFAULT_BUBBLE_LIGHTS,
-      ambients: (carried.ambients as AmbientFill[] | undefined) ?? draft?.ambients ?? DEFAULT_BUBBLE_AMBIENTS,
-      material: (carried.bubbleMaterial as UnderwaterHandoff["material"] | undefined) ?? draft?.bubbleMaterial ?? DEFAULT_BUBBLE_MATERIAL,
-    });
-    handoffState.current = {
-      ...carried,
-      form,
-      ...(photoUrl ? { photoUrl } : {}),
-      underwaterEntry: true,
-      photoWrapped: !photoUrl,
-    };
-    setSubmerging(true);
-  }, [location.state]);
-  const finishSubmerge = useCallback(() => {
-    navigate(SHAPE_GROW_PATH, { state: handoffState.current });
-  }, [navigate]);
-  useEffect(() => {
-    onSubmergeChange?.(submerging);
-    return () => onSubmergeChange?.(false);
-  }, [submerging, onSubmergeChange]);
   const promptRefs = useRef<Array<HTMLDivElement | null>>([]);
   const cueRef = useRef(pondPromptCue(-POND_DROP_FALL_S));
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -109,7 +68,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     // before the clock reaches it, under reduced motion it is already down.
     let raf = 0, elapsed = reducedMotion ? 0 : -POND_DROP_FALL_S, last = performance.now();
     const tick = (now: number) => {
-      if (enabled && lifeReady && !document.hidden) elapsed += Math.min(50, now - last) / 1000;
+      if (enabled && lifeReady && !document.hidden && !captureFrozen()) elapsed += Math.min(50, now - last) / 1000;
       last = now;
       const cue = pondPromptCue(elapsed);
       cueRef.current = cue;
@@ -139,7 +98,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     }
     let raf = 0, elapsed = 0, last = performance.now();
     const tick = (now: number) => {
-      if (!document.hidden) elapsed += Math.min(50, now - last);
+      if (!document.hidden && !captureFrozen()) elapsed += Math.min(50, now - last);
       last = now;
       if (elapsed < 1500) hintReveal.current = 0;
       else {
@@ -209,6 +168,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     promptRipples: !overlaid && active, sinkRef };
 
   return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
+    data-capture-root="pond"
     style={{ position: "absolute", inset: 0, overflow: "hidden", background: POND_BACKDROP, WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
     {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
     {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}

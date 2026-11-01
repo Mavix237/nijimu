@@ -1,4 +1,6 @@
 import { useEffect, useRef } from "react";
+import { registerCaptureRedraw } from "../lib/renderExport";
+import { captureFrozen } from "../lib/captureFreeze";
 import type { WashTune } from "../lib/washTune";
 
 /*
@@ -832,6 +834,7 @@ export function WatercolorField({
     const start = performance.now();
     let raf = 0, last = 0;
     let stop: () => void = () => {};
+    let present = () => {};
 
     if (fluid && gl2) {
       const g = gl2;
@@ -991,8 +994,9 @@ export function WatercolorField({
         const stirring = now - lastStroke < tuneRef.current.velFadeS * SETTLE_LIVES * 1000;
         if (document.hidden || now - last < (stirring || flowing || entering ? STIR_FRAME_MS : FRAME_MS) - 1) return;
         last = now;
-        const dt = Math.min(1 / 30, Math.max(1 / 240, (now - lastT) / 1000));
-        lastT = now;
+        const frozen = captureFrozen();
+        const dt = frozen ? 0 : Math.min(1 / 30, Math.max(1 / 240, (now - lastT) / 1000));
+        if (!frozen) lastT = now;
         if (!ensure()) return;
         const n = readBlobs(now);
         if (n < 0) return;
@@ -1001,11 +1005,11 @@ export function WatercolorField({
 
         pass(P.target, target, () => setWash(P.target, n, time));
 
-        if (stirring) {
+        if (stirring && !frozen) {
           step(dt);
           flowing = true;
           stirred = true;
-        } else if (flowing) {
+        } else if (flowing && !frozen) {
           clearFlow();
           flowing = false;
         }
@@ -1045,6 +1049,20 @@ export function WatercolorField({
           setLook(P.composite, time);
         });
       };
+      present = () => {
+        if (!ensure() || !target) return;
+        const now = performance.now();
+        const n = readBlobs(now);
+        if (n < 0) return;
+        pass(P.composite, null, () => {
+          tex(P.composite, "uA", dye[0].tex[0]);
+          tex(P.composite, "uB", dye[0].tex[1]);
+          tex(P.composite, "uC", dye[0].tex[2]);
+          tex(P.composite, "uTA", target!.tex[0]);
+          tex(P.composite, "uTC", target!.tex[2]);
+          setLook(P.composite, (now - start) / 1000);
+        });
+      };
       readyRef.current(true);
       window.addEventListener("pointermove", onMove, { passive: true });
       raf = requestAnimationFrame(draw);
@@ -1065,11 +1083,31 @@ export function WatercolorField({
         setLook(p, (now - start) / 1000);
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
       };
+      present = () => {
+        const now = performance.now();
+        const n = readBlobs(now);
+        if (n < 0) return;
+        gl.useProgram(p.prog);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        const time = (now - start) / 1000;
+        setWash(p, n, time);
+        setLook(p, time);
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      };
       readyRef.current(true);
       raf = requestAnimationFrame(draw);
     }
 
+    registerCaptureRedraw(canvas, (pixels) => {
+      if (pixels) {
+        canvas.width = pixels.width;
+        canvas.height = pixels.height;
+      }
+      present();
+    });
     return () => {
+      registerCaptureRedraw(canvas, null);
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
       stop();
@@ -1087,6 +1125,7 @@ export function WatercolorField({
   return (
     <canvas
       ref={canvasRef}
+      data-capture-frame=""
       aria-hidden
       className="absolute inset-0 pointer-events-none"
       style={{ width, height }}

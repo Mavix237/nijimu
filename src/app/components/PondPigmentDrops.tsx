@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { POND_PROMPT_PERIOD, POND_THOUGHTS, type PondPromptCue } from "../lib/pondPrompts";
+import { captureFrozen } from "../lib/captureFreeze";
 import { POND_DROP_ANGLE_DEG, POND_DROP_FALL_S, POND_DROP_RADIUS, POND_DROP_FRAGMENT, POND_DROP_SINK_S, POND_DROP_VERTEX,
   POND_INK_SCALE, POND_INK_SLOTS, inkHang, inkHead,
   POND_PIGMENTS, dropSpeed, dropTravel, pigmentDeepFor, pigmentFor, pigmentLightFor, pondToneCrossfade,
@@ -73,7 +74,7 @@ export function PondPigmentDrops({ waves, cueRef, active, narrow }: {
   useFrame((_, delta) => {
     const time = waves.uTime.value;
     const cue = cueRef.current;
-    const dt = Math.min(delta, .05);
+    const dt = captureFrozen() ? 0 : Math.min(delta, .05);
     waves.uPondLife.value = Math.min(1, waves.uPondLife.value + dt / .6);
     const impact = time - cue.age;
     const tone = waves.uPondTone.value;

@@ -194,7 +194,7 @@ function oklchToSrgb({ l, c, h }: Oklch): { r: number; g: number; b: number } {
 }
 
 /** Björn Ottosson OKLab → sRGB. */
-function oklabToSrgb(L: number, a: number, b: number): { r: number; g: number; b: number } {
+export function oklabToSrgb(L: number, a: number, b: number): { r: number; g: number; b: number } {
   const l_ = L + 0.3963377774 * a + 0.2158037573 * b;
   const m_ = L - 0.1055613458 * a - 0.0638541728 * b;
   const s_ = L - 0.0894841775 * a - 1.291485548 * b;

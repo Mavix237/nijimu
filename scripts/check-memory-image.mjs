@@ -8,7 +8,22 @@ const code = ts.transpileModule(readFileSync(new URL('../src/app/lib/memoryImage
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 runInNewContext(code, { module, exports: module.exports, require: () => ({}) });
-const { imageTextLines } = module.exports;
+const { imageTextLines, surfaceTooth } = module.exports;
+
+// the wall's tooth: static, zero-mean, faint
+{
+  const w = 400, h = 520;
+  const tooth = surfaceTooth(w, h);
+  assert.equal(tooth.length, w * h);
+  assert.equal(surfaceTooth(w, h), tooth, 'kept per size');
+  let sum = 0, sq = 0, max = 0;
+  for (const v of tooth) { sum += v; sq += v * v; max = Math.max(max, Math.abs(v)); }
+  const mean = sum / tooth.length, sd = Math.sqrt(sq / tooth.length - mean * mean);
+  assert.ok(Math.abs(mean) < 1e-4, `zero mean (${mean})`);
+  assert.ok(sd > .003 && sd < .006, `faint: σ ${sd.toFixed(4)} of lightness`);
+  assert.ok(max < .03, `no pixel moved more than 3% (${max.toFixed(4)})`);
+  console.log(`Wall tooth: σ ${(sd * 100).toFixed(2)}% (≈${(sd * 230).toFixed(2)} levels on the ground), max ${(max * 100).toFixed(2)}%.`);
+}
 const measure = text => Array.from(text).length;
 for (const text of [
   'A memory with enough words to wrap onto several lines.',

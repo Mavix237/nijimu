@@ -9,7 +9,7 @@
   --chrome-top: 22px;
   --chrome-icon: 36px;
   /* Corner icons, counted from the right edge: music, create / gallery
-     view, the vessel field's "in the air". */
+     view, the vessel field's "in the air", then render at the far left. */
   --chrome-r0: calc(22px + env(safe-area-inset-right, 0px));
   --chrome-r1: calc(68px + env(safe-area-inset-right, 0px));
   --chrome-r2: calc(114px + env(safe-area-inset-right, 0px));

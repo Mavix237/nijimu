@@ -209,6 +209,7 @@ export function LandingPage() {
     <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: "#e4e4e6" }}>
       {showGallery && (
         <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
+          data-capture-root="gallery"
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>
           <Suspense fallback={null}>
           <LiveVesselGallery active={inGallery && pondElapsed === null} panels={publishedGallery?.panels} pushedAt={publishedGallery?.at ?? 0} onFocus={setVesselFocus}>

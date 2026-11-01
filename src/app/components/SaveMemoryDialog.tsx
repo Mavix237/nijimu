@@ -7,7 +7,7 @@ import type { NamingSession } from "./NamingRim";
 import { draftArtifactOf } from "../lib/namingDraft";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { VesselArtifact } from "../lab/VesselArtifact";
-import { copyArtifactFrame, downloadMemoryImage, memoryImage } from "../lib/memoryImage";
+import { copyArtifactFrame, downloadMemoryImage, memoryImage, readGrainSettings, readTonalContrast } from "../lib/memoryImage";
 
 export function SaveMemoryDialog({ session, title, year, onClose, onContinue, storageError }: {
   session: NamingSession; title: string; year: string;
@@ -47,7 +47,11 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
     const current = attempt.current;
     try {
       const frame = copyArtifactFrame(canvas);
-      const blob = await memoryImage(frame, title, year, session.state.transcript ?? "");
+      // The room takes the tone the glass wears, read from the same tune.
+      const tone = vessel.tune.memoryTintAmount > 0
+        ? { l: vessel.tune.memoryTintLight, c: vessel.tune.memoryTintChroma, h: vessel.tune.memoryTintHue }
+        : undefined;
+      const blob = await memoryImage(frame, title, year, session.state.transcript ?? "", tone, { tonalContrast: readTonalContrast(), grain: readGrainSettings() });
       if (attempt.current !== current) return;
       downloadMemoryImage(blob, title);
       setBusy(false);

@@ -9,7 +9,6 @@ import {
   DESCENT_PATH,
   DESCENT_STEP_PATHS,
   NAMING_PATH,
-  PHOTO_PATH,
   RECORD_START_PATH,
   TRANSCRIPT_PATH,
 } from "./lib/routes";
@@ -21,6 +20,7 @@ import {
   type LandingReturnPhase,
 } from "./lib/landingReturn";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
+import { RenderMenu } from "./components/RenderMenu";
 import { ProfilePanel } from "./components/ProfilePanel";
 import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
 import { useCompact } from "./hooks/useCompact";
@@ -221,6 +221,7 @@ function GlobalControls({
       <>
         <HeaderMenu open={menu.open} onOpenChange={menu.onOpenChange} listRef={menu.listRef}
           hidden={leavingScene} />
+        <RenderMenu hidden={leavingScene} />
         {menuList && (
           <HeaderMenuRow order={HEADER_MENU_ORDER.music} icon={musicGlyph} label={muted ? "music off" : "music on"}
             ariaLabel={muted ? "unmute" : "mute"} onClick={() => setSoundtrackMuted(!muted)} />
@@ -246,6 +247,7 @@ function GlobalControls({
         {musicGlyph}
       </button>
 
+      <RenderMenu hidden={leavingScene} />
       <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />
     </>
   );

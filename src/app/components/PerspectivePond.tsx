@@ -7,9 +7,13 @@ import { POND_TRAIL_SLOTS, POND_TRAIL_LIFETIME, samplePondTrail, type TrailPoint
 import { POND_DROP_SLOTS } from "../lib/voicePeaks";
 import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamera";
 import { PortraitFit } from "../lib/portraitView";
+import { CAPTURE_SCALE_GLSL } from "../lib/captureScale";
+import { captureFragScaleFor } from "../lib/renderExport";
 import { HOLD_WAVE_HEIGHT, HOLD_WAVE_LENGTH, HOLD_WAVE_SPEED, POND_PIGMENT_GLSL, POND_SLOW_DROP, POND_SLOW_PACE,
   createPondPigmentUniforms, type PondPigmentUniforms } from "../lib/pondPigment";
 import { PondPigmentDrops } from "./PondPigmentDrops";
+import { CaptureFrame } from "./CaptureFrame";
+import { captureFrozen } from "../lib/captureFreeze";
 
 /** The pond's colour: the landing's ground (#e4e4e6), as display values. The
  * water above the surface and the page behind it both wear it. */
@@ -360,6 +364,7 @@ const vertexShader = /* glsl */ `
 const fragmentShader = /* glsl */ `
   ${POND_WAVES_GLSL}
   ${POND_SURFACE_GLSL}
+  ${CAPTURE_SCALE_GLSL}
   ${POND_PIGMENT_GLSL}
   varying vec3 vWorld;
   void main() {
@@ -372,7 +377,7 @@ const fragmentShader = /* glsl */ `
     vec3 color = pondAboveColor(p, pondSurfaceColor(p, flow, n, eye), n, eye);
     color = pondPigment(p, n, eye, color);
     // Screen-space paper grain stays fine at the horizon as well as nearby.
-    color += (hash(gl_FragCoord.xy) - .5) * .017;
+    color += (hash(capturePx()) - .5) * .017;
     // Dissolve into the horizon long before any finite geometry edge.
     gl_FragColor = vec4(color, 1.0 - smoothstep(600.0, 1400.0, -p.y));
   }
@@ -381,9 +386,6 @@ const fragmentShader = /* glsl */ `
 const onPond = (p: THREE.Vector3) => p.z > -100 && p.z < 18;
 const RING_FADE_IN = .72;
 const RING_FADE_FULL = .94;
-const SUBMERGE_SECONDS = 5.2;
-const POND_FOV = 48;
-const UNDERWATER_CENTER = new THREE.Vector3(0, -4, -4);
 const smoothunit = (edge0: number, edge1: number, x: number) => {
   const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
   return t * t * (3 - 2 * t);
@@ -505,19 +507,6 @@ export interface PondProps {
 export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hintRevealRef, promptRefs, cueRef, onReady, lifeReady = true, promptRipples = true, sinkRef, sinkTargetRef, sharedWaves }: PondProps & { sharedWaves?: PondWaveUniforms }) {
   const { camera, size, gl } = useThree();
   const time = useRef(0);
-  const submergeStarted = useRef<number | null>(null);
-  const submergeProgress = useRef(0);
-  const submergeFinished = useRef(false);
-  // Behind the water: the volume below the surface, shown once the camera is under it.
-  const depthReveal = useRef(0);
-  // Over the water and the floating print: the surface dissolving into the stage.
-  const stageReveal = useRef(0);
-  const underwaterCamera = useMemo(() => {
-    const z = handoff ? bubbleCameraFit(handoff.form).z : 4.8;
-    return UNDERWATER_CENTER.clone().add(new THREE.Vector3(0, 0, z));
-  }, [handoff]);
-  const completionRef = useRef(onSubmergeComplete);
-  completionRef.current = onSubmergeComplete;
   const ready = useRef(false);
   const touchIndex = useRef(0);
   const trailIndex = useRef(0);
@@ -543,6 +532,7 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     uSheetDrop: { value: new THREE.Vector4(0, 0, 0, 0) },
     uSheetShape: { value: new THREE.Vector4(1, 1, 1, 0) },
     ...createPondPigmentUniforms(),
+    uCaptureScale: { value: 1 },
   }), []);
   const uniforms = sharedWaves ?? ownUniforms;
   const ringUniforms = useMemo(() => ({
@@ -566,25 +556,11 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     return () => gl.domElement.removeEventListener("webglcontextlost", lost);
   }, [gl, onReady]);
 
-  // The sheet touching down is a touch like any other, in world coordinates.
-  const splash = useCallback((x: number, z: number, strength: number) => {
-    uniforms.uDrops.value[1 + (touchIndex.current++ % (POND_DROP_SLOTS - 1))].set(x, z, time.current, strength);
-  }, [uniforms]);
-
-  useEffect(() => {
-    if (submerge) {
-      submergeStarted.current = null;
-      submergeFinished.current = false;
-    } else {
-      submergeProgress.current = 0;
-      submergeStarted.current = null;
-    }
-  }, [submerge]);
-
   useFrame((_, delta) => {
+    if ("uCaptureScale" in uniforms) uniforms.uCaptureScale.value = captureFragScaleFor(gl.domElement);
     if (sharedWaves) time.current = sharedWaves.uTime.value;
     else {
-      if (!document.hidden && !reducedMotion) time.current += Math.min(delta, .05);
+      if (!document.hidden && !reducedMotion && !captureFrozen()) time.current += Math.min(delta, .05);
       uniforms.uTime.value = time.current;
     }
     // This is a perspective camera, never a CSS-flattened overhead texture.
@@ -714,12 +690,6 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
       <shaderMaterial transparent depthWrite={false}
         vertexShader={sphereVertex} fragmentShader={sphereFragment} uniforms={ringUniforms} />
     </mesh>
-    <PondPhotoPaper paper={paper} timeRef={time} reducedMotion={reducedMotion} onSplash={splash} onLanded={onPaperLanded} />
-    {submerge && <>
-      <UnderwaterBackdrop revealRef={depthReveal} renderOrder={-10} />
-      <UnderwaterBackdrop revealRef={stageReveal} renderOrder={4} />
-      {handoff && <HandoffForm handoff={handoff} photoUrl={paper?.url} progressRef={submergeProgress} />}
-    </>}
   </>;
 }
 
@@ -757,6 +727,7 @@ export function PerspectivePond(props: PondProps) {
     <Canvas camera={{ ...POND_LENS, position: [0, 2.2, 10] }}
       dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }} fallback={fallback}
       style={{ position: "absolute", inset: 0 }}>
+      <CaptureFrame />
       <PortraitFit />
       <PondWater {...props} />
     </Canvas>

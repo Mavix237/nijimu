@@ -1752,6 +1752,7 @@ export function BlobScene({
       data-ink-stage={!landingArrival ? "field" : entryTime < INK_ENTRY.descEnd ? "desc" : entryTime < INK_ENTRY.headerEnd ? "header" : entryTime < INK_ENTRY.labelsEnd ? "labels"
         : entryTime < INK_ENTRY.shrinkEnd ? "shrink" : entryTime < INK_ENTRY.pathEnd ? "gather" : entryTime < INK_ENTRY.pathHoldEnd ? "curve"
         : entryTime < INK_ENTRY.unfoldEnd ? "unfold" : "artifacts"}
+      data-capture-root="landing"
       className={`relative w-full h-dvh overflow-hidden select-none ${classicChrome ? "cursor-default" : "cursor-pointer"}`}
       style={{
         background: classicChrome
@@ -1856,7 +1857,7 @@ export function BlobScene({
             transition: classicChrome ? "opacity 6.8s cubic-bezier(.45, 0, .2, 1)" : undefined,
           }}
         >
-          <div className="absolute" style={{
+          <div className="absolute" data-capture-plate="" style={{
             left: "20%", top: "30%",
             width: `${500 * scale}px`, height: `${500 * scale}px`,
             background: "radial-gradient(circle, rgba(26,138,110,0.25), transparent 70%)",
@@ -1864,7 +1865,7 @@ export function BlobScene({
             animation: "ambientDrift1 20s ease-in-out infinite",
             animationPlayState: hoveredIdx !== null ? "paused" : "running",
           }} />
-          <div className="absolute" style={{
+          <div className="absolute" data-capture-plate="" style={{
             left: "60%", top: "50%",
             width: `${450 * scale}px`, height: `${450 * scale}px`,
             background: "radial-gradient(circle, rgba(93,212,224,0.2), transparent 70%)",
@@ -1872,7 +1873,7 @@ export function BlobScene({
             animation: "ambientDrift2 18s ease-in-out infinite",
             animationPlayState: hoveredIdx !== null ? "paused" : "running",
           }} />
-          <div className="absolute" style={{
+          <div className="absolute" data-capture-plate="" style={{
             left: "45%", top: "65%",
             width: `${400 * scale}px`, height: `${400 * scale}px`,
             background: "radial-gradient(circle, rgba(242,196,170,0.25), transparent 70%)",
@@ -1935,10 +1936,11 @@ export function BlobScene({
       {/* Grain sits on the blobs, under the landing type so exclusion can read the field. */}
       <canvas
         ref={canvasRef}
+        data-capture-frame=""
         className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.48]"
         style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
       />
-      <div className="absolute inset-0 pointer-events-none" style={{
+      <div className="absolute inset-0 pointer-events-none" data-capture-plate="" style={{
         opacity: entryVignette,
         background: classicChrome
           ? "radial-gradient(ellipse at center, transparent 22%, rgba(0,0,0,0.2) 100%)"

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CHROME_GRAY } from "../lib/colors";
 import { SANS } from "../lib/theme";
@@ -26,7 +26,36 @@ export function useHeaderMenu(): HeaderMenuValue {
 }
 
 /** Rows top to bottom: what the page offers first, the sound last. */
-export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, music: 3 } as const;
+export const HEADER_MENU_ORDER = { render: 0, create: 1, view: 2, field: 3, music: 4 } as const;
+
+/** Which corner icons are actually on screen, so render can sit at the
+ *  leftmost occupied seat instead of leaving a hole. */
+const cornerSeats = { gallery: 0, field: 0 };
+const cornerListeners = new Set<() => void>();
+
+function emitCorner() {
+  for (const listener of cornerListeners) listener();
+}
+
+export function useCornerSeat(name: "gallery" | "field", active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    cornerSeats[name] += 1;
+    emitCorner();
+    return () => {
+      cornerSeats[name] -= 1;
+      emitCorner();
+    };
+  }, [name, active]);
+}
+
+/** The render icon's seat: one past whichever corner controls are showing. */
+export function useRenderSeat(): "r1" | "r2" | "r3" {
+  return useSyncExternalStore((listener) => {
+    cornerListeners.add(listener);
+    return () => cornerListeners.delete(listener);
+  }, () => (cornerSeats.field > 0 ? "r3" : cornerSeats.gallery > 0 ? "r2" : "r1"), () => "r1");
+}
 
 const ROW_ICON = 16;
 

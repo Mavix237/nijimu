@@ -9,11 +9,11 @@ import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamer
 import { PortraitFit } from "../lib/portraitView";
 import { POND_PIGMENT_GLSL, POND_SLOW_DROP, createPondPigmentUniforms, type PondPigmentUniforms } from "../lib/pondPigment";
 import { POND_TUNE_GLSL, POND_TUNE_UNIFORMS, pondBackdropCss, pondTune } from "../lib/pondTune";
+import { POND_SKY_FOOT, POND_SKY_MIDDLE, POND_SKY_TOP, POND_WATER, UNDERWATER_GLSL, hexRgb } from "../lib/atmosphere";
 import { PondPigmentDrops } from "./PondPigmentDrops";
 
-/** The pond's colour: the landing's ground (#e4e4e6), as display values. The
- * water above the surface and the page behind it both wear it. */
-export const POND_PAPER = [228 / 255, 228 / 255, 230 / 255] as const;
+/** The pond's water grey (lib/atmosphere.ts), as display values. */
+export const POND_PAPER = hexRgb(POND_WATER);
 /* The water's natural tint (a multiply, .935/.97/.975 at its fullest, near
  * at hand) and how much of its own darkening it keeps below the paper (.45)
  * are knobs now: T_NATURAL, T_SHADE in lib/pondTune.ts. */
@@ -278,7 +278,7 @@ export const POND_SURFACE_GLSL = /* glsl */ `
     float fresnel = pow(1.0 - max(0.0, dot(n, eye)), 3.0);
     // The page's own paper tone, and the water a shade below it: the pond is
     // lit by the same sky it sits under, only deeper, never a colour of its own.
-    vec3 sky = vec3(.888, .902, .897);
+    vec3 sky = ${UNDERWATER_GLSL};
     vec3 deep = sky * vec3(.76, .80, .80);
     vec3 color = mix(deep, sky, .24 + fresnel * .66);
     float clouds = noise(reflection.xz * 3.0 + WIND * uTime * .04);
@@ -321,10 +321,10 @@ export const POND_SURFACE_GLSL = /* glsl */ `
   // it rather than across it, the surface lets the body through — a little
   // deeper — and the shading of the swell reads sharper there; the haze takes
   // only the far water, late and thin, so the folds stay legible out toward
-  // the horizon. All of it in the page's own grey (POND_PAPER, the landing's
+  // the horizon. All of it in the page's own grey (POND_PAPER, the
   // ground): the water keeps its light and shade, never a hue of its own.
   vec3 pondAboveColor(vec2 p, vec3 color, vec3 n, vec3 eye) {
-    vec3 sky = vec3(.888, .902, .897);
+    vec3 sky = ${UNDERWATER_GLSL};
     float into = smoothstep(.04, .45, dot(n, eye));
     vec3 body = sky * vec3(.80, .85, .845);
     color = mix(color, body + (color - sky) * T_SHARP, into * T_CLARITY);
@@ -739,7 +739,7 @@ function StillPond({ onReady, cueRef }: Pick<PondProps, "onReady" | "cueRef">) {
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
   }, [cueRef]);
-  return <div aria-hidden style={{ position: "absolute", inset: 0, background: "linear-gradient(#e4e4e6 28%, #d8d8db 49%, #bfbfc3 100%)" }}>
+  return <div aria-hidden style={{ position: "absolute", inset: 0, background: `linear-gradient(${POND_SKY_TOP} 28%, ${POND_SKY_MIDDLE} 49%, ${POND_SKY_FOOT} 100%)` }}>
     <div ref={ripple} style={{ position: "absolute", inset: "38% -30% -50%", transformOrigin: "50% 30%", transform: "perspective(500px) rotateX(68deg) scale(.005)", background: "radial-gradient(ellipse at 50% 30%, transparent 26%, #e6edeb22 29%, transparent 32%, transparent 35%, #e6edeb33 38%, transparent 41%, transparent 44%, #e6edeb55 47%, transparent 50%)" }} />
   </div>;
 }

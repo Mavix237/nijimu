@@ -1,3 +1,5 @@
+import { PAPER_FOOT, PAPER_TOP } from "./atmosphere";
+
 /*
  * The landing's overall look, laid over the whole field (paper, washes,
  * dots, captions): a CSS filter (light, contrast, colour), a tint in a blend
@@ -33,7 +35,7 @@ export const LANDING_LOOK_DEFAULT: LandingLook = {
   // settled 2026-11-01: a paler paper easing warmer toward the foot (was a flat #e4e4e6),
   // drawn a step toward the gallery's ground (#edecec) so Enter crosses a little, not a lot;
   // the grain as built (overlay at .48), a faint warm-grey vignette (was black .2)
-  paper: { top: "#f4f5f5", bottom: "#ecebeb", angle: 180 },
+  paper: { top: PAPER_TOP, bottom: PAPER_FOOT, angle: 180 },
   grain: { amount: 0.48, blend: "overlay" },
   vignette: { amount: 0.105, color: "#c4b8b5", inner: 0.22 },
   ambient: { amount: 1 },

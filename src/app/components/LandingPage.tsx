@@ -17,6 +17,8 @@ import { useGalleryPush } from "../lib/labPush";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH, DESCENT_STEP_PATHS, isDescentPath } from "../lib/routes";
 import { POND_ENTRY, pondTransition, pondSurfaceMask } from "../lib/pondTransition";
 import type { NameFlowState, NamingSession } from "./NamingRim";
+import { GROUND } from "../lib/atmosphere";
+import { PaperFinish } from "./PaperFinish";
 
 /** What the create flow asks for when it lands on /memory: the gallery already
     open, on the memory just saved, continuing the rim the naming step showed. */
@@ -205,7 +207,7 @@ export function LandingPage() {
   const pond = pondTransition(pondElapsed ?? 0, reducedMotion);
   const pondArrival = inPond && pondElapsed === null ? 1 : pond.arrival;
   return (
-    <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: "#edecec" }}>
+    <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: GROUND }}>
       {showGallery && (
         <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>
@@ -235,6 +237,10 @@ export function LandingPage() {
           {inNaming ? <MemoryPondPage active={inPond && !pondLeaving} arrival={pondArrival} reducedMotion={reducedMotion} naming={naming} onReady={markPondReady} onLeave={closePond} onNamingSaved={namingSaved} namingBackRef={namingBackRef} />
             : <DescentFlow active={inPond && !pondLeaving} arrival={pondArrival} onReady={markPondReady} onLeave={closePond} />}
           </Suspense>
+          {/* the gallery's paper finish over the pond, the descent and naming — its
+              fine grain too, in place of the scenes' own (under the panes, which
+              carry their own); it rises with the stage */}
+          <PaperFinish fine zIndex={1000} />
         </div>
       )}
       {pondOnStage && !inCreate && (

@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import * as THREE from "three";
+import { POND_GLOW, POND_LIGHT_WARM, POND_NATURAL, POND_SHADE_COOL, POND_SKY_FOOT, POND_SKY_MIDDLE, POND_SKY_TOP, POND_WATER } from "./atmosphere";
 
 /*
  * The pond's dev knobs (PondDials, DialKit; development only). With the panel
@@ -72,23 +73,23 @@ export interface PondTune {
 
 /** The pond as settled in the panel (2026-11-01): a softer, wider sun path
  * (was sun 1, glow 1, sharp 220, path 4 × 15; now .7 / 1.63 / 147 / 8 × 28.5),
- * the rings' glow at .76 (was .9), and a cooler grey throughout — the paper
- * #e4e8e9 (was the landing's #e4e4e6), the natural tint #e2eced, the sky
- * #ebeeee → #e1e5e6 → #bfc6c8, warm light #eee9e8 and cool shade #d7e0e8. */
+ * the rings' glow at .76 (was .9), and a cooler grey throughout,
+ * then (same day) leaned grey-green toward the water under it — the colours
+ * are in lib/atmosphere.ts, with what they were. */
 export const POND_TUNE_DEFAULT: PondTune = {
   sky: {
-    top: "#ebeeee", middle: "#e1e5e6", bottom: "#bfc6c8", middleAt: .42,
+    top: POND_SKY_TOP, middle: POND_SKY_MIDDLE, bottom: POND_SKY_FOOT, middleAt: .42,
     // a soft light over the horizon where the sun's path begins
-    glow: "#fbf8f3", glowAmount: .8, glowX: .5, glowY: .5, glowWidth: .5, glowHeight: .22,
+    glow: POND_GLOW, glowAmount: .8, glowX: .5, glowY: .5, glowWidth: .5, glowHeight: .22,
   },
   // highlights ease toward .975 rather than clipping; warm light, cool shade
-  light: { shoulder: .85, cap: .975, warm: "#eee9e8", warmth: .55, cool: "#d7e0e8", coolness: .35, ringWarm: .4 },
+  light: { shoulder: .85, cap: .975, warm: POND_LIGHT_WARM, warmth: .55, cool: POND_SHADE_COOL, coolness: .35, ringWarm: .4 },
   surface: {
-    paper: "#e4e8e9", shade: .45, clarity: .42, sharpness: 1.25,
-    natural: "#e2eced", naturalAmount: 1,
+    paper: POND_WATER, shade: .45, clarity: .42, sharpness: 1.25,
+    natural: POND_NATURAL, naturalAmount: 1,
     hazeFrom: 18, hazeRate: .011,
     sun: .7, sunGlow: 1.63, sunSharp: 147, pathWidth: 8, pathLength: 28.5,
-    ribbons: .022, fibres: .006, clouds: .06, grain: .017,
+    ribbons: .022, fibres: .006, clouds: .06, grain: 0, // the stage lays the fine grain (PaperFinish); this adds to it
   },
   waves: {
     swell: 1, chop: 1, wrinkle: 1, wind: 1,
@@ -255,7 +256,7 @@ export const POND_TUNE_GLSL = /* glsl */ `
   #define T_RIBBONS TUNE(.022, uTuneTex.x)
   #define T_FIBRES TUNE(.006, uTuneTex.y)
   #define T_CLOUDS TUNE(.06, uTuneTex.z)
-  #define T_GRAIN TUNE(.017, uTuneTex.w)
+  #define T_GRAIN TUNE(0.0, uTuneTex.w)
   #define T_RING_GLOW TUNE(.76, uTuneRing.x)
   #define T_RING_SHADE TUNE(.16, uTuneRing.y)
   #define T_GLINTS TUNE(.6, uTuneRing.z)

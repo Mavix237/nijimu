@@ -4,6 +4,46 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## One paper finish past Enter (2026-11-01)
+
+Everything but the landing wears the gallery's grain and tooth
+(`lib/paperFinish.ts`, `components/PaperFinish.tsx`). The fine grain is
+white noise, one grain per device pixel, ±`PAPER_GRAIN`/2 (.035): the
+gallery's puddle shader adds it (the reference); the pond stage in
+`LandingPage` (pond, recording, transcript, descent, naming) lays it as two
+DOM tiles (white in `plus-lighter`, black over, `FINE_MATCH` .9 measured
+against the gallery: σ ≈ 2.5 levels on both), so the pond's and the
+descent's shaders no longer add their own (pond `grain` 0, which now adds on
+top). The tooth is the gallery panel's `texture` (140 px, soft-light .12),
+read live, so that panel tunes every screen past Enter. Glass panes and the
+phone menu wear both off the landing (`onLanding()`); on the landing they keep
+the landing's grain. Materials (film, ink, washes, glass) keep their own.
+
+## One ramp of grounds (2026-11-01)
+
+`lib/atmosphere.ts` holds every scene's ground in journey order — paper
+(#f4f5f5 → #ecebeb), the gallery's ground (#edecec), the pond, under the
+water (`UNDERWATER`, ≈ #e2e6e5, printed into the shaders as
+`UNDERWATER_GLSL`), the sink wash, the surface light / naming (#f4f6f5).
+The temperature shift is deliberate (warm paper → grey-green water), each
+step small. `landingLook`, `galleryTune`, `pondTune`, `pondCamera`,
+`landingReturn`, `LandingPage`, `PerspectivePond` and the descent read it;
+change a ground there, not in a literal. The pond, which had gone steel-blue
+(near water #b6c3c7), now leans grey-green: sky #eeefed → #e4e8e6 →
+#c6cccb, water #e7e8e5, natural #e3eae8, shade #dae0e0 (near water ≈
+#bac2be). The transcript's foot fades by a mask on the words, not a
+coloured block over the water.
+
+## Naming panel (2026-11-01)
+
+Naming has its own DialKit panel (dev only, `components/NamingDials.tsx`,
+mounted lazily by `PondNamingOverlay`), "naming" bottom right: layout (the
+vessel's lift in vh and scale, the words' lift, the field and passage gaps),
+the room the glass reflects, and its light near & clear / far & faded.
+`lib/namingTune.ts` holds `NAMING_TUNE_DEFAULT` (the overlay's former
+constants). The vessel now sits 6vh up (was 3vh), so its crown stands over
+the horizon.
+
 ## Pond panel and its light (2026-11-01)
 
 The pond has its own DialKit panels (dev only, `components/PondDials.tsx`,

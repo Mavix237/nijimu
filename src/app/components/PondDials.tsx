@@ -85,7 +85,7 @@ type Water = { sun: Partial<PondTune["surface"]>; surface: Partial<PondTune["sur
 type Ink = Pick<PondTune, "drops" | "ink" | "tone">;
 
 export default function PondDials() {
-  const water = useDialKit("pond", WATER_CONFIG as never, { id: "nijimu-pond", persist: true }) as unknown as Water;
+  const water = useDialKit("pond", WATER_CONFIG as never, { id: "nijimu-pond-2", persist: true }) as unknown as Water;
   const ink = useDialKit("pond ink", INK_CONFIG as never, { id: "nijimu-pond-ink", persist: true }) as unknown as Ink;
 
   const key = JSON.stringify([water, ink]);

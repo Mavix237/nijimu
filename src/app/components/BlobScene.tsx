@@ -22,6 +22,7 @@ import { WashTunePanel } from "./WashTunePanel";
 import { initialWashTune } from "../lib/washTune";
 import { LANDING_MOTION } from "../lib/landingMotion";
 import { LANDING_LOOK_DEFAULT, landingFilterCss, landingLightGradient, landingPaperCss, landingVignetteCss, type LandingLook } from "../lib/landingLook";
+import { useFinishMode } from "../lib/paperFinish";
 import { WASH_TONE_DEFAULTS, washPigment, washToneHex, type WashColors } from "../lib/washColors";
 /* DialKit is a dev dependency: loaded only in development, never in the build. */
 const LandingDials = import.meta.env.DEV ? lazy(() => import("./LandingDials")) : null;
@@ -512,6 +513,8 @@ export function BlobScene({
     return { color: lit, deep: deep ?? lit, comp: b.comp, seed: b.seed, opacity: b.opacity };
   }), [blobs, washColors]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /* the paper finish's mode: "off" takes the landing's grain away too (lib/paperFinish.ts) */
+  const finish = useFinishMode();
   const blobEls = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -1986,7 +1989,7 @@ export function BlobScene({
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.48]"
-        style={classicChrome
+        style={finish === "off" ? { display: "none" } : classicChrome
           ? { mixBlendMode: landingLook.grain.blend as never, imageRendering: "auto", opacity: landingLook.grain.amount * (landingArrival ? entryGrain : 1) }
           : { mixBlendMode: "overlay", imageRendering: "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
       />

@@ -19,6 +19,8 @@ import { INK_ENTRY, inkGrowth } from "../lib/landingTransition";
 import { DiveGalleryHost, draftAsSaved, type NamingSession } from "./NamingRim";
 import { NameMemoryPage } from "../archive/shape-flow/NameMemoryPage";
 import { buildArchive } from "../lib/archive";
+import { PaperFinish } from "./PaperFinish";
+import { finishMode, finishScale, subscribeFinishMode } from "../lib/paperFinish";
 
 /*
  * PuddleScene — WebGL2 homescreen field variants.
@@ -78,32 +80,13 @@ function applyBackdrop() {
   const b = galleryTune().backdrop;
   const n = parseInt(b.color.slice(1, 7), 16);
   PUDDLE_TUNING.baseColor = Number.isFinite(n) ? [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255] : undefined;
-  PUDDLE_TUNING.grainAmount = b.grain;
+  // the fine grain follows the paper finish: fainter on a phone, none when it is off
+  PUDDLE_TUNING.grainAmount = finishMode() === "off" ? 0 : b.grain * finishScale().grain;
   PUDDLE_TUNING.grainSize = b.grainSize;
   PUDDLE_TUNING.paperTexture = b.paperTexture;
   PUDDLE_TUNING.vignette = b.vignette;
 }
 
-/** A 256px tile of grey noise for the gallery's texture overlay, made once. */
-let noiseTile: string | null = null;
-function galleryNoiseTile(): string {
-  if (noiseTile) return noiseTile;
-  const c = document.createElement("canvas");
-  c.width = c.height = 256;
-  const ctx = c.getContext("2d");
-  if (!ctx) return "";
-  const img = ctx.createImageData(256, 256);
-  // seeded, so the tooth is the same on every visit
-  const rand = mulberry32(0x6e696a69);
-  for (let i = 0; i < img.data.length; i += 4) {
-    const v = 128 + (rand() - 0.5) * 200;
-    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
-    img.data[i + 3] = 255;
-  }
-  ctx.putImageData(img, 0, 0);
-  noiseTile = c.toDataURL("image/png");
-  return noiseTile;
-}
 /** The hint label's offset from the cursor, and the vertical center of its line box. */
 const HINT_OFFSET_X = 14;
 const HINT_OFFSET_Y = 16;
@@ -1183,9 +1166,14 @@ export function PuddleScene({
       applyBackdrop();
       if (!running) sim.render(performance.now() / 1000);
     });
+    const offFinish = subscribeFinishMode(() => {
+      applyBackdrop();
+      if (!running) sim.render(performance.now() / 1000);
+    });
 
     return () => {
       offTune();
+      offFinish();
       cancelAnimationFrame(raf);
       running = false;
       endPress();
@@ -1572,18 +1560,8 @@ export function PuddleScene({
         />
       )}
 
-      {/* The gallery panel's texture and tint over everything (none unless set). */}
-      {ground.texture.tintAmount > 0 && (
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 60, pointerEvents: "none",
-          background: ground.texture.tint, opacity: ground.texture.tintAmount,
-          mixBlendMode: ground.texture.tintBlend as CSSProperties["mixBlendMode"] }} />
-      )}
-      {ground.texture.amount > 0 && (
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 61, pointerEvents: "none",
-          backgroundImage: `url(${galleryNoiseTile()})`, backgroundSize: `${ground.texture.size}px ${ground.texture.size}px`,
-          opacity: ground.texture.amount, filter: ground.texture.contrast !== 1 ? `contrast(${ground.texture.contrast})` : undefined,
-          mixBlendMode: ground.texture.blend as CSSProperties["mixBlendMode"] }} />
-      )}
+      {/* The paper finish (the gallery panel's tint and tooth) over everything; the pond stage wears the same. */}
+      <PaperFinish zIndex={61} />
     </div>
   );
 }

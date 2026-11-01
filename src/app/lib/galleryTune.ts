@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react";
 import { LIFE_EVENTS } from "../data/memoryData";
 import { oklchToHex, type Oklch } from "./oklch";
 import { cssToRgb, rgbToOklch } from "./washColors";
+import { GROUND } from "./atmosphere";
+import { PAPER_GRAIN } from "./paperFinish";
 
 /*
  * The gallery's dev knobs (GalleryDials, DialKit; development only). With the
@@ -115,7 +117,7 @@ export const GALLERY_TUNE_DEFAULT: GalleryTune = {
   // settled in the panel (2026-11-01): warm like the landing's paper, a step under it
   // (was #eae9e9; the landing runs #f4f5f5 → #ecebeb), half the puddle's grain (.07),
   // a little more paper fibre, half the vignette (.16)
-  backdrop: { color: "#edecec", grain: .035, grainSize: 1, paperTexture: 1.3, vignette: .09 },
+  backdrop: { color: GROUND, grain: PAPER_GRAIN, grainSize: 1, paperTexture: 1.3, vignette: .09 },
   // a faint soft-light tooth over everything (settled 2026-11-01); the tint is kept at 0
   texture: { amount: .12, size: 140, contrast: 1, blend: "soft-light", tint: "#e7e5e5", tintAmount: 0, tintBlend: "multiply" },
   filter: { brightness: 1, contrast: 1, saturate: 1, sepia: 0, hue: 0, blur: 0 },

@@ -112,9 +112,10 @@ export const GALLERY_TUNE_DEFAULT: GalleryTune = {
   seats: { focusBoost: .06, shrink1: .13, shrink2: .45, out1: .02, out2: -.025, down1: .045, down2: .05 },
   timing: { transcriptDwellMs: 3000, flightMs: 1500, staggerMs: 55, parallaxX: .03, parallaxY: .02 },
   framing: { maxWidth: 1 },
-  // settled in the panel (2026-11-01): a touch warmer and lighter than the puddle's own
-  // #ededee, half its grain (.07), a little more paper fibre, half the vignette (.16)
-  backdrop: { color: "#eae9e9", grain: .035, grainSize: 1, paperTexture: 1.3, vignette: .09 },
+  // settled in the panel (2026-11-01): warm like the landing's paper, a step under it
+  // (was #eae9e9; the landing runs #f4f5f5 → #ecebeb), half the puddle's grain (.07),
+  // a little more paper fibre, half the vignette (.16)
+  backdrop: { color: "#edecec", grain: .035, grainSize: 1, paperTexture: 1.3, vignette: .09 },
   // a faint soft-light tooth over everything (settled 2026-11-01); the tint is kept at 0
   texture: { amount: .12, size: 140, contrast: 1, blend: "soft-light", tint: "#e7e5e5", tintAmount: 0, tintBlend: "multiply" },
   filter: { brightness: 1, contrast: 1, saturate: 1, sepia: 0, hue: 0, blur: 0 },

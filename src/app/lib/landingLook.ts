@@ -16,12 +16,27 @@ export type LandingLook = {
   tint: { color: string; amount: number; blend: string };
   /** A soft pool of light (a radial gradient in a blend mode), and a flat veil of it that lifts the darks. */
   light: { color: string; amount: number; x: number; y: number; size: number; soft: number; blend: string; veil: number };
+  /** The bare paper under the washes: a colour, or a gradient from `top` to `bottom` at `angle`. */
+  paper: { top: string; bottom: string; angle: number };
+  /** The paper's grain: a noise tile per device pixel in a blend mode. */
+  grain: { amount: number; blend: string };
+  /** The darkened edges: how strong, in what colour, clear out to `inner` of the way. */
+  vignette: { amount: number; color: string; inner: number };
+  /** The three faint lights that drift under the washes (× as built). */
+  ambient: { amount: number };
 };
 
 export const LANDING_LOOK_DEFAULT: LandingLook = {
-  filter: { brightness: 1, contrast: 1, saturate: 1, hue: 0, sepia: 0, blur: 0 },
+  filter: { brightness: 1.01, contrast: 1, saturate: 1, hue: 0, sepia: 0, blur: 0 },
   tint: { color: "#e9e2dc", amount: 0, blend: "multiply" },
   light: { color: "#ffffff", amount: 0, x: 0.5, y: 0.3, size: 0.8, soft: 0.7, blend: "soft-light", veil: 0 },
+  // settled 2026-11-01: a paler paper easing warmer toward the foot (was a flat #e4e4e6),
+  // drawn a step toward the gallery's ground (#edecec) so Enter crosses a little, not a lot;
+  // the grain as built (overlay at .48), a faint warm-grey vignette (was black .2)
+  paper: { top: "#f4f5f5", bottom: "#ecebeb", angle: 180 },
+  grain: { amount: 0.48, blend: "overlay" },
+  vignette: { amount: 0.105, color: "#c4b8b5", inner: 0.22 },
+  ambient: { amount: 1 },
 };
 
 export const LANDING_BLENDS = ["normal", "multiply", "screen", "overlay", "soft-light", "hard-light", "color", "luminosity", "lighten", "darken"];
@@ -47,4 +62,17 @@ export function landingLightGradient(l: LandingLook["light"]): string {
   const outer = Math.max(1, l.size * 100);
   const inner = outer * (1 - Math.min(1, Math.max(0, l.soft)));
   return `radial-gradient(circle farthest-corner at ${(l.x * 100).toFixed(1)}% ${(l.y * 100).toFixed(1)}%, ${l.color} ${inner.toFixed(1)}%, transparent ${outer.toFixed(1)}%)`;
+}
+
+/** The paper's background: one colour, or its gradient. */
+export function landingPaperCss(p: LandingLook["paper"]): string {
+  return p.top.toLowerCase() === p.bottom.toLowerCase() ? p.top : `linear-gradient(${p.angle}deg, ${p.top}, ${p.bottom})`;
+}
+
+/** The vignette's gradient. */
+export function landingVignetteCss(v: LandingLook["vignette"]): string {
+  const hex = v.color.replace("#", "");
+  const n = parseInt(hex.length === 3 ? hex.split("").map((c) => c + c).join("") : hex, 16) || 0;
+  const rgb = `${(n >> 16) & 255},${(n >> 8) & 255},${n & 255}`;
+  return `radial-gradient(ellipse at center, transparent ${(v.inner * 100).toFixed(1)}%, rgba(${rgb},${v.amount.toFixed(3)}) 100%)`;
 }

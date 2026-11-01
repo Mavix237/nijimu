@@ -19,8 +19,14 @@ wash opens with (`roundFrom`; `openWarp`, a wandering edge while it opens,
 flowing over; `wetDeep`, deeper while wet). "replay" runs the opening
 again. "landing look" is `lib/landingLook.ts`: a CSS filter on the
 landing's root, a tint and a pool of light (plus a flat veil) in blend
-modes, eased to neutral with the paper through Enter. All defaults are
-neutral / as built.
+modes, eased to neutral with the paper through Enter; it also holds the
+paper under the washes (its own layer: a gradient #f4f5f5 → #ecebeb, was a
+flat #e4e4e6; the gallery's ground is a step under it, #edecec, was #eae9e9,
+and the grounds between — the shared layout's #edecec, the return veil
+`LANDING_PAPER` #efeeee — sit between the two, so Enter and the return cross
+a little rather than jump), the grain (overlay .48), the vignette (#c4b8b5 at .105, was
+black .2) and the ambient lights. Brightness is 1.01; the rest of the
+filter, the tint and the light are neutral; the opening is as built.
 
 ## Gallery reflection and sheen (2026-11-01)
 

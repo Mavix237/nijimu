@@ -205,7 +205,7 @@ export function LandingPage() {
   const pond = pondTransition(pondElapsed ?? 0, reducedMotion);
   const pondArrival = inPond && pondElapsed === null ? 1 : pond.arrival;
   return (
-    <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: "#e4e4e6" }}>
+    <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: "#edecec" }}>
       {showGallery && (
         <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>

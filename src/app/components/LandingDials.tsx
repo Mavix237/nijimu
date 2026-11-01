@@ -78,6 +78,23 @@ const LOOK_CONFIG = {
     blend: { type: "select" as const, options: LANDING_BLENDS, default: L.light.blend },
     veil: [L.light.veil, 0, 0.6, 0.005],
   },
+  paper: {
+    top: L.paper.top,
+    bottom: L.paper.bottom,
+    angle: [L.paper.angle, 0, 360, 1],
+  },
+  grain: {
+    amount: [L.grain.amount, 0, 1, 0.01],
+    blend: { type: "select" as const, options: LANDING_BLENDS, default: L.grain.blend },
+  },
+  vignette: {
+    amount: [L.vignette.amount, 0, 0.6, 0.005],
+    color: L.vignette.color,
+    inner: [L.vignette.inner, 0, 0.95, 0.01],
+  },
+  ambient: {
+    amount: [L.ambient.amount, 0, 2, 0.01],
+  },
 };
 
 /*
@@ -259,6 +276,10 @@ export default function LandingDials({
       filter: { ...L.filter, ...look.filter },
       tint: { ...L.tint, ...look.tint },
       light: { ...L.light, ...look.light },
+      paper: { ...L.paper, ...look.paper },
+      grain: { ...L.grain, ...look.grain },
+      vignette: { ...L.vignette, ...look.vignette },
+      ambient: { ...L.ambient, ...look.ambient },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lookPanelKey]);

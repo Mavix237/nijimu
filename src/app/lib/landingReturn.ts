@@ -10,7 +10,8 @@ export const LANDING_RETURN = {
   headerFadeMs: 1100,
 } as const;
 
-export const LANDING_PAPER = "#e4e4e6";
+/** The return veil: between the gallery's ground (#edecec) and the landing's paper (#f4f5f5 → #ecebeb). */
+export const LANDING_PAPER = "#efeeee";
 
 export type LandingReturnPhase = "idle" | "scene-out" | "holding" | "landing";
 

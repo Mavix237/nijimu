@@ -21,7 +21,7 @@ import { INK_CUT_SCALE, hasInkSeats, inkSeat } from "../lib/inkCutouts";
 import { WashTunePanel } from "./WashTunePanel";
 import { initialWashTune } from "../lib/washTune";
 import { LANDING_MOTION } from "../lib/landingMotion";
-import { LANDING_LOOK_DEFAULT, landingFilterCss, landingLightGradient, type LandingLook } from "../lib/landingLook";
+import { LANDING_LOOK_DEFAULT, landingFilterCss, landingLightGradient, landingPaperCss, landingVignetteCss, type LandingLook } from "../lib/landingLook";
 import { WASH_TONE_DEFAULTS, washPigment, washToneHex, type WashColors } from "../lib/washColors";
 /* DialKit is a dev dependency: loaded only in development, never in the build. */
 const LandingDials = import.meta.env.DEV ? lazy(() => import("./LandingDials")) : null;
@@ -331,7 +331,8 @@ function gentleEase(t: number): number {
 
 const PAPER = "#ededee";
 /** Landing paper — a step below the raw token so isolation doesn't read as a flash. */
-const LANDING_PAPER = "#e4e4e6";
+/** The paper's mean tone (landingLook's #f4f5f5 → #ecebeb), for the ink's contrast over it. */
+const LANDING_PAPER = "#f0f0f0";
 const HEADER_INK = { mark: "#504A4A", desc: "#2A2018" };
 const HEADER_LIGHT = { mark: "#e2e2e3", desc: "#D6DADB" };
 const HEADER_COLOR_FADE = "color 1.15s ease";
@@ -1780,8 +1781,9 @@ export function BlobScene({
         : entryTime < INK_ENTRY.unfoldEnd ? "unfold" : "artifacts"}
       className={`relative w-full h-dvh overflow-hidden select-none ${classicChrome ? "cursor-default" : "cursor-pointer"}`}
       style={{
+        // the landing's paper is its own layer (below), so it can be a gradient and still fade through Enter
         background: classicChrome
-          ? (landingArrival ? `rgba(228,228,230,${entryPaper})` : LANDING_PAPER)
+          ? undefined
           : (landingArrival ? `rgba(237,237,238,${entryPaper})` : PAPER),
         isolation: classicChrome ? "isolate" : undefined,
         touchAction: classicChrome ? "auto" : "none",
@@ -1795,6 +1797,12 @@ export function BlobScene({
       onPointerCancel={classicChrome ? undefined : handleMouseUp}
       onPointerLeave={classicChrome ? undefined : handleMouseUp}
     >
+      {/* ═══ PAPER (landing): its colour or gradient, fading out through Enter ═══ */}
+      {classicChrome && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none",
+          background: landingPaperCss(landingLook.paper), opacity: landingArrival ? entryPaper : 1 }} />
+      )}
+
       {/* ═══ LOOK: a tint and a pool of light over the whole landing (LandingDials) ═══ */}
       {lookTint > 0.001 && (
         <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
@@ -1893,7 +1901,7 @@ export function BlobScene({
           className="absolute inset-0 pointer-events-none"
           style={{
             opacity: washTune.fieldOpacity * clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1)
-              * (classicChrome && !ambientIn ? 0 : 1),
+              * (classicChrome && !ambientIn ? 0 : 1) * (classicChrome ? landingLook.ambient.amount : 1),
             // the ambient light comes up with the washes, from clear paper
             transition: classicChrome ? "opacity 6.8s cubic-bezier(.45, 0, .2, 1)" : undefined,
           }}
@@ -1978,12 +1986,14 @@ export function BlobScene({
       <canvas
         ref={canvasRef}
         className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.48]"
-        style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
+        style={classicChrome
+          ? { mixBlendMode: landingLook.grain.blend as never, imageRendering: "auto", opacity: landingLook.grain.amount * (landingArrival ? entryGrain : 1) }
+          : { mixBlendMode: "overlay", imageRendering: "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
       />
       <div className="absolute inset-0 pointer-events-none" style={{
         opacity: entryVignette,
         background: classicChrome
-          ? "radial-gradient(ellipse at center, transparent 22%, rgba(0,0,0,0.2) 100%)"
+          ? landingVignetteCss(landingLook.vignette)
           : "radial-gradient(ellipse at center, transparent 32%, rgba(0,0,0,0.14) 100%)",
       }} />
 

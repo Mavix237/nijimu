@@ -83,7 +83,62 @@ export interface VesselArtifactProps {
   onPick?: () => void;
   /** Called after the first complete frame, so arrivals wait for the actual vessel. */
   onReady?: (canvas: HTMLCanvasElement) => void;
+  /** A soft mirror image under the foot (the gallery's). Absent or strength 0: none. */
+  reflection?: VesselReflection;
+  /** A soft studio sheen on the glass's facing wall (the gallery's). Absent or amount 0: none. */
+  sheen?: VesselSheen;
 }
+
+/** A lobe of light fixed to the eye, laid on the facing wall; the vessel turns under it. */
+export interface VesselSheen {
+  amount: number;
+  /** Its core and the tone it eases to at its rim (css colours). */
+  color: string;
+  edge: string;
+  /** Where it sits on the screen, −1…1 (left/bottom … right/top). */
+  x: number;
+  y: number;
+  /** Its size (≈ radians of the surface's turn) and how much of that the gradient spans (0 hard … 1 all gradient). */
+  size: number;
+  soft: number;
+  /** How much it gathers toward the silhouette (0 broad over the face, 1 only at the edge). */
+  rim: number;
+  /** The lobe's tilt, degrees. */
+  tilt: number;
+  /** How fast it wanders and how far; how much its brightness breathes. */
+  speed: number;
+  wander: number;
+  breath: number;
+}
+
+const sheenColor = new THREE.Color();
+function writeSheen(u: ReturnType<typeof createGlassUniformSet>, sheen: VesselSheen | undefined) {
+  if (!sheen || sheen.amount <= 0) { u.uSheen0.value = 0; return; }
+  u.uSheen0.value = sheen.amount;
+  u.uSheenColor.value.copy(sheenColor.set(sheen.color));
+  u.uSheenEdge.value.copy(sheenColor.set(sheen.edge));
+  u.uSheenAt.value.set(sheen.x, sheen.y);
+  u.uSheenShape.value.set(sheen.size, sheen.soft, sheen.rim, sheen.wander);
+  u.uSheenMotion.value.set(sheen.speed, sheen.breath, (sheen.tilt * Math.PI) / 180);
+}
+
+/** The vessel mirrored in a still surface just under its foot, fading with depth and softened. */
+export interface VesselReflection {
+  /** How much of the vessel the mirror gives back at its foot (0 none). */
+  strength: number;
+  /** World units below the mirror by which it has faded away (the vessels are ~2 tall). */
+  fall: number;
+  /** The mirror's distance under the foot, world units. */
+  gap: number;
+  /** Its blur, in CSS pixels of the canvas. */
+  soft: number;
+  /** Room added under the seat for it, as a share of the seat's height (the vessel itself does not move). */
+  room: number;
+}
+
+/* The reflection's own layers: drawn into its target, blurred, and laid under the vessel. */
+const REFLECT_SHEET_LAYER = 3;
+const REFLECT_GLASS_LAYER = 4;
 
 interface Built { glass: Glass; sheet: Sheet; distance: number; radius: number }
 
@@ -163,9 +218,13 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
 }
 
 function VesselObject({
-  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth,
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
+  const mirror = reflection && reflection.strength > 0 ? reflection : null;
+  // the canvas reaches below the seat by this share of its height; the seat itself is the top of it
+  const extra = mirror ? Math.max(0, mirror.room) : 0;
+  const seatH = size.height / (1 + extra);
   // opens with the eye on the sheet's side of the wall, so the picture faces the viewer squarely;
   // the pressed sheet has no one place, so it opens at a turn of its own
   const faceAngle = facing ?? tune.anchorAngle;
@@ -183,6 +242,8 @@ function VesselObject({
     if (sheetMode === "draped") yaw.current -= ((faceAngle - faceSeen.current) * Math.PI) / 180;
     faceSeen.current = faceAngle;
   }
+  const extraRef = useRef(extra);
+  extraRef.current = extra;
   const lockedRef = useRef(locked);
   lockedRef.current = locked;
   const holdViewRef = useRef(holdView);
@@ -229,6 +290,9 @@ function VesselObject({
     const leave = () => { if (!last) setOver(false); };
     const down = (e: PointerEvent) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
+      // the room under the seat holds only the reflection: a press there is not a press on the vessel
+      const r = el.getBoundingClientRect();
+      if (e.clientY > r.top + r.height / (1 + extraRef.current)) return;
       last = { id: e.pointerId, x: e.clientX, y: e.clientY };
       hover.current.held = true;
       travelled = 0;
@@ -309,6 +373,33 @@ function VesselObject({
     s.blur.dispose();
     s.quad.geometry.dispose();
   }, []);
+  // the reflection's targets, made only once a reflection is asked for
+  const mirrorPass = useRef<Soften | null>(null);
+  useEffect(() => () => {
+    const m = mirrorPass.current;
+    if (!m) return;
+    m.frame.dispose();
+    m.pong.dispose();
+    m.blur.dispose();
+    m.quad.geometry.dispose();
+  }, []);
+  const ensureMirror = () => {
+    if (mirrorPass.current) return mirrorPass.current;
+    const frame = new THREE.WebGLRenderTarget(1, 1, { samples: RT_SAMPLES, depthBuffer: true, stencilBuffer: false });
+    const pong = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false, stencilBuffer: false });
+    const blur = new THREE.ShaderMaterial({
+      vertexShader: backdropVertex, fragmentShader: blurFragment,
+      uniforms: { tScene: { value: frame.texture }, uStep: { value: new THREE.Vector2() } },
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), blur);
+    quad.frustumCulled = false;
+    const scene = new THREE.Scene();
+    scene.add(quad);
+    const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    mirrorPass.current = { frame, pong, blur, quad, scene, ortho };
+    return mirrorPass.current;
+  };
   const ensureSoften = () => {
     if (soften.current) return soften.current;
     const frame = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false });
@@ -340,8 +431,8 @@ function VesselObject({
   const built = useMemo<Built>(() => ({
     ...parts,
     radius: framing.radius,
-    distance: cappedVesselDistance(framing, FOV, size.width / Math.max(1, size.height), maxViewportWidth, HOVER_BOB),
-  }), [parts, framing, size.width, size.height, maxViewportWidth]);
+    distance: cappedVesselDistance(framing, FOV, size.width / Math.max(1, seatH), maxViewportWidth, HOVER_BOB),
+  }), [parts, framing, size.width, seatH, maxViewportWidth]);
   useEffect(() => {
     // Large library multipliers may require a longer orbit than the old far plane.
     const view = camera as THREE.PerspectiveCamera;
@@ -360,6 +451,21 @@ function VesselObject({
   const air = airFor(tune, glassMode, room);
   writeSheetUniforms(sheetU, { tune, seed, sheet: built.sheet, sheetMode, face, key, edgePrint, groundY, reflect: -1, air });
   writeGlassUniforms(glassU, { tune, seed, key, patches, room, groundY, reflect: -1, air, span: built.glass });
+  writeSheen(glassU, sheen);
+  // the mirrored copy: the same materials, fading with depth under the mirror
+  const mirrorY = built.glass.lo - (mirror?.gap ?? 0.02);
+  const sheetM = useMemo(() => createSheetUniformSet(edgePrint), [edgePrint]);
+  const glassM = useMemo(() => createGlassUniformSet(pass.target.texture), [pass]);
+  if (mirror) {
+    writeSheetUniforms(sheetM, { tune, seed, sheet: built.sheet, sheetMode, face, key, edgePrint, groundY: mirrorY, reflect: mirror.strength, air });
+    writeGlassUniforms(glassM, { tune, seed, key, patches, room, groundY: mirrorY, reflect: mirror.strength, air, span: built.glass });
+    sheetM.uReflectFall.value = glassM.uReflectFall.value = Math.max(0.05, mirror.fall);
+    writeSheen(glassM, sheen);
+    sheetM.uPhoto.value = sheetU.uPhoto.value;
+    sheetM.uImageAspect.value = sheetU.uImageAspect.value;
+  }
+  // a still seat draws on demand: a new tune or room (the gallery's dev panel) asks for a frame
+  useEffect(() => { invalidate(); }, [tune, room, reflection, sheen, invalidate]);
 
   // the picture, from the shared stock: already there if it was preloaded, else set as it arrives
   const photo = photoUrl ? peekSeatPhoto(photoUrl) : undefined;
@@ -372,12 +478,12 @@ function VesselObject({
     loadSeatPhoto(photoUrl).then((p) => {
       if (!live) return;
       photoReady.current = true;
-      sheetU.uPhoto.value = p.texture;
-      sheetU.uImageAspect.value = p.aspect;
+      sheetU.uPhoto.value = sheetM.uPhoto.value = p.texture;
+      sheetU.uImageAspect.value = sheetM.uImageAspect.value = p.aspect;
       invalidate();
     }).catch(() => { if (live) { photoReady.current = true; invalidate(); } });
     return () => { live = false; };
-  }, [photoUrl, photo, sheetU, invalidate]);
+  }, [photoUrl, photo, sheetU, sheetM, invalidate]);
 
   /* The shaders are compiled off the frame before anything is drawn: ten
      seats mounting together used to compile on the same first frame, a long
@@ -397,7 +503,14 @@ function VesselObject({
   const didRender = useRef(false);
   const readyRef = useRef(onReady);
   readyRef.current = onReady;
-  const reportReady = () => { if (!didRender.current && photoReady.current) { didRender.current = true; readyRef.current?.(gl.domElement); } };
+  const reportReady = () => {
+    if (!didRender.current && photoReady.current) {
+      didRender.current = true;
+      // what reads the frame (the landing's ink outlines) takes only the seat, not the room under it
+      gl.domElement.dataset.seatShare = String(1 / (1 + extra));
+      readyRef.current?.(gl.domElement);
+    }
+  };
   const refract = glassMode === "refract";
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
     if (compiledFor.current !== glassMode) return;
@@ -413,10 +526,21 @@ function VesselObject({
     }
     // the glow's clock: it moves only while the seat's frameloop runs (focused or moving); a still seat holds its frame
     glassU.uTime.value = clock.elapsedTime;
+    glassU.uSheenTime.value = glassM.uSheenTime.value = reducedMotion ? 0 : clock.elapsedTime;
     const y = yaw.current, p = (pitch.current * Math.PI) / 180, d = built.distance;
     const bob = HOVER_BOB * d * h.amount * Math.sin(h.phase);
     camera.position.set(-Math.sin(y) * Math.cos(p) * d, LOOK_Y - bob + Math.sin(p) * d, Math.cos(y) * Math.cos(p) * d);
     camera.lookAt(0, LOOK_Y - bob, 0);
+    // the seat is the top of a taller canvas: the lens keeps the seat's framing and the canvas shows on below it
+    const lens = camera as THREE.PerspectiveCamera;
+    if (extra > 0) {
+      lens.aspect = size.width / Math.max(1, seatH);
+      lens.setViewOffset(size.width, seatH, 0, 0, size.width, size.height);
+    } else if (lens.view?.enabled) {
+      lens.aspect = size.width / Math.max(1, size.height);
+      lens.clearViewOffset();
+    }
+    lens.updateProjectionMatrix();
     // CSS blur()'s argument is the Gaussian deviation, in the canvas's own
     // pixels (the seat scales afterwards). The 13-tap kernel is σ = 2.5 taps.
     const sigma = blurLive.current * renderer.getPixelRatio();
@@ -436,9 +560,54 @@ function VesselObject({
       return;
     }
     glassU.uResolution.value.set(pass.target.width, pass.target.height);
-    view.layers.set(0);
-    renderer.setRenderTarget(pass.target);
-    renderer.render(scene, view);
+    glassM.uResolution.value.set(pass.target.width, pass.target.height);
+    // the first frame, which the gallery keeps as the vessel's outline, is drawn without the reflection
+    const m = mirror && didRender.current ? ensureMirror() : null;
+    if (m) {
+      if (m.frame.width !== pass.target.width || m.frame.height !== pass.target.height) {
+        m.frame.setSize(pass.target.width, pass.target.height);
+        m.pong.setSize(pass.target.width, pass.target.height);
+      }
+      // the mirrored strip, then the mirrored glass refracting it, into the reflection's target
+      view.layers.set(REFLECT_SHEET_LAYER);
+      renderer.setRenderTarget(pass.target);
+      renderer.render(scene, view);
+      renderer.setRenderTarget(m.frame);
+      renderer.render(pass.scene, pass.ortho);
+      renderer.clearDepth();
+      view.layers.set(REFLECT_GLASS_LAYER);
+      renderer.autoClear = false;
+      renderer.render(scene, view);
+      renderer.autoClear = true;
+      // softened, across and back down into its own target
+      const mSigma = mirror.soft * renderer.getPixelRatio();
+      if (mSigma > 0.35) {
+        const tap = mSigma / 2.5;
+        m.blur.uniforms.tScene.value = m.frame.texture;
+        (m.blur.uniforms.uStep.value as THREE.Vector2).set(tap / Math.max(1, m.frame.width), 0);
+        renderer.setRenderTarget(m.pong);
+        renderer.render(m.scene, m.ortho);
+        m.blur.uniforms.tScene.value = m.pong.texture;
+        (m.blur.uniforms.uStep.value as THREE.Vector2).set(0, tap / Math.max(1, m.frame.height));
+        renderer.setRenderTarget(pass.target);
+        renderer.render(m.scene, m.ortho);
+      } else {
+        pass.blit.uniforms.tScene.value = m.frame.texture;
+        renderer.setRenderTarget(pass.target);
+        renderer.render(pass.scene, pass.ortho);
+        pass.blit.uniforms.tScene.value = pass.target.texture;
+      }
+      // the vessel's strip over it: the facing glass then refracts the reflection with the rest
+      renderer.clearDepth();
+      view.layers.set(0);
+      renderer.autoClear = false;
+      renderer.render(scene, view);
+      renderer.autoClear = true;
+    } else {
+      view.layers.set(0);
+      renderer.setRenderTarget(pass.target);
+      renderer.render(scene, view);
+    }
     renderer.setRenderTarget(out);
     renderer.render(pass.scene, pass.ortho);
     renderer.clearDepth();
@@ -448,7 +617,10 @@ function VesselObject({
     renderer.autoClear = true;
     view.layers.enableAll();
     if (s) spreadSoft(renderer, s, sigma);
+    const first = !didRender.current;
     reportReady();
+    // the outline has been kept: the next frame brings the reflection in
+    if (first && didRender.current && mirror) invalidate();
   }, 1);
 
   return <>
@@ -467,6 +639,21 @@ function VesselObject({
     <mesh ref={body} geometry={built.glass.geometry} visible={false} frustumCulled={false} />
     {/* the distance's mist, as the editor shows it (the editor's post blur is the lab's own and is not drawn here) */}
     <Mist geometry={built.glass.geometry} uniforms={glassU} layer={refract ? FRONT_LAYER : 0} renderOrder={3} on={tune.haze * (tune.hazeMist + tune.hazeGlow) > 0} />
+    {/* the reflection: the same meshes mirrored under the foot, on layers of their own (refraction only) */}
+    {mirror && refract && <group scale={[1, -1, 1]} position={[0, 2 * mirrorY, 0]}>
+      <mesh geometry={built.glass.geometry} renderOrder={0} frustumCulled={false} layers={REFLECT_GLASS_LAYER}>
+        <shaderMaterial transparent depthWrite={false} side={THREE.BackSide}
+          vertexShader={glassVertex} fragmentShader={glassRefractFragment} uniforms={glassM} />
+      </mesh>
+      <mesh geometry={built.sheet.geometry} renderOrder={1} frustumCulled={false} layers={REFLECT_SHEET_LAYER}>
+        <shaderMaterial transparent depthWrite={false} side={THREE.DoubleSide}
+          vertexShader={sheetVertex} fragmentShader={sheetFragment} uniforms={sheetM} />
+      </mesh>
+      <mesh geometry={built.glass.geometry} renderOrder={2} frustumCulled={false} layers={REFLECT_GLASS_LAYER}>
+        <shaderMaterial transparent depthWrite={false} side={THREE.FrontSide}
+          vertexShader={glassVertex} fragmentShader={glassRefractFragment} uniforms={glassM} />
+      </mesh>
+    </group>}
   </>;
 }
 
@@ -479,6 +666,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     seed: props.seed, sheetSize: props.sheetSize,
   }, props.priority ?? (props.focused ? 0 : 1));
   if (!parts) return <div style={{ width: "100%", height: "100%" }} />;
+  const extra = props.reflection && props.reflection.strength > 0 ? Math.max(0, props.reflection.room) : 0;
   return (
     // offsetSize: the seat is scaled by a CSS transform along the curve, and a resize observer does not see
     // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
@@ -486,7 +674,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
       dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
-      style={{ width: "100%", height: "100%" }}>
+      style={extra > 0 ? { width: "100%", height: `${(1 + extra) * 100}%` } : { width: "100%", height: "100%" }}>
       <VesselObject {...props} parts={parts} />
     </Canvas>
   );

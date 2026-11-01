@@ -1,0 +1,106 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index e25afc264bc7852c006a978665875592ff36f1e1..c97804cddc9f179d00ec95783c061ee67723ced7 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -5054,7 +5054,9 @@ function releasePanelPointer(handle, pointerId) {
+ 
+ // src/components/DialRoot.tsx
+ var import_jsx_runtime19 = require("react/jsx-runtime");
+-function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover", theme = "system", productionEnabled = isDevDefault, onOpenChange }) {
++function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover", theme = "system", productionEnabled = isDevDefault, onOpenChange, panels: only }) {
++  const onlyKey = only ? only.join("\u0000") : "";
++  const pick = (list) => only ? list.filter((p) => only.includes(p.id) || only.includes(p.name)) : list;
+   if (!productionEnabled) return null;
+   const [panels, setPanels] = (0, import_react25.useState)([]);
+   const [timelineCount, setTimelineCount] = (0, import_react25.useState)(0);
+@@ -5073,10 +5075,10 @@ function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover"
+   const rootOpenRef = (0, import_react25.useRef)(null);
+   (0, import_react25.useEffect)(() => {
+     setMounted(true);
+-    setPanels(DialStore.getPanels("panel"));
++    setPanels(pick(DialStore.getPanels("panel")));
+     setTimelineCount(TimelineStore.getTimelines().length);
+     const unsubscribePanels = DialStore.subscribeGlobal(() => {
+-      setPanels(DialStore.getPanels("panel"));
++      setPanels(pick(DialStore.getPanels("panel")));
+     });
+     const unsubscribeTimelines = TimelineStore.subscribeGlobal(() => {
+       setTimelineCount(TimelineStore.getTimelines().length);
+@@ -5085,7 +5087,7 @@ function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover"
+       unsubscribePanels();
+       unsubscribeTimelines();
+     };
+-  }, []);
++  },[onlyKey]);
+   (0, import_react25.useEffect)(() => {
+     const fallbackOpen = inline || defaultOpen;
+     const nextStates = /* @__PURE__ */ new Map();
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index fb7008968578564bd70c12df1baa0cd268f2c1bf..ad0c3af0c9d79d81a533fce5723ff9c63090f266 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -236,8 +236,10 @@ interface DialRootProps {
+     theme?: DialTheme;
+     productionEnabled?: boolean;
+     onOpenChange?: (open: boolean) => void;
++    /** Only these panels (by id or name); every panel when absent. */
++    panels?: string[];
+ }
+-declare function DialRoot({ position, defaultOpen, mode, theme, productionEnabled, onOpenChange }: DialRootProps): react_jsx_runtime.JSX.Element | null;
++declare function DialRoot({ position, defaultOpen, mode, theme, productionEnabled, onOpenChange, panels }: DialRootProps): react_jsx_runtime.JSX.Element | null;
+ 
+ type TimelineClipTrackMeta = {
+     prop: string;
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index fb7008968578564bd70c12df1baa0cd268f2c1bf..ad0c3af0c9d79d81a533fce5723ff9c63090f266 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -236,8 +236,10 @@ interface DialRootProps {
+     theme?: DialTheme;
+     productionEnabled?: boolean;
+     onOpenChange?: (open: boolean) => void;
++    /** Only these panels (by id or name); every panel when absent. */
++    panels?: string[];
+ }
+-declare function DialRoot({ position, defaultOpen, mode, theme, productionEnabled, onOpenChange }: DialRootProps): react_jsx_runtime.JSX.Element | null;
++declare function DialRoot({ position, defaultOpen, mode, theme, productionEnabled, onOpenChange, panels }: DialRootProps): react_jsx_runtime.JSX.Element | null;
+ 
+ type TimelineClipTrackMeta = {
+     prop: string;
+diff --git a/dist/index.js b/dist/index.js
+index 7ee83a8bc326ae9f894f30f0dca59c405f18b617..be342386d47921a364a2c1e612ffbe1720135228 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -5005,7 +5005,9 @@ function releasePanelPointer(handle, pointerId) {
+ 
+ // src/components/DialRoot.tsx
+ import { jsx as jsx19 } from "react/jsx-runtime";
+-function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover", theme = "system", productionEnabled = isDevDefault, onOpenChange }) {
++function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover", theme = "system", productionEnabled = isDevDefault, onOpenChange, panels: only }) {
++  const onlyKey = only ? only.join("\u0000") : "";
++  const pick = (list) => only ? list.filter((p) => only.includes(p.id) || only.includes(p.name)) : list;
+   if (!productionEnabled) return null;
+   const [panels, setPanels] = useState9([]);
+   const [timelineCount, setTimelineCount] = useState9(0);
+@@ -5024,10 +5026,10 @@ function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover"
+   const rootOpenRef = useRef17(null);
+   useEffect13(() => {
+     setMounted(true);
+-    setPanels(DialStore.getPanels("panel"));
++    setPanels(pick(DialStore.getPanels("panel")));
+     setTimelineCount(TimelineStore.getTimelines().length);
+     const unsubscribePanels = DialStore.subscribeGlobal(() => {
+-      setPanels(DialStore.getPanels("panel"));
++      setPanels(pick(DialStore.getPanels("panel")));
+     });
+     const unsubscribeTimelines = TimelineStore.subscribeGlobal(() => {
+       setTimelineCount(TimelineStore.getTimelines().length);
+@@ -5036,7 +5038,7 @@ function DialRoot({ position = "top-right", defaultOpen = true, mode = "popover"
+       unsubscribePanels();
+       unsubscribeTimelines();
+     };
+-  }, []);
++  },[onlyKey]);
+   useEffect13(() => {
+     const fallbackOpen = inline || defaultOpen;
+     const nextStates = /* @__PURE__ */ new Map();

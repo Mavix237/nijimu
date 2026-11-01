@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { WashTune } from "../lib/washTune";
+import { LANDING_MOTION } from "../lib/landingMotion";
 
 /*
  * The landing's washes, painted as one field rather than one layer per blob:
@@ -55,36 +56,40 @@ const MAX = 24;
 /** The cutouts' outlines share one texture, a tile per wash. */
 const ATLAS_COLS = 6, ATLAS_ROWS = 4, ATLAS_TILE = 128;
 /** A cutout's outline eases in over this when it arrives late, rather than snapping from the disc. */
-const MASK_EASE_MS = 350;
+const MASK_EASE_MS = () => LANDING_MOTION.follow.maskEaseMs;
 /** The soft disc's top and bottom down its box, before an outline arrives. */
 const DISC_SPAN: [number, number] = [0.12, 0.88];
 /** Through the ink entry the paint returns this quickly (s), so it follows the washes to their seats while still flowing. */
-const ENTRY_RELAX_S = 0.3;
+const ENTRY_RELAX_S = () => LANDING_MOTION.follow.entryRelaxS;
 const FRAME_MS = 1000 / 30;
 /** While the paint is moving it is painted at full rate. */
 const STIR_FRAME_MS = 1000 / 60;
 /** After the last stroke the flow is let go, once it has had this many lifetimes to die down. */
 const SETTLE_LIVES = 4;
 /** While the washes open, stirred paint returns this quickly (s), so it keeps up with the growth. */
-const GROW_RELAX_S = 0.3;
+const GROW_RELAX_S = () => LANDING_MOTION.follow.growRelaxS;
 const SEGS = 8;
 /** The tide line follows its caption a little behind, so it deepens and settles like water. */
-const TIDE_EASE_MS = 450;
+const TIDE_EASE_MS = () => LANDING_MOTION.follow.tideEaseMs;
 /** A round wash grows from nothing (this share of its size) as it arrives, so the paper opens clear. */
-const OPEN_REACH = 0;
+const OPEN_REACH = () => LANDING_MOTION.opening.roundFrom;
 /*
  * The washes arrive one after another: one or two in view first, then the
  * rest at a quickening pace, the last beginning at `lastStart`. Each fades in
  * over `fadeMs` and grows over `growMs`, so the round ones are whole by ~7 s
  * and the free ones by ~8.5 s.
  */
-const REVEAL = { second: 650, restFrom: 1500, lastStart: 3800, jitter: 200, growMs: 3300, fadeMs: 2000 };
+const REVEAL = LANDING_MOTION.reveal;
 /**
  * A free, streaked wash does not zoom open as a round one does: it starts most
  * of its size and comes up through its ink, more slowly.
  */
-const FREE_REVEAL = { reachFrom: 0.72, growLonger: 0.35, fadeLonger: 0.9 };
-const revealSpan = REVEAL.lastStart + REVEAL.jitter + REVEAL.growMs * (1 + FREE_REVEAL.growLonger);
+const FREE_REVEAL = {
+  get reachFrom() { return REVEAL.freeReachFrom; },
+  get growLonger() { return REVEAL.freeGrowLonger; },
+  get fadeLonger() { return REVEAL.freeFadeLonger; },
+};
+const revealSpan = () => REVEAL.lastStart + REVEAL.jitter + REVEAL.growMs * (1 + FREE_REVEAL.growLonger);
 /** The share of the opening after which the field counts as nearly painted (`onSettling`). */
 const REVEAL_NEAR = 0.8;
 /** 1 for a free, elongated wash, 0 for a complete round one. */
@@ -101,33 +106,66 @@ function shuffle<T>(xs: T[]) {
   return xs;
 }
 
-/** When each wash begins (ms from the field's first frame), from where they lie on screen. */
-function revealOrder(rects: (DOMRect | null)[]) {
+const OPENING = LANDING_MOTION.opening;
+const luma = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+
+/**
+ * When each wash begins (ms from the field's first frame). The order is a key
+ * per wash (OPENING.order: random, by tone, or by where it lies), loosened by
+ * `scatter`, with what is off screen pushed later by `inViewFirst`; the first
+ * one or two come alone, the rest follow at `pace`.
+ */
+function revealOrder(rects: (DOMRect | null)[], blobs: WashBlob[]) {
   const vw = window.innerWidth, vh = window.innerHeight;
+  const centre = (r: DOMRect | null) => r ? [r.left + r.width / 2, r.top + r.height / 2] : [vw / 2, vh / 2];
   const inView = (r: DOMRect | null) => {
     if (!r) return false;
-    const x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const [x, y] = centre(r);
     return x > vw * 0.12 && x < vw * 0.88 && y > vh * 0.12 && y < vh * 0.88;
   };
-  const idx = rects.map((_, i) => i);
-  const seen = shuffle(idx.filter((i) => inView(rects[i])));
-  const firsts = seen.slice(0, Math.random() < 0.5 ? 1 : 2);
-  // what is in view tends to come before what is off it
-  const rest = idx
-    .filter((i) => !firsts.includes(i))
-    .map((i) => ({ i, at: Math.random() + (inView(rects[i]) ? 0 : 0.35) }))
-    .sort((a, b) => a.at - b.at)
-    .map((x) => x.i);
+  const diag = Math.hypot(vw / 2, vh / 2) || 1;
+  const keyOf = (i: number) => {
+    const [x, y] = centre(rects[i]);
+    const tone = blobs[i] ? luma(blobs[i].color) : 0.5;
+    switch (OPENING.order) {
+      case "light first": return 1 - tone;
+      case "dark first": return tone;
+      case "centre out": return Math.min(1, Math.hypot(x - vw / 2, y - vh / 2) / diag);
+      case "edges in": return 1 - Math.min(1, Math.hypot(x - vw / 2, y - vh / 2) / diag);
+      case "left to right": return Math.min(1, Math.max(0, x / vw));
+      case "top to bottom": return Math.min(1, Math.max(0, y / vh));
+      default: return Math.random();
+    }
+  };
+  const scatter = OPENING.order === "random" ? 1 : Math.min(1, Math.max(0, OPENING.scatter));
+  const order = rects.map((r, i) => ({
+    i,
+    at: keyOf(i) * (1 - scatter) + Math.random() * scatter + (inView(r) ? 0 : OPENING.inViewFirst),
+  })).sort((a, b) => a.at - b.at).map((x) => x.i);
+  const whole = Math.floor(Math.max(0, OPENING.firsts));
+  const nFirst = Math.min(order.length, whole + (Math.random() < OPENING.firsts - whole ? 1 : 0));
+  const firsts = order.slice(0, nFirst);
+  const rest = order.slice(nFirst);
   const starts = new Array<number>(rects.length).fill(0);
   firsts.forEach((i, k) => { starts[i] = k * REVEAL.second; });
   rest.forEach((i, k) => {
     const f = rest.length > 1 ? k / (rest.length - 1) : 0;
     const jitter = (Math.random() - 0.5) * 2 * REVEAL.jitter;
     const from = firsts.length ? REVEAL.restFrom : 0;
-    starts[i] = Math.max(0, from + (REVEAL.lastStart - from) * f ** 0.8 + jitter);
+    starts[i] = Math.max(0, from + (REVEAL.lastStart - from) * f ** Math.max(0.05, OPENING.pace) + jitter);
   });
   return starts;
 }
+/** The opening's growth curve (OPENING.ease); 0 → 1 and never past 1. */
+const revealEase = (k: number) => {
+  const x = Math.min(1, Math.max(0, k));
+  switch (OPENING.ease) {
+    case "bleed": return 1 - (1 - x) ** 3;
+    case "soak": return (1 - Math.exp(-5 * x)) / (1 - Math.exp(-5));
+    case "linear": return x;
+    default: return x * x * x * (x * (x * 6 - 15) + 10);
+  }
+};
 /** Eased in and out (smootherstep: still at both ends) and never past 1, so the growth only ever widens. */
 const openEase = (k: number) => {
   const x = Math.min(1, Math.max(0, k));
@@ -162,9 +200,18 @@ uniform vec4 uLook[MAX];
 uniform vec4 uDeep[MAX];
 /** How much of each wash's ink has come through: free washes arrive by this rather than by size. */
 uniform float uShow[MAX];
+/** How far each wash still has to open (1 → 0), and how much more its edge wanders meanwhile. */
+uniform float uOpen[MAX];
+uniform float uOpenWarp;
 /** Each wash's own tide line: deeper while its memory's words are on show. */
 uniform float uTide[MAX];
-uniform float uJoin, uWarp, uMorph;
+uniform float uJoin, uWarp, uMorph, uStreak, uStretch, uTurn, uCutWobble;
+/** Open water: how much paper the drifting gaps open, their size (× 320 px) and pace. */
+uniform float uGaps, uGapScale, uGapDrift;
+/** 0 keeps the free washes smoky and streaked; 1 gives them a round wash's whole body (their edge stays soft). */
+uniform float uWhole;
+/** Dark washes bleed into their neighbours: how much, how far (× the halo), and the luma below which a wash counts as dark. */
+uniform float uBleed, uBleedReach, uBleedTone;
 /** The ink entry's cutouts: centre and half-side of the box (container px; half 0 for none), and how full it is. */
 uniform vec4 uCut[MAX];
 /** How far the wash has drained into it, how far its outline has come in, and the outline's top and foot down the box. */
@@ -174,33 +221,45 @@ bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, o
   D = 0.; comp = 0.; pig = vec3(0.); pigDeep = vec3(0.); vis = 0.; tide = 0.;
   float sumW = 0., compW = 0., cw = 0., visW = 0., tideW = 0.;
   vec3 col = vec3(0.), deep = vec3(0.);
+  // a dark wash's halo, where it may bleed into other paint
+  float bleedW = 0.;
+  vec3 bleedCol = vec3(0.), bleedDeep = vec3(0.);
   for (int i = 0; i < MAX; i++) {
     if (i >= uCount) break;
     vec4 b = uBlob[i];
     vec4 l = uLook[i];
     vec2 d = (p - b.xy) / b.z;
-    if (dot(d, d) > 2.8 && uCut[i].z <= 0.) continue;
+    float dark = uBleed > 0. ? clamp((uBleedTone - dot(l.rgb, vec3(.2126, .7152, .0722))) / .25, 0., 1.) : 0.;
+    if (dot(d, d) > 2.8 + dark * 3.2 * uBleedReach && uCut[i].z <= 0.) continue;
     float bc = l.a, s = b.w;
+    // the body's character: a free wash pulled toward a whole one by uWhole
+    float sc = mix(bc, 1., uWhole);
     float t = uTime * uMorph * (.03 + .025 * fract(s * 7.13));
     // the body turns and stretches slowly, so no wash keeps one outline
-    float ang = s * 6.283 + t * .5;
+    float ang = s * 6.283 + t * uTurn;
     vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * d;
-    q.x *= 1. + (.18 + .3 * (1. - bc)) * sin(t * .8 + s * 3.1);
-    q.y *= 1. + .14 * sin(t * .6 + s * 5.7);
+    q.x *= 1. + (.18 + .3 * (1. - sc)) * uStretch * sin(t * .8 + s * 3.1);
+    q.y *= 1. + .14 * uStretch * sin(t * .6 + s * 5.7);
     vec2 w = vec2(fbm(q * 1.25 + vec2(s * 13.1, t)), fbm(q * 1.25 + vec2(t, s * 29.7) + 5.2)) - .5;
     // free washes are carried along in streaks, as ink on wet paper
-    float streak = (fbm(q * vec2(.6, 2.8) + vec2(t * .8, s * 3.3)) - .5) * (1. - bc) * 1.3 * uWarp;
-    float dist = length(q + w * mix(.85, .24, bc) * uWarp + vec2(streak, streak * .25));
+    float warpI = uWarp * (1. + uOpenWarp * uOpen[i]);
+    float streak = (fbm(q * vec2(.6, 2.8) + vec2(t * .8, s * 3.3)) - .5) * (1. - sc) * uStreak * warpI;
+    float dist = length(q + w * mix(.85, .24, sc) * warpI + vec2(streak, streak * .25));
     // uDeep.a carries the blob's own opacity
-    float dens = pow(smoothstep(1.05, 0., dist), mix(1.7, 1., bc)) * mix(.58, 1.05, bc) * uDeep[i].a;
+    float dens = pow(smoothstep(1.05, 0., dist), mix(1.7, 1., sc)) * mix(.58, 1.05, sc) * uDeep[i].a;
     float show = uShow[i];
     float tideI = uTide[i];
+    // past its body a dark wash keeps a soft, wide halo of its pigment
+    float halo = dark * show * uDeep[i].a * exp(-pow(max(dist - .55, 0.) / (.45 * uBleedReach), 2.));
+    bleedW += halo;
+    bleedCol += l.rgb * halo;
+    bleedDeep += uDeep[i].rgb * halo;
     if (uCut[i].z > 0.) {
       vec4 cb = uCutB[i];
       vec2 lc = (p - uCut[i].xy) / (2. * uCut[i].z) + .5;
       // the mask's outline wanders a little, as a wash's own edge does
       vec2 wob = vec2(fbm(lc * 3.1 + vec2(s * 4.3, uTime * .05)), fbm(lc * 3.1 + vec2(uTime * .05, s * 6.1) + 2.7)) - .5;
-      vec2 lw = lc + wob * .06;
+      vec2 lw = lc + wob * uCutWobble;
       float inside = step(0., lw.x) * step(lw.x, 1.) * step(0., lw.y) * step(lw.y, 1.);
       vec2 cell = vec2(mod(float(i), ${ATLAS_COLS}.), floor(float(i) / ${ATLAS_COLS}.));
       float outline = TEX(uAtlas, (cell + clamp(lw, .004, .996)) / vec2(${ATLAS_COLS}., ${ATLAS_ROWS}.)).r * inside;
@@ -232,7 +291,7 @@ bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, o
     // a p-norm, not a sum: washes join where both are wet, not through their faint tails
     D += pow(dens, uJoin);
     sumW += dens;
-    compW += bc * dens;
+    compW += mix(bc, max(bc, .55), uWhole) * dens;
     visW += show * dens;
     tideW += tideI * dens;
     float w2 = dens * dens;
@@ -242,11 +301,33 @@ bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, o
   }
   if (sumW < .003) return false;
   D = pow(D, 1. / uJoin);
+  // open water: slow, domain-warped gaps drift through the joined paint, so the
+  // washes are not always one mass; the threshold and fringe give them a wet edge
+  if (uGaps > 0.) {
+    vec2 gp = p / (320. * uGapScale);
+    float gt = uTime * .035 * uGapDrift;
+    // two smooth octaves, not fbm's four, so the gaps open as rounded pools rather than ragged holes
+    vec2 gw = vec2(noise(gp * .6 + vec2(gt, 3.1)), noise(gp * .6 + vec2(7.3, -gt))) - .5;
+    vec2 gq = gp + gw * 1.2 + vec2(-gt * .6, gt * .4);
+    float g = noise(gq) * .72 + noise(gq * 2.1 + 4.7) * .28;
+    D *= 1. - uGaps * smoothstep(.56, .78, g);
+  }
   comp = compW / sumW;
   vis = visW / sumW;
   tide = tideW / sumW;
   pig = col / max(cw, 1e-5);
   pigDeep = deep / max(cw, 1e-5);
+  if (bleedW > .002) {
+    float bw = min(bleedW, 1.);
+    // where the halo meets other paint, the gap between them fills (never on bare paper:
+    // it needs the paint already there, sumW, to take hold)
+    D = max(D, uBleed * min(bw * .9, sumW * 1.6));
+    // and the neighbour takes on the dark pigment, softly, with a wet edge rather than a tide line
+    float k = clamp(uBleed * bw * .7, 0., .85);
+    pig = mix(pig, bleedCol / bleedW, k);
+    pigDeep = mix(pigDeep, bleedDeep / bleedW, k);
+    comp = mix(comp, comp * .35, k);
+  }
   return true;
 }
 `;
@@ -256,6 +337,7 @@ const LOOK = `
 uniform float uField, uThresh, uFringe, uSoft, uGrain, uDeepMix, uSat;
 /** Canvas pixels per screen pixel, and the grain's size in screen pixels. */
 uniform float uPxScale, uGrainPx;
+uniform float uBloom, uBloomDrift, uInterior, uEdgeDark, uTooth;
 vec4 look(vec2 p, float D, float comp, vec3 pig, vec3 pigDeep, float vis, float tide) {
   // where washes join, so do their edges; finely fringed, as pigment creeps into the fibres
   // each octave turned, so no layer of the fringe lines up with the pixel grid
@@ -268,16 +350,16 @@ vec4 look(vec2 p, float D, float comp, vec3 pig, vec3 pigDeep, float vis, float 
   float soft = mix(.26, .05, comp) * uSoft;
   float body = smoothstep(T - soft, T + soft * .6, D);
   float interior = 1. - exp(-D * 1.4);
-  float bloom = fbm(p * .004 + vec2(uTime * .006, uTime * .002));
-  float cover = body * (.3 + .7 * interior) * (.76 + .48 * bloom);
+  float bloom = fbm(p * .004 + vec2(uTime * .006, uTime * .002) * uBloomDrift);
+  float cover = body * (uInterior + (1. - uInterior) * interior) * (1. - uBloom * .5 + uBloom * bloom);
   // pigment carried to the drying edge of a complete wash
   float edge = clamp(exp(-pow((D - T) / (mix(.12, .035, comp) * uSoft), 2.)) * comp * body * tide, 0., 1.);
   // the paper's tooth is laid in screen pixels, so it stays fine at any density
   vec2 px = gl_FragCoord.xy / (uPxScale * uGrainPx);
   float tooth = noise(px) * .45 + noise(mat2(.8, -.6, .6, .8) * px * .43 + 7.7) * .35 + noise(pr2 * .37) * .2;
-  cover *= 1. + .28 * uGrain * (tooth - .5);
+  cover *= 1. + uTooth * uGrain * (tooth - .5);
   vec3 c = mix(pig, pigDeep, clamp(interior * uDeepMix + edge * .7, 0., 1.));
-  c *= 1. - edge * .16;
+  c *= 1. - edge * uEdgeDark;
   // saturation about the pigment's own luma, so the washes keep their weight on the paper
   c = clamp(mix(vec3(dot(c, vec3(.2126, .7152, .0722))), c, uSat), 0., 1.);
   float a = clamp(cover * uField + edge * .16, 0., .92) * vis;
@@ -455,12 +537,24 @@ uniform vec4 uSeg[SEGS];
 uniform float uSegSpeed[SEGS];
 uniform int uSegs;
 uniform float uRadius, uWipe;
+uniform float uTime, uAmbDt;
+/** After a stroke some places heal slowly (uHold, patch size × 260 px), and the paint drifts on its own (uDrift px/s). */
+uniform float uHold, uHoldScale, uDrift;
 layout(location = 0) out vec4 o0;
 layout(location = 1) out vec4 o1;
 layout(location = 2) out vec4 o2;
 void main() {
-  vec2 back = vUv - uDt * texture(uVel, vUv).xy * uVelTexel;
   vec2 p = vec2(vUv.x, 1. - vUv.y) * uRes;
+  vec2 back = vUv - uDt * texture(uVel, vUv).xy * uVelTexel;
+  if (uDrift > 0.) {
+    // a slow divergence-free current (the curl of a drifting noise), so the paint keeps moving as liquid does
+    vec2 q = p / 280. + vec2(uTime * .012, -uTime * .008);
+    float e = .08;
+    float dx = fbm(q + vec2(e, 0.)) - fbm(q - vec2(e, 0.));
+    float dy = fbm(q + vec2(0., e)) - fbm(q - vec2(0., e));
+    vec2 amb = vec2(dy, -dx) / (2. * e) * uDrift;
+    back -= uAmbDt * vec2(amb.x / uRes.x, -amb.y / uRes.y);
+  }
   float keep = 1.;
   for (int k = 0; k < SEGS; k++) {
     if (k >= uSegs) break;
@@ -477,9 +571,16 @@ void main() {
     float pace = smoothstep(30., 600., uSegSpeed[k]);
     keep *= 1. - clamp(uWipe * g * pace * (.6 + .4 * streak), 0., 1.);
   }
-  o0 = mix(texture(uA, back) * keep, texture(uTA, vUv), uRelax);
-  o1 = mix(texture(uB, back) * keep, texture(uTB, vUv), uRelax);
-  o2 = mix(texture(uC, back) * keep, texture(uTC, vUv), uRelax);
+  // where the slow noise is high, a stirred place heals slowly: paper opened by a
+  // stroke lingers there, at random, and closes in its own time
+  float relax = uRelax;
+  if (uHold > 0. && uRelax < 1.) {
+    float n = fbm(p / (260. * uHoldScale) + vec2(uTime * .03, -uTime * .02));
+    relax *= 1. - .94 * uHold * smoothstep(.38, .62, n);
+  }
+  o0 = mix(texture(uA, back) * keep, texture(uTA, vUv), relax);
+  o1 = mix(texture(uB, back) * keep, texture(uTB, vUv), relax);
+  o2 = mix(texture(uC, back) * keep, texture(uTC, vUv), relax);
 }
 `;
 
@@ -647,6 +748,7 @@ export function WatercolorField({
     const lookData = new Float32Array(MAX * 4);
     const deepData = new Float32Array(MAX * 4);
     const uShow = new Float32Array(MAX).fill(1);
+    const uOpen = new Float32Array(MAX).fill(0);
     const uTide = new Float32Array(MAX).fill(tuneRef.current.edge);
     const lift = new Float32Array(MAX);
     const cutData = new Float32Array(MAX * 4);
@@ -692,18 +794,18 @@ export function WatercolorField({
       const n = Math.min(MAX, list.length);
       const full = tuneRef.current.reach;
       const since = opening(now);
-      if (!settled && since >= revealSpan * REVEAL_NEAR) {
+      if (!settled && since >= revealSpan() * REVEAL_NEAR) {
         settled = true;
         settlingRef.current?.();
       }
       const rects: (DOMRect | null)[] = [];
       for (let i = 0; i < n; i++) rects.push(blobEls.current[i]?.getBoundingClientRect() ?? null);
-      if (startsAt.length !== n) startsAt = revealOrder(rects);
+      if (startsAt.length !== n) startsAt = revealOrder(rects, list.slice(0, n));
       const shown = presenceRef?.current;
       const words = wordsRef?.current;
       const { edge, edgeShown } = tuneRef.current;
       const cuts = cutsRef?.current.on ? cutsRef.current : null;
-      const ease = liftAt < 0 ? 1 : 1 - Math.exp(-(now - liftAt) / TIDE_EASE_MS);
+      const ease = liftAt < 0 ? 1 : 1 - Math.exp(-(now - liftAt) / TIDE_EASE_MS());
       liftAt = now;
       for (let i = 0; i < n; i++) {
         lift[i] += ((words?.[i] ?? 0) - lift[i]) * ease;
@@ -717,10 +819,13 @@ export function WatercolorField({
         // a wash closing for the ink entry runs its opening backwards: a round one
         // shrinks away as its ink fades, a free one fades out through its ink
         const closing = cuts ? openEase(cuts.open[i] ?? 1) : 1;
-        const grown = Math.min(closing, openEase(t / (REVEAL.growMs * (1 + FREE_REVEAL.growLonger * f))));
-        const inked = Math.min(closing, openEase(t / fadeMs));
+        const grown = Math.min(closing, revealEase(t / (REVEAL.growMs * (1 + FREE_REVEAL.growLonger * f))));
+        const inked = Math.min(closing, revealEase(t / fadeMs));
+        // still opening: 1 at its start, 0 once grown (the opening's wander, drift and wet depth)
+        const unopened = cuts ? 0 : 1 - revealEase(t / (REVEAL.growMs * (1 + FREE_REVEAL.growLonger * f)));
+        uOpen[i] = unopened;
         // a round wash's density rises with its fade; a free one's is set early and its ink does the arriving
-        const body = inked + (Math.min(closing, openEase(t / (fadeMs * 0.45))) - inked) * f;
+        const body = (inked + (Math.min(closing, revealEase(t / (fadeMs * 0.45))) - inked) * f) * (1 + OPENING.wetDeep * unopened);
         const show = 1 + (inked - 1) * f;
         if (shown) shown[i] = inked;
         uShow[i] = show;
@@ -736,7 +841,7 @@ export function WatercolorField({
           }
           atlasDirty = true;
         }
-        const maskOn = mask ? Math.min(1, (now - maskSince[i]) / MASK_EASE_MS) : 0;
+        const maskOn = mask ? Math.min(1, (now - maskSince[i]) / MASK_EASE_MS()) : 0;
         const half = cuts ? cuts.boxes[i * 3 + 2] ?? 0 : 0;
         if (cuts && half > 0) {
           // the soft disc spans most of its box; an outline its own rows
@@ -751,12 +856,15 @@ export function WatercolorField({
           deepData.set([dark[0], dark[1], dark[2], b.opacity * (cuts.fade[i] ?? 1)], i * 4);
         }
         if (!el || !r || inked <= 0) { blobData[i * 4 + 2] = 0.0001; if (half <= 0) deepData[i * 4 + 3] = 0; continue; }
-        const from = OPEN_REACH + (FREE_REVEAL.reachFrom - OPEN_REACH) * f;
+        const from = OPEN_REACH() + (FREE_REVEAL.reachFrom - OPEN_REACH()) * f;
         const reach = (from + (1 - from) * grown) * full;
         const s = parseFloat(getComputedStyle(el).scale) || 1;
         const radius = (el.offsetWidth / 2) * s * reach;
         if (radius < 1) { blobData[i * 4 + 2] = 0.0001; if (half <= 0) deepData[i * 4 + 3] = 0; continue; }
-        const cx = r.left + r.width / 2 - cr.left, cy = r.top + r.height / 2 - cr.top;
+        // it opens from a point off its centre and flows over to it
+        const away = OPENING.openDrift * unopened * (el.offsetWidth / 2) * s * full;
+        const ang = b.seed * 6.2832 * 3.7;
+        const cx = r.left + r.width / 2 - cr.left + Math.cos(ang) * away, cy = r.top + r.height / 2 - cr.top + Math.sin(ang) * away;
         blobData.set([cx, cy, radius, b.seed], i * 4);
         paintOf(i, b, cuts);
         lookData.set([lit[0], lit[1], lit[2], b.comp], i * 4);
@@ -764,7 +872,12 @@ export function WatercolorField({
       }
       return n;
     };
+    /* Open water eases away through the ink entry (and back), so a cutout fills whole. */
+    let gapLive = 1, gapAt = -1;
     const setWash = (p: Program, n: number, time: number) => {
+      const dtw = gapAt < 0 ? 0 : Math.max(0, time - gapAt);
+      gapAt = time;
+      gapLive += ((cutsRef?.current.on ? 0 : 1) - gapLive) * (1 - Math.exp(-dtw / 0.6));
       gl.uniform2f(p.u("uRes"), canvas.clientWidth, canvas.clientHeight);
       gl.uniform1f(p.u("uTime"), time);
       gl.uniform1i(p.u("uCount"), n);
@@ -772,6 +885,8 @@ export function WatercolorField({
       gl.uniform4fv(p.u("uLook"), lookData);
       gl.uniform4fv(p.u("uDeep"), deepData);
       gl.uniform1fv(p.u("uShow"), uShow);
+      gl.uniform1fv(p.u("uOpen"), uOpen);
+      gl.uniform1f(p.u("uOpenWarp"), OPENING.openWarp);
       gl.uniform1fv(p.u("uTide"), uTide);
       gl.uniform4fv(p.u("uCut"), cutData);
       gl.uniform4fv(p.u("uCutB"), cutDataB);
@@ -787,6 +902,17 @@ export function WatercolorField({
       gl.uniform1f(p.u("uJoin"), t.join);
       gl.uniform1f(p.u("uWarp"), t.warp);
       gl.uniform1f(p.u("uMorph"), t.morph);
+      gl.uniform1f(p.u("uStreak"), t.streak);
+      gl.uniform1f(p.u("uStretch"), t.stretch);
+      gl.uniform1f(p.u("uTurn"), t.turn);
+      gl.uniform1f(p.u("uCutWobble"), t.cutWobble);
+      gl.uniform1f(p.u("uGaps"), t.gaps * gapLive);
+      gl.uniform1f(p.u("uGapScale"), t.gapScale);
+      gl.uniform1f(p.u("uGapDrift"), t.gapDrift);
+      gl.uniform1f(p.u("uWhole"), t.whole);
+      gl.uniform1f(p.u("uBleed"), t.bleed * gapLive);
+      gl.uniform1f(p.u("uBleedReach"), t.bleedReach);
+      gl.uniform1f(p.u("uBleedTone"), t.bleedTone);
     };
     const setLook = (p: Program, time: number) => {
       const t = tuneRef.current;
@@ -802,6 +928,11 @@ export function WatercolorField({
       gl.uniform1f(p.u("uSat"), t.saturation);
       gl.uniform1f(p.u("uPxScale"), canvas.width / Math.max(1, canvas.clientWidth) / (window.devicePixelRatio || 1));
       gl.uniform1f(p.u("uGrainPx"), t.grainPx);
+      gl.uniform1f(p.u("uBloom"), t.bloom);
+      gl.uniform1f(p.u("uBloomDrift"), t.bloomDrift);
+      gl.uniform1f(p.u("uInterior"), t.interior);
+      gl.uniform1f(p.u("uEdgeDark"), t.edgeDark);
+      gl.uniform1f(p.u("uTooth"), t.tooth);
     };
 
     // Strokes are kept in container px, so a wake stays on the paper as it pans.
@@ -811,7 +942,7 @@ export function WatercolorField({
     const onMove = (e: PointerEvent) => {
       const ct = containerRef.current;
       if (!ct) return;
-      if ((e.target as Element | null)?.closest?.("[data-tune-panel]")) { prev = null; return; }
+      if ((e.target as Element | null)?.closest?.("[data-tune-panel], .dialkit-root")) { prev = null; return; }
       const cr = ct.getBoundingClientRect();
       const x = e.clientX - cr.left, y = e.clientY - cr.top;
       const t = e.timeStamp;
@@ -997,7 +1128,7 @@ export function WatercolorField({
         const n = readBlobs(now);
         if (n < 0) return;
         const time = (now - start) / 1000;
-        const growing = opening(now) < revealSpan;
+        const growing = opening(now) < revealSpan();
 
         pass(P.target, target, () => setWash(P.target, n, time));
 
@@ -1023,14 +1154,21 @@ export function WatercolorField({
           // opening, unstirred paint follows the growth exactly rather than trailing it;
           // once stirred it follows closely but continuously, so it never jumps
           // back onto the growth when the stirring stops
-          const relaxS = growing ? Math.min(GROW_RELAX_S, tuneRef.current.relaxS) : tuneRef.current.relaxS;
-          g.uniform1f(P.dye.u("uRelax"), fresh || (growing && !stirred && !entering) ? 1 : 1 - Math.exp(-dt / (entering ? Math.min(ENTRY_RELAX_S, relaxS) : relaxS)));
+          const relaxS = growing ? Math.min(GROW_RELAX_S(), tuneRef.current.relaxS) : tuneRef.current.relaxS;
+          g.uniform1f(P.dye.u("uRelax"), fresh || (growing && !stirred && !entering) ? 1 : 1 - Math.exp(-dt / (entering ? Math.min(ENTRY_RELAX_S(), relaxS) : relaxS)));
           g.uniform2f(P.dye.u("uRes"), canvas.clientWidth, canvas.clientHeight);
           g.uniform4fv(P.dye.u("uSeg"), segData);
           g.uniform1fv(P.dye.u("uSegSpeed"), segSpeed);
           g.uniform1i(P.dye.u("uSegs"), flowing ? wipeSegs : 0);
           g.uniform1f(P.dye.u("uRadius"), tuneRef.current.brushPx);
           g.uniform1f(P.dye.u("uWipe"), tuneRef.current.wipe);
+          // neither the drift nor the slow healing while the washes open unstirred or follow the entry
+          const calm = fresh || entering || (growing && !stirred);
+          g.uniform1f(P.dye.u("uTime"), time);
+          g.uniform1f(P.dye.u("uAmbDt"), calm ? 0 : dt);
+          g.uniform1f(P.dye.u("uDrift"), calm ? 0 : tuneRef.current.drift);
+          g.uniform1f(P.dye.u("uHold"), calm ? 0 : tuneRef.current.hold);
+          g.uniform1f(P.dye.u("uHoldScale"), tuneRef.current.holdScale);
         });
         wipeSegs = 0;
         swap(dye);

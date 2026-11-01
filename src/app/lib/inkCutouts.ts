@@ -59,7 +59,9 @@ export function captureInkMask(id: string, frame: HTMLCanvasElement) {
   const g = mask.getContext("2d", { willReadFrequently: true });
   if (!g) return;
   try {
-    g.drawImage(frame, 0, 0, MASK_PX, MASK_PX);
+    // a canvas taller than its seat (room for a reflection) gives only its top, the seat
+    const share = Math.min(1, Math.max(0.1, Number(frame.dataset.seatShare) || 1));
+    g.drawImage(frame, 0, 0, frame.width, frame.height * share, 0, 0, MASK_PX, MASK_PX);
     const img = g.getImageData(0, 0, MASK_PX, MASK_PX);
     const d = img.data;
     let top = MASK_PX, bottom = -1;

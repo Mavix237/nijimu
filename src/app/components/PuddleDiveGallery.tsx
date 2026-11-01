@@ -1,4 +1,5 @@
 import { Fragment, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent, type ReactNode } from "react";
+import { galleryTune } from "../lib/galleryTune";
 import { Link } from "react-router";
 import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
@@ -144,7 +145,8 @@ export const CAPTION_YEAR_STYLE: CSSProperties = {
 
 /** Space kept between the memory's words and the timescale. */
 const TRANSCRIPT_CLEARANCE = 24;
-const TRANSCRIPT_DWELL_MS = 3000;
+/** How long the memory in hand rests before its words open (the gallery's dev panel can change it). */
+const transcriptDwellMs = () => galleryTune().timing.transcriptDwellMs;
 
 /** The memory's own words, under its year. */
 const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
@@ -421,7 +423,7 @@ export function PuddleDiveGallery({
   useEffect(() => {
     setRevealedId(null);
     if (!transcriptReady || !focusId) return;
-    const timer = window.setTimeout(() => setRevealedId(focusId), TRANSCRIPT_DWELL_MS);
+    const timer = window.setTimeout(() => setRevealedId(focusId), transcriptDwellMs());
     return () => window.clearTimeout(timer);
   }, [focusId, transcriptReady]);
   useEffect(() => () => setApexHover(false), []);

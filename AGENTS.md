@@ -4,6 +4,44 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Landing opening and look panels (2026-11-01)
+
+Two DialKit panels share a shell at the landing's top left (dev only,
+`LandingDials`). "landing opening" holds the washes' arrival, moved out of
+the "landing" panel's timing (its old "washes arrive" folder is gone):
+order (`LANDING_MOTION.opening.order`: random, light/dark first, centre
+out, edges in, left to right, top to bottom; `scatter` loosens it,
+`inViewFirst` puts what is on screen first), rhythm (`firsts`, `second`,
+`restFrom`, `lastStart`, `pace`, `jitter`), growth (`ease`: smooth, bleed,
+soak, linear; grow/fade times; the free washes' reach) and the shape a
+wash opens with (`roundFrom`; `openWarp`, a wandering edge while it opens,
+`uOpen`/`uOpenWarp` in the wash shader; `openDrift`, opening off-centre and
+flowing over; `wetDeep`, deeper while wet). "replay" runs the opening
+again. "landing look" is `lib/landingLook.ts`: a CSS filter on the
+landing's root, a tint and a pool of light (plus a flat veil) in blend
+modes, eased to neutral with the paper through Enter. All defaults are
+neutral / as built.
+
+## Gallery reflection and sheen (2026-11-01)
+
+Each gallery vessel has a soft mirror image under its foot and a studio sheen
+on its glass. Both are tuned in the "gallery" DialKit shell (folders
+"reflection" and "sheen"; `GalleryTune.reflection`/`.sheen` in
+`lib/galleryTune.ts`) and passed to `VesselArtifact` as `reflection` /
+`sheen`. Naming, export and the labs pass neither, so they are unchanged.
+The reflection repeats the glass and strip, mirrored at `glass.lo - gap` on
+their own layers (3 sheet, 4 glass). It is rendered into its own target,
+blurred (`soft`, CSS px), and laid into the refraction frame before the
+vessel's strip, so the facing glass refracts it too. It fades by
+`uReflectFall` (new in `REFLECT_GLSL`; the lab keeps 1.3). The canvas is
+`1 + room` times taller than its seat and the lens keeps the seat's framing
+(`setViewOffset`). Presses in that extra room are ignored. The first frame
+(the landing's ink outline, `captureInkMask`) is drawn without the reflection
+and cropped to the seat (`data-seat-share`). The sheen is `studioSheen` in
+`GLASS_COMMON_GLSL`, refraction look only: a lobe fixed to the eye (x/y on
+screen, size, softness, rim, tilt), its core colour easing to an edge colour,
+drifting by speed/wander and breathing. With amount 0 it is neutral.
+
 ## Pigment drops on the pond (2026-10-31)
 
 The pond's prompt ripples are no longer spontaneous: each is made by a drop
@@ -177,12 +215,22 @@ scale. Naming and other consumers retain their existing framing. Run
 `node scripts/check-vessel-framing.mjs` for projection checks across shapes,
 aspect ratios, library sizes and orbit angles.
 
-The capped gallery's centre is enlarged 3%, easing out before adjacent seats.
-The first right seat is now about 4% larger than the centre; the second is
-reduced a further 5% (`adjustCurveSeat` in
-`VesselGalleryPreview.tsx`). The two right seats move
-inward by 3% and 5% of screen width; smooth offset weights preserve scrolling
-and the phone's additional clearance. The view toggle imports the root
+The capped gallery's centre is enlarged 6%, easing out before adjacent seats.
+The first newer seat is 13% smaller and the second 45% (`adjustCurveSeat` in
+`VesselGalleryPreview.tsx`), stepped out by 2% / back in by 2.5% of the width
+and down by 4.5% / 5% of the height; smooth offset weights preserve scrolling and the
+phone's additional clearance. These, the vessels' foot stain (gallery strength
+.21, foot .47, flash .85, one fixed tone per curated memory), the room
+(#eae7e6 / white) and the gallery's timings live in `lib/galleryTune.ts`; in
+development `GalleryDials` tunes them live, in three separate DialKit shells
+while the gallery is in front (`DialRoot`'s `panels` filter is our pnpm patch,
+`patches/dialkit@2.0.2.patch`): "gallery" bottom right, "gallery colours"
+bottom left, "gallery ground" top left — the water's still colour, grain (and
+its cell size), paper fibre and vignette (optional `PUDDLE_TUNING` fields read
+by the puddle's render and dive passes; absent = as built), a noise texture and
+tint laid over the whole gallery in a blend mode, and a CSS filter on
+`PuddleScene`'s root (none while neutral). The landing → gallery ink takes each
+vessel's tuned stain and foot (`galleryVesselTones`). The view toggle imports the root
 `constellation icon.svg` and `timeline icon.svg` directly, fitting each within
 14.2px (the create icon's visible extent) while preserving the SVG proportions.
 Its hover labels use two centered lines: "constellation / view" and "timeline / view".

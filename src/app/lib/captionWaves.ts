@@ -1,3 +1,5 @@
+import { LANDING_MOTION } from "./landingMotion";
+
 /*
  * The landing's captions come and go in small waves: two or three at a time,
  * each typed in a character at a time, held, then taken back from its last
@@ -6,21 +8,24 @@
  * the plan is a pure function of the clock once drawn.
  */
 
+/* The timings live in LANDING_MOTION.captions so the dev panel can move them;
+   read through getters, at the moment each is used. */
+const C = LANDING_MOTION.captions;
 export const CAPTION_WAVES = {
   /** The first wave, after the landing has painted. */
-  firstAt: 700,
+  get firstAt() { return C.firstAt; },
   /** A typed character, before its own jitter. */
-  perChar: 64,
+  get perChar() { return C.perChar; },
   charJitter: [0.55, 1.75] as const,
   /** The beat after a space is longer, as a hand pauses between words. */
-  spacePause: 1.9,
+  get spacePause() { return C.spacePause; },
   /** Members of one wave start within this of each other. */
-  memberJitter: 520,
+  get memberJitter() { return C.memberJitter; },
   /** Fully shown, before taking it back. */
-  hold: 3000,
-  outPerChar: 30,
-  inFade: 280,
-  outFade: 820,
+  get hold() { return C.hold; },
+  get outPerChar() { return C.outPerChar; },
+  get inFade() { return C.inFade; },
+  get outFade() { return C.outFade; },
   /** The next wave, from the moment the first of this one starts to leave. */
   nextAfterHold: [-350, 1150] as const,
   groupSizes: [2, 3] as const,
@@ -48,10 +53,11 @@ export function createCaptionWaves(
 ): CaptionWaves {
   const W = CAPTION_WAVES;
   const span = (lo: number, hi: number) => lo + (hi - lo) * rand();
-  const perChar = reduced ? 0 : W.perChar;
-  const outPerChar = reduced ? 0 : W.outPerChar;
-  const inFade = reduced ? 500 : W.inFade;
-  const outFade = reduced ? 600 : W.outFade;
+  // read when each wave is drawn, so a change in the panel shows from the next wave
+  const perCharOf = () => (reduced ? 0 : W.perChar);
+  const outPerCharOf = () => (reduced ? 0 : W.outPerChar);
+  const inFadeOf = () => (reduced ? 500 : W.inFade);
+  const outFadeOf = () => (reduced ? 600 : W.outFade);
 
   let shows: CaptionShow[] = [];
   let nextAt = start + W.firstAt;
@@ -75,6 +81,7 @@ export function createCaptionWaves(
   };
 
   const schedule = (at: number) => {
+    const perChar = perCharOf(), outPerChar = outPerCharOf(), inFade = inFadeOf(), outFade = outFadeOf();
     const size = W.groupSizes[Math.floor(rand() * W.groupSizes.length)];
     let firstOut = Infinity;
     for (let m = 0; m < size; m++) {
@@ -129,7 +136,7 @@ export function captionCharLook(show: CaptionShow, c: number, now: number, reduc
   const outT = (now - show.outAt[c]) / (reduced ? 600 : CAPTION_WAVES.outFade);
   if (outT <= 0) {
     const e = 1 - (1 - Math.min(1, inT)) ** 3;
-    return { a: e, blur: reduced ? 0 : (1 - e) * 2.4, dx: 0, dy: reduced ? 0 : (1 - e) * 1.5 };
+    return { a: e, blur: reduced ? 0 : (1 - e) * C.inBlur, dx: 0, dy: reduced ? 0 : (1 - e) * C.inRise };
   }
   const q = Math.min(1, outT);
   if (reduced) return { a: 1 - q, blur: 0, dx: 0, dy: 0 };
@@ -138,8 +145,8 @@ export function captionCharLook(show: CaptionShow, c: number, now: number, reduc
   const spread = q * q * (3 - 2 * q);
   return {
     a: (1 - q) ** 1.3,
-    blur: spread * 7.5,
-    dx: (r - 0.5) * 7 * spread,
-    dy: -(1.5 + r * 4) * spread,
+    blur: spread * C.outBlur,
+    dx: (r - 0.5) * C.outScatter * spread,
+    dy: -(1.5 + r * C.outRise) * spread,
   };
 }

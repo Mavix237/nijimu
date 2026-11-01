@@ -1,5 +1,6 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { GalleryOverrideContext } from "../lib/galleryOverride";
+import { galleryFilterCss, galleryTune, subscribeGalleryTune, useGalleryTuneVersion } from "../lib/galleryTune";
 // import NewMomoryIdle from "../../imports/NewMomoryIdle"; // button hidden — cursor hint replaces it
 import { LIFE_EVENTS, MemoryEvent } from "../data/memoryData";
 import { loadMemories, toMemoryEvent, SavedMemory } from "../lib/memoryStore";
@@ -70,6 +71,39 @@ const HOLD_RING_BLOOM_MS = 480;
 const CREATE_DIVE_MS = RECORD_DIVE.diveMs;
 /** The page ground the puddle is painted on. */
 const PAGE_BG = "#ededee";
+
+/* The gallery panel's ground (galleryTune.backdrop) written into the puddle's
+   tuning, read by its shaders every frame. The defaults are the puddle's own. */
+function applyBackdrop() {
+  const b = galleryTune().backdrop;
+  const n = parseInt(b.color.slice(1, 7), 16);
+  PUDDLE_TUNING.baseColor = Number.isFinite(n) ? [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255] : undefined;
+  PUDDLE_TUNING.grainAmount = b.grain;
+  PUDDLE_TUNING.grainSize = b.grainSize;
+  PUDDLE_TUNING.paperTexture = b.paperTexture;
+  PUDDLE_TUNING.vignette = b.vignette;
+}
+
+/** A 256px tile of grey noise for the gallery's texture overlay, made once. */
+let noiseTile: string | null = null;
+function galleryNoiseTile(): string {
+  if (noiseTile) return noiseTile;
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d");
+  if (!ctx) return "";
+  const img = ctx.createImageData(256, 256);
+  // seeded, so the tooth is the same on every visit
+  const rand = mulberry32(0x6e696a69);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = 128 + (rand() - 0.5) * 200;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  noiseTile = c.toDataURL("image/png");
+  return noiseTile;
+}
 /** The hint label's offset from the cursor, and the vertical center of its line box. */
 const HINT_OFFSET_X = 14;
 const HINT_OFFSET_Y = 16;
@@ -438,6 +472,7 @@ export function PuddleScene({
      `anchors` (a saved memory is appended, and the draft was appended last),
      so the surface captions and the intro order can read from here. */
   const override = useContext(GalleryOverrideContext);
+  useGalleryTuneVersion();
   const liveSaved = useMemo(
     () => (naming ? savedMemories : loadMemories()),
     [naming, savedMemories],
@@ -1142,7 +1177,15 @@ export function PuddleScene({
     };
     window.addEventListener("resize", onResize);
 
+    // the gallery panel's ground: written into the tuning, and a parked frame redrawn with it
+    applyBackdrop();
+    const offTune = subscribeGalleryTune(() => {
+      applyBackdrop();
+      if (!running) sim.render(performance.now() / 1000);
+    });
+
     return () => {
+      offTune();
       cancelAnimationFrame(raf);
       running = false;
       endPress();
@@ -1216,10 +1259,12 @@ export function PuddleScene({
     descending || divePhase === "diving" || divePhase === "surfacing"
     || (!!inkArrival && inkArrival.elapsed < (inkArrival.reducedMotion ? INK_ENTRY.reducedEnd : INK_ENTRY.end));
 
+  const ground = galleryTune();
+  const groundFilter = galleryFilterCss(ground.filter);
   return (
     <div
       className="relative w-full h-dvh overflow-hidden select-none"
-      style={{ background: PAGE_BG }}
+      style={{ background: ground.backdrop.color || PAGE_BG, filter: groundFilter }}
     >
       {/* The water. Under the naming step it is there but unseen — at depth,
           held — and arrives when the memory is saved: it fades in and focuses,
@@ -1525,6 +1570,19 @@ export function PuddleScene({
             arrival: galleryCarried ? "carried" : "resolve",
           }}
         />
+      )}
+
+      {/* The gallery panel's texture and tint over everything (none unless set). */}
+      {ground.texture.tintAmount > 0 && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 60, pointerEvents: "none",
+          background: ground.texture.tint, opacity: ground.texture.tintAmount,
+          mixBlendMode: ground.texture.tintBlend as CSSProperties["mixBlendMode"] }} />
+      )}
+      {ground.texture.amount > 0 && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 61, pointerEvents: "none",
+          backgroundImage: `url(${galleryNoiseTile()})`, backgroundSize: `${ground.texture.size}px ${ground.texture.size}px`,
+          opacity: ground.texture.amount, filter: ground.texture.contrast !== 1 ? `contrast(${ground.texture.contrast})` : undefined,
+          mixBlendMode: ground.texture.blend as CSSProperties["mixBlendMode"] }} />
       )}
     </div>
   );

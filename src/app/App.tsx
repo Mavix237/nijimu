@@ -25,6 +25,7 @@ import { ProfilePanel } from "./components/ProfilePanel";
 import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
 import { useCompact } from "./hooks/useCompact";
 import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
+import { startFinishWatchdog } from "./lib/paperFinish";
 
 /** GitHub Pages subpath: Vite sets BASE_URL from vite.config base (e.g. /repo/). */
 const routerBasename =
@@ -34,6 +35,8 @@ const routerBasename =
 
 function RootLayout() {
   const navigate = useNavigate();
+  // steps the paper finish down if this device cannot keep up (lib/paperFinish.ts)
+  useEffect(() => { startFinishWatchdog(); }, []);
   const { pathname } = useLocation();
   const [phase, setPhase] = useState<LandingReturnPhase>("idle");
   const [profileOpen, setProfileOpen] = useState(false);

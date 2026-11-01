@@ -2,6 +2,8 @@ import { createContext, useContext, useEffect, useRef, useSyncExternalStore, typ
 import { createPortal } from "react-dom";
 import { CHROME_GRAY } from "../lib/colors";
 import { SANS } from "../lib/theme";
+import { onLanding, useFinishMode } from "../lib/paperFinish";
+import { PaperFinish } from "./PaperFinish";
 
 /*
  * On a phone the header's corner icons fold into one: a burger in the
@@ -149,6 +151,7 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
 }) {
   const burgerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
+  const finishOff = useFinishMode() === "off";
   const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
   // a press anywhere else, or Escape, folds it again
@@ -260,13 +263,14 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
           pointerEvents: open ? "auto" : "none",
         }}
       >
-        <div aria-hidden style={{
+        {/* the landing's grain on the landing; past Enter, the gallery's paper */}
+        {finishOff ? null : onLanding() ? <div aria-hidden style={{
           position: "absolute", inset: 0, borderRadius: "inherit", pointerEvents: "none", zIndex: 0,
           backgroundImage: paperGrain(),
           backgroundSize: `${128 / Math.min(window.devicePixelRatio || 1, 3)}px`,
           mixBlendMode: "overlay",
           opacity: 0.48,
-        }} />
+        }} /> : <PaperFinish fine zIndex={0} radius="inherit" />}
       </div>
     </>
   );

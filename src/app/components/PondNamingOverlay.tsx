@@ -1,11 +1,11 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { carouselFrame } from "../lib/carouselLayout";
 import { surfaceReturnBlurAt } from "../lib/ascentLight";
 import { POND_SINK, SINK_WASH, SURFACE_LIGHT, SURFACE_LIGHT_OUT_MS, pondSinkWash } from "../lib/pondCamera";
 import { DESCENT_STEP_PATHS } from "../lib/routes";
 import { VesselArtifact, vesselCanvasScale } from "../lab/VesselArtifact";
-import { DISTANCE_FAR, type Room } from "../lab/VesselPreview";
+import { DISTANCE_FAR } from "../lab/VesselPreview";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { draftArtifactOf, resumeColorState } from "../lib/namingDraft";
 import { formKey } from "../lib/superformula";
@@ -14,6 +14,9 @@ import { FLOW_PAGE, NAMING_PROSE_SIZE, TRANSCRIPT } from "../lib/theme";
 import { FlowPageGrid } from "./FlowPageGrid";
 import { MemoryReadingPane, type ReadableMemory } from "./MemoryReadingPane";
 import { useCompact } from "../hooks/useCompact";
+import { useNamingTune, type NamingLightTune } from "../lib/namingTune";
+
+const NamingDials = import.meta.env.DEV ? lazy(() => import("./NamingDials")) : null;
 import {
   useNamingRim,
   type NameFlowState,
@@ -31,14 +34,11 @@ import {
  * pressing it opens them in a reading pane (as the gallery does there).
  */
 
-/** Air left between the year and the scene content. */
-const FIELD_GAP = 28;
-/** The name, year and transcript rise further than the vessel. */
-const TEXT_LIFT = "6vh";
-/** The vessel sits this far above the seat the words leave it. */
-const ARTIFACT_LIFT = "3vh";
-/** A little larger than the gallery seat, on this page only. */
-const ARTIFACT_SCALE = 1.25;
+/*
+ * The vessel's lift and size, the words' lift and gaps, the room and the
+ * light are NAMING_TUNE_DEFAULT in lib/namingTune.ts (tuned live by the
+ * "naming" DialKit panel in development).
+ */
 /** Going back down: the words leave first, then the eye sinks. */
 const CHROME_OUT_MS = 420;
 /** How far below its seat the memory sinks when going back, as a share of the viewport height. */
@@ -57,20 +57,14 @@ const ARRIVE_SETTLE_VH = 3;
  * pale warm sky over it, the bright water under it, and a thinner, lighter
  * body — the gallery's thick-dark feet and rim read as a grey ball over
  * this much light. The memory's own stain stays in its tune (vesselTint).
+ * Near & clear is `light`, far & faded `lightFar`, evenly between.
  */
-const NAMING_ROOM: Room = { above: "#f3f3ee", below: "#e6e6e6" };
-const NAMING_LIGHT = { envAbove: 1.09, envBelow: 1.09, thickDark: 0.06, rim: 0.67, highlight: 1, keyIntensity: 1.41 };
-/** The same light for a memory at far & faded: the key gone, the sky dimmer, the rim a little quieter. */
-const NAMING_LIGHT_FAR: NamingLight = { envAbove: 0.9, envBelow: 1.09, thickDark: 0.06, rim: 0.6, highlight: 1, keyIntensity: 0 };
-/** The light at a memory's distance: near & clear is NAMING_LIGHT, far & faded NAMING_LIGHT_FAR, evenly between. */
-function namingLightAt(haze: number): NamingLight {
+function namingLightAt(haze: number, near: NamingLightTune, far: NamingLightTune): NamingLightTune {
   const t = clamp01(haze / DISTANCE_FAR);
-  const out = { ...NAMING_LIGHT };
-  for (const k of Object.keys(out) as (keyof NamingLight)[]) out[k] = NAMING_LIGHT[k] + (NAMING_LIGHT_FAR[k] - NAMING_LIGHT[k]) * t;
+  const out = { ...near };
+  for (const k of Object.keys(out) as (keyof NamingLightTune)[]) out[k] = near[k] + (far[k] - near[k]) * t;
   return out;
 }
-
-type NamingLight = typeof NAMING_LIGHT;
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 const smooth = (t: number) => { const c = clamp01(t); return c * c * (3 - 2 * c); };
@@ -102,6 +96,13 @@ export function PondNamingOverlay({
   backRef?: RefObject<(() => void) | null>;
 }) {
   const navigate = useNavigate();
+  const tune = useNamingTune();
+  const { artifactLift, artifactScale, textLift, fieldGap, passageGap } = tune.layout;
+  const ARTIFACT_LIFT = `${artifactLift}vh`;
+  const TEXT_LIFT = `${textLift}vh`;
+  /** The animation closures read the lift as it is now. */
+  const liftCss = useRef(ARTIFACT_LIFT);
+  liftCss.current = ARTIFACT_LIFT;
   const viewport = useViewport();
   const frame = carouselFrame(viewport.w, viewport.h);
   const contentTop = `max(24px, calc(50% - ${frame.size / 2}px - ${FLOW_PAGE.namingArtifactRaise}))`;
@@ -133,7 +134,8 @@ export function PondNamingOverlay({
   // The vessel, assigned form, photo, morph, colour and distance come from this branch's draft.
   const vessel = useMemo(() => galleryStateFor(draftArtifactOf(session)), [session]);
   const canvasRoom = useMemo(() => vesselCanvasScale(vessel.form, vessel.tune.morph), [vessel]);
-  const namingLight = useMemo(() => namingLightAt(vessel.tune.haze), [vessel]);
+  const namingLight = useMemo(() => namingLightAt(vessel.tune.haze, tune.light, tune.lightFar), [vessel, tune.light, tune.lightFar]);
+  const room = tune.room;
   const lit = useMemo(() => ({ ...vessel.tune, ...namingLight }), [vessel, namingLight]);
   /** Where the memory is (1 = below its seat, in the water; 0 = in its seat) and how far it has appeared. */
   const liftRef = useRef(0);
@@ -155,7 +157,7 @@ export function PondNamingOverlay({
     blurRef.current = blurPx;
     const el = artifactRef.current;
     if (!el) return;
-    el.style.transform = `translateY(calc(${lift * LIFT_VH}vh - ${ARTIFACT_LIFT}))`;
+    el.style.transform = `translateY(calc(${lift * LIFT_VH}vh - ${liftCss.current}))`;
     el.style.opacity = String(clamp01(appear));
     el.style.filter = blurPx > 0.02 ? `blur(${blurPx.toFixed(2)}px)` : "";
   };
@@ -179,12 +181,12 @@ export function PondNamingOverlay({
       if (!heading || !content || !scene) return;
       const contentEdge = scene.offsetTop + content.offsetTop;
       const headingBottom = heading.offsetTop + heading.offsetHeight;
-      setFieldDrop(Math.max(0, contentEdge - FIELD_GAP - headingBottom));
+      setFieldDrop(Math.max(0, contentEdge - fieldGap - headingBottom));
     };
     place();
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
-  }, [frame.size, viewport.w, viewport.h]);
+  }, [frame.size, viewport.w, viewport.h, fieldGap, artifactScale]);
 
   // Before the first frame: the frame is the light the ascent ended in. Once
   // the vessel has drawn, the light clears and sharpens, the eye settles the
@@ -280,6 +282,7 @@ export function PondNamingOverlay({
 
   return (
     <div className="absolute inset-0 select-none" style={{ zIndex: 30, pointerEvents: "none" }}>
+      {NamingDials && <div style={{ pointerEvents: "auto" }}><Suspense fallback={null}><NamingDials /></Suspense></div>}
       {/* The light the ascent ended in; the step opens out of it. */}
       {rising && <div ref={lightRef} aria-hidden
         style={{ position: "fixed", inset: 0, zIndex: 2, pointerEvents: "none", background: SURFACE_LIGHT, opacity: 1 }} />}
@@ -287,7 +290,7 @@ export function PondNamingOverlay({
       {/* Naming is content, not navigation: it shares the step-heading row. */}
       <FlowPageGrid headingRef={chromeRef} heading={rim.caption}
         scene={<div ref={contentRef} style={{ position: "absolute", top: contentTop, bottom: 12,
-          left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: inlinePassage ? 28 : 0 }}>
+          left: 0, right: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: inlinePassage ? passageGap : 0 }}>
         {inlinePassage && (
           <p
             ref={passageRef}
@@ -305,7 +308,7 @@ export function PondNamingOverlay({
               color: CHROME_GRAY,
               textAlign: "center",
               opacity: rising ? 0 : 1,
-              transform: `translateY(-${TEXT_LIFT})`,
+              transform: `translateY(${-textLift}vh)`,
               pointerEvents: "auto",
               zIndex: 1,
             }}
@@ -325,11 +328,11 @@ export function PondNamingOverlay({
         style={{
           position: "relative",
           height: "100%",
-          maxHeight: frame.size * ARTIFACT_SCALE,
+          maxHeight: frame.size * artifactScale,
           maxWidth: "100%",
           aspectRatio: "1",
           margin: "0 auto",
-          transform: rising ? `translateY(calc(${ARRIVE_SETTLE_VH}vh - ${ARTIFACT_LIFT}))` : `translateY(-${ARTIFACT_LIFT})`,
+          transform: rising ? `translateY(calc(${ARRIVE_SETTLE_VH}vh - ${ARTIFACT_LIFT}))` : `translateY(${-artifactLift}vh)`,
           opacity: rising ? 0 : 1,
           willChange: "transform, opacity, filter",
           pointerEvents: "auto",
@@ -341,7 +344,7 @@ export function PondNamingOverlay({
             cacheKey={`${session.draftId}|naming|${formKey(vessel.form)}|${vessel.tune.morph}`}
             form={vessel.form} morph={vessel.tune.morph}
             photoUrl={vessel.url || undefined} seed={vessel.seed}
-            tune={lit} room={NAMING_ROOM}
+            tune={lit} room={room}
             glassMode={vessel.mode} sheetMode={vessel.sheetMode} face={vessel.face}
             sheetSize={vessel.tune.sheetSize}
             onReady={() => { vesselReady.current = true; }}

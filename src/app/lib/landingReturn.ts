@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+import { PAPER_RETURN } from "./atmosphere";
 
 /** Exit-to-landing choreography: popup, then the scene, then the field, then the header. */
 export const LANDING_RETURN = {
@@ -10,7 +11,8 @@ export const LANDING_RETURN = {
   headerFadeMs: 1100,
 } as const;
 
-export const LANDING_PAPER = "#e4e4e6";
+/** The return veil: between the gallery's ground (#edecec) and the landing's paper (#f4f5f5 → #ecebeb). */
+export const LANDING_PAPER = PAPER_RETURN;
 
 export type LandingReturnPhase = "idle" | "scene-out" | "holding" | "landing";
 

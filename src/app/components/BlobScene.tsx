@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { galleryVesselTones, useGalleryTuneVersion } from "../lib/galleryTune";
 import svgPaths from "../../imports/svg-t19vgojqiy";
 import NewMomoryIdle from "../../imports/NewMomoryIdle";
 import { LIFE_EVENTS, COLORS as MEMORY_COLORS, MemoryEvent } from "../data/memoryData";
@@ -9,7 +10,6 @@ import { PageHeader, PAGE_HEADER_MARK } from "./PageHeader";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING } from "../lib/theme";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { LANDING_TONES, landingTone } from "../lib/homePaletteField";
 import { oklchToHex, type Oklch } from "../lib/oklch";
 import { INK_ENTRY, INK_POINTER_SIZE, flowProgress, inkGrowth, smoothProgress, type InkArrival } from "../lib/landingTransition";
 import { LANDING_RETURN, useLandingReturn } from "../lib/landingReturn";
@@ -20,6 +20,12 @@ import { WatercolorField, type WashBlob, type WashCuts } from "./WatercolorField
 import { INK_CUT_SCALE, hasInkSeats, inkSeat } from "../lib/inkCutouts";
 import { WashTunePanel } from "./WashTunePanel";
 import { initialWashTune } from "../lib/washTune";
+import { LANDING_MOTION } from "../lib/landingMotion";
+import { LANDING_LOOK_DEFAULT, landingFilterCss, landingLightGradient, landingPaperCss, landingVignetteCss, type LandingLook } from "../lib/landingLook";
+import { useFinishMode } from "../lib/paperFinish";
+import { WASH_TONE_DEFAULTS, washPigment, washToneHex, type WashColors } from "../lib/washColors";
+/* DialKit is a dev dependency: loaded only in development, never in the build. */
+const LandingDials = import.meta.env.DEV ? lazy(() => import("./LandingDials")) : null;
 
 /* Only the field's own gallery mode draws a 3D form; the landing never does,
    so three.js is not loaded with it. */
@@ -56,6 +62,8 @@ interface BlobData {
   y: number;
   size: number;
   color: string;
+  /** Its colour slot, WASH_TONE_DEFAULTS (the dev colour panel repaints by slot). */
+  tone: number;
   /** WatercolorField's character for it: 1 complete, 0 free and diffuse. */
   comp: number;
   seed: number;
@@ -79,15 +87,13 @@ interface BlobData {
 
 /* ───────── constants ───────── */
 /*
- * The washes wear the colour step's tones (LANDING_TONES in homePaletteField,
- * one per MEMORY_COLORS slot), not the raw home palette, so the landing reads
- * as colourful as the picker. WASH_AT is where each wash's light sits.
+ * The washes wear WASH_TONE_DEFAULTS (washColors.ts, one per MEMORY_COLORS
+ * slot, settled in the dev colour panel). WASH_AT is where each wash's light sits.
  */
 const WASH_AT = ["30% 30%", "40% 40%", "60% 60%", "50% 50%", "35% 45%", "55% 35%", "45% 55%", "40% 60%", "50% 40%", "60% 40%"];
-const COLORS = LANDING_TONES.map((tone, i) => {
-  const lit = landingTone(tone);
-  const deep = { ...lit, l: Math.max(0.2, lit.l - 0.07) };
-  return `radial-gradient(ellipse at ${WASH_AT[i]}, ${oklchToHex(lit)}, ${oklchToHex(deep)})`;
+const COLORS = WASH_TONE_DEFAULTS.map((_, i) => {
+  const { lit, deep } = washToneHex(i);
+  return `radial-gradient(ellipse at ${WASH_AT[i]}, ${lit}, ${deep})`;
 });
 
 /*
@@ -144,13 +150,11 @@ function computeGalleryOrder(events: { year: string }[]) {
 /** Each blob's box is this much larger than it used to be: the washes are broad. */
 const BLOB_SPREAD = 1.3;
 /** How long a wash not bound for the gallery takes to close on Enter, and over how long their starts are spread. */
-const CLOSE_MS = 1400;
-const CLOSE_SPREAD_MS = 600;
+const ENTRY = LANDING_MOTION.entry;
 /** How long a wash bound for the gallery takes to drift onto its seat, and the share of the seat box it gathers to (about the vessel's own size). */
-const SEAT_DRIFT_MS = 1500;
-const SEAT_GATHER = 0.55;
+
 /** How far into its drift a wash begins to fill its cutout: just as it settles. */
-const SEAT_FILL_FROM = 0.85;
+/* (closeMs, closeSpreadMs, seatDriftMs, seatGather, seatFillFrom: LANDING_MOTION.entry, live for the dev panel.) */
 /** Nearest two wash centres may sit, in % of the field. */
 const BLOB_MIN_GAP = 12;
 /** Share of washes centred on the frame's edge, about half outside it, so the field reaches past the screen. */
@@ -218,6 +222,7 @@ function generateBlobs(
       y: y + 10, // Shift all blobs down (10% = approx 100px at 1080p height)
       size: (180 + Math.random() * 300) * BLOB_SPREAD,
       color: COLORS[colorIndex % COLORS.length],
+      tone: colorIndex % COLORS.length,
       comp: washCharacter(),
       seed: Math.random() * 10,
       blur: 8 + Math.random() * 30,
@@ -327,7 +332,8 @@ function gentleEase(t: number): number {
 
 const PAPER = "#ededee";
 /** Landing paper — a step below the raw token so isolation doesn't read as a flash. */
-const LANDING_PAPER = "#e4e4e6";
+/** The paper's mean tone (landingLook's #f4f5f5 → #ecebeb), for the ink's contrast over it. */
+const LANDING_PAPER = "#f0f0f0";
 const HEADER_INK = { mark: "#504A4A", desc: "#2A2018" };
 const HEADER_LIGHT = { mark: "#e2e2e3", desc: "#D6DADB" };
 const HEADER_COLOR_FADE = "color 1.15s ease";
@@ -474,26 +480,41 @@ export function BlobScene({
     const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => setAmbientIn(true)); });
     return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
   }, []);
-  /* Each memory's vessel colour — its colour pick, which stains the glass from
-     the foot — as wash paint (lit and deep rgb), so a wash bound for the
-     gallery arrives in its vessel's own colour. */
+  /* Each memory's vessel colour as the gallery's glass wears it (galleryTune:
+     the tuned tone per curated memory, a saved memory's own pick, moved
+     together by the foot knobs) — the stain and the deep band at the foot as
+     wash paint (lit and deep rgb), so a wash bound for the gallery arrives in
+     its vessel's own colour. */
+  const galleryTuneVersion = useGalleryTuneVersion();
   const vesselPaint = useMemo(() => events.map((e, i) => {
     const pick = e.feeling ?? (i >= LIFE_EVENTS.length ? savedMemories[i - LIFE_EVENTS.length]?.look?.oklch : undefined);
-    if (!pick) return null;
+    const tones = galleryVesselTones(e.id, pick);
+    if (!tones) return null;
     const rgb = (ok: Oklch) => {
       const { r, g, b } = parseHex(oklchToHex(ok));
       return [r / 255, g / 255, b / 255];
     };
-    return [...rgb(pick), ...rgb({ ...pick, l: Math.max(0.2, pick.l - 0.07) })];
-  }), [events, savedMemories]);
+    return [...rgb(tones.stain), ...rgb(tones.foot)];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [events, savedMemories, galleryTuneVersion]);
+  /* The dev colour panel's repaint (LandingDials); null keeps the tones as built. */
+  const [washColors, setWashColors] = useState<WashColors | null>(null);
+  /* The landing's overall look (filter, tint, light; LandingDials' "landing look"). */
+  const [landingLook, setLandingLook] = useState<LandingLook>(LANDING_LOOK_DEFAULT);
   const washBlobs = useMemo<WashBlob[]>(() => blobs.map((b) => {
+    if (washColors) {
+      const { color, deep } = washPigment(washColors, b.tone);
+      return { color, deep, comp: b.comp, seed: b.seed, opacity: Math.min(1, b.opacity * washColors.adjust.opacity) };
+    }
     const [lit, deep] = (b.color.match(/#[0-9a-f]{6}/gi) ?? ["#9496a6", "#7a7c8c"]).map((hex) => {
       const { r, g, b: bl } = parseHex(hex);
       return [r / 255, g / 255, bl / 255] as [number, number, number];
     });
     return { color: lit, deep: deep ?? lit, comp: b.comp, seed: b.seed, opacity: b.opacity };
-  }), [blobs]);
+  }), [blobs, washColors]);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  /* the paper finish's mode: "off" takes the landing's grain away too (lib/paperFinish.ts) */
+  const finish = useFinishMode();
   const blobEls = useRef<(HTMLDivElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -575,6 +596,8 @@ export function BlobScene({
   const [washTune, setWashTune] = useState(initialWashTune);
   const washTuneRef = useRef(washTune);
   washTuneRef.current = washTune;
+  /* The dev panel's "replay": a fresh field (the washes open again) and a fresh caption clock. */
+  const [fieldKey, setFieldKey] = useState(0);
   const [captionReduced] = useState(() => window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   /* The captions' clock: from mount, or — on the landing's first arrival — so
      the first wave types in just as the centre block has finished appearing. */
@@ -786,22 +809,22 @@ export function BlobScene({
           // lies, a few at a time, all gone before the first cutout fills (timed
           // from when it was known, so a late answer never snaps it away)
           if (!closeSeen.current.has(i)) closeSeen.current.set(i, entryTime);
-          const start = Math.max(INK_ENTRY.descEnd + (blobs[i].seed / 10) * CLOSE_SPREAD_MS, closeSeen.current.get(i)!);
+          const start = Math.max(INK_ENTRY.descEnd + (blobs[i].seed / 10) * ENTRY.closeSpreadMs, closeSeen.current.get(i)!);
           cuts.fade[i] = 1;
-          cuts.open[i] = 1 - flowProgress(entryTime, start, start + CLOSE_MS);
+          cuts.open[i] = 1 - flowProgress(entryTime, start, start + ENTRY.closeMs);
           return;
         }
         // the gallery has not placed its seats yet: leave the wash as it is
         if (!cut) { cuts.fade[i] = 1; return; }
         if (!cutSeen.current.has(i)) cutSeen.current.set(i, entryTime);
         const from = Math.max(INK_ENTRY.headerEnd, cutSeen.current.get(i)!);
-        const travel = flowProgress(entryTime, from, from + SEAT_DRIFT_MS);
+        const travel = flowProgress(entryTime, from, from + ENTRY.seatDriftMs);
         // the fill begins as the wash settles onto its seat, with no pause between
-        const fill = flowProgress(entryTime, from + SEAT_DRIFT_MS * SEAT_FILL_FROM, INK_ENTRY.unfoldEnd - 300);
+        const fill = flowProgress(entryTime, from + ENTRY.seatDriftMs * ENTRY.seatFillFrom, INK_ENTRY.unfoldEnd - 300);
         const box = cut.size * lerp(INK_CUT_SCALE, 1, growth);
         // the wash drifts onto its seat, gathering to about its vessel's own size
         const cx = lerp(captured.x, cut.x, travel), cy = lerp(captured.y, cut.y, travel);
-        const side = lerp(captured.width, box * SEAT_GATHER, travel);
+        const side = lerp(captured.width, box * ENTRY.seatGather, travel);
         el.style.animation = "none";
         el.style.scale = "1";
         el.style.left = `${cx - cr.left}px`; el.style.top = `${cy - cr.top}px`;
@@ -1745,6 +1768,13 @@ export function BlobScene({
     );
   });
 
+  // the look eases back to neutral with the paper during Enter, so the gallery's ground takes over
+  const lookMix = classicChrome ? (landingArrival ? entryPaper : 1) : 0;
+  const lookFilter = landingFilterCss(landingLook.filter, lookMix);
+  const lookTint = landingLook.tint.amount * lookMix;
+  const lookVeil = landingLook.light.veil * lookMix;
+  const lookLight = landingLook.light.amount * lookMix;
+
   return (
     <div
       ref={viewportRef}
@@ -1755,11 +1785,13 @@ export function BlobScene({
       data-capture-root="landing"
       className={`relative w-full h-dvh overflow-hidden select-none ${classicChrome ? "cursor-default" : "cursor-pointer"}`}
       style={{
+        // the landing's paper is its own layer (below), so it can be a gradient and still fade through Enter
         background: classicChrome
-          ? (landingArrival ? `rgba(228,228,230,${entryPaper})` : LANDING_PAPER)
+          ? undefined
           : (landingArrival ? `rgba(237,237,238,${entryPaper})` : PAPER),
         isolation: classicChrome ? "isolate" : undefined,
         touchAction: classicChrome ? "auto" : "none",
+        filter: lookFilter,
       }}
       onClick={handleClick}
       onWheel={classicChrome ? undefined : handleWheel}
@@ -1769,6 +1801,27 @@ export function BlobScene({
       onPointerCancel={classicChrome ? undefined : handleMouseUp}
       onPointerLeave={classicChrome ? undefined : handleMouseUp}
     >
+      {/* ═══ PAPER (landing): its colour or gradient, fading out through Enter ═══ */}
+      {classicChrome && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none",
+          background: landingPaperCss(landingLook.paper), opacity: landingArrival ? entryPaper : 1 }} />
+      )}
+
+      {/* ═══ LOOK: a tint and a pool of light over the whole landing (LandingDials) ═══ */}
+      {lookTint > 0.001 && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
+          background: landingLook.tint.color, opacity: lookTint, mixBlendMode: landingLook.tint.blend as never }} />
+      )}
+      {lookVeil > 0.001 && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
+          background: landingLook.light.color, opacity: lookVeil }} />
+      )}
+      {lookLight > 0.001 && (
+        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
+          background: landingLightGradient(landingLook.light), opacity: lookLight,
+          mixBlendMode: landingLook.light.blend as never }} />
+      )}
+
       {/* SVG Filters */}
       <svg className="absolute w-0 h-0" aria-hidden="true">
         <defs>
@@ -1852,7 +1905,7 @@ export function BlobScene({
           className="absolute inset-0 pointer-events-none"
           style={{
             opacity: washTune.fieldOpacity * clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1)
-              * (classicChrome && !ambientIn ? 0 : 1),
+              * (classicChrome && !ambientIn ? 0 : 1) * (classicChrome ? landingLook.ambient.amount : 1),
             // the ambient light comes up with the washes, from clear paper
             transition: classicChrome ? "opacity 6.8s cubic-bezier(.45, 0, .2, 1)" : undefined,
           }}
@@ -1884,7 +1937,7 @@ export function BlobScene({
         </div>
 
         {classicChrome && (
-          <WatercolorField width={canvasWidth} height={canvasHeight} blobs={washBlobs}
+          <WatercolorField key={fieldKey} width={canvasWidth} height={canvasHeight} blobs={washBlobs}
             blobEls={blobEls} containerRef={containerRef} tune={washTune}
             resolution={fieldResolution} presenceRef={washPresence} wordsRef={captionWords} cutsRef={washCuts} onReady={onWashReady} onSettling={onWashesSettling} />
         )}
@@ -1938,12 +1991,14 @@ export function BlobScene({
         ref={canvasRef}
         data-capture-frame=""
         className="absolute inset-0 w-full h-full pointer-events-none opacity-[0.48]"
-        style={{ mixBlendMode: "overlay", imageRendering: classicChrome ? "auto" : "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
+        style={finish === "off" ? { display: "none" } : classicChrome
+          ? { mixBlendMode: landingLook.grain.blend as never, imageRendering: "auto", opacity: landingLook.grain.amount * (landingArrival ? entryGrain : 1) }
+          : { mixBlendMode: "overlay", imageRendering: "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
       />
       <div className="absolute inset-0 pointer-events-none" data-capture-plate="" style={{
         opacity: entryVignette,
         background: classicChrome
-          ? "radial-gradient(ellipse at center, transparent 22%, rgba(0,0,0,0.2) 100%)"
+          ? landingVignetteCss(landingLook.vignette)
           : "radial-gradient(ellipse at center, transparent 32%, rgba(0,0,0,0.14) 100%)",
       }} />
 
@@ -2291,7 +2346,14 @@ export function BlobScene({
         </div>
       )}
 
-      {classicChrome && TUNE_PANEL && <WashTunePanel tune={washTune} onChange={setWashTune} />}
+      {classicChrome && LandingDials && (
+        <Suspense fallback={null}>
+          <LandingDials tune={washTune} onChange={setWashTune} onColors={setWashColors} onLook={setLandingLook}
+            onReplay={() => { setFieldKey((k) => k + 1); setCaptionsFrom(performance.now()); }} />
+        </Suspense>
+      )}
+      {/* Outside development, ?tune keeps the plain panel. */}
+      {classicChrome && TUNE_PANEL && !LandingDials && <WashTunePanel tune={washTune} onChange={setWashTune} />}
 
       {/* ═══ KEYFRAMES ═══ */}
       <style>{`

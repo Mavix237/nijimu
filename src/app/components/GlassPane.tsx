@@ -3,8 +3,10 @@ import { LANDING_RETURN } from "../lib/landingReturn";
 import { squirclePath } from "../lib/squircle";
 import { useCompact } from "../hooks/useCompact";
 import { PANE_ACTION, PANE_CONTENT_GAP } from "../lib/theme";
+import { onLanding, useFinishMode } from "../lib/paperFinish";
+import { PaperFinish } from "./PaperFinish";
 
-/** Paper grain — same recipe as SceneViewer / the dive gallery veil. */
+/** The landing's pane grain (past Enter a pane wears PaperFinish). */
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const LEAVE_MS = LANDING_RETURN.profileLeaveMs;
@@ -47,6 +49,8 @@ export function GlassPane({
   // a phone's pane covers most of the screen, the gallery's vessels included:
   // a deeper blur and a denser tint keep it reading as quiet frosted glass
   const compact = useCompact();
+  const landing = onLanding();
+  const finishOff = useFinishMode() === "off";
   const [mounted, setMounted] = useState(open);
   const [leaving, setLeaving] = useState(false);
   /** One frame after mounting, so the pane transitions from its unseen state. */
@@ -198,21 +202,26 @@ export function GlassPane({
             WebkitBackdropFilter: compact ? "blur(26px) saturate(1.1)" : "blur(16px) saturate(1.15)",
           }}
         >
-          <div
-            aria-hidden
-            style={{
-              position: "absolute",
-              inset: 0,
-              pointerEvents: "none",
-              zIndex: 1,
-              opacity: 0.22,
-              backgroundImage: GRAIN_URL,
-              backgroundRepeat: "repeat",
-              // half the tile, half the grain: the noise is vector, so it stays crisp
-              backgroundSize: "256px 256px",
-              mixBlendMode: "soft-light",
-            }}
-          />
+          {/* past Enter the pane wears the gallery's paper (its blur has taken
+              the water's grain away, so it brings the fine grain too); the
+              landing keeps its own */}
+          {finishOff ? null : landing ? (
+            <div
+              aria-hidden
+              style={{
+                position: "absolute",
+                inset: 0,
+                pointerEvents: "none",
+                zIndex: 1,
+                opacity: 0.22,
+                backgroundImage: GRAIN_URL,
+                backgroundRepeat: "repeat",
+                // half the tile, half the grain: the noise is vector, so it stays crisp
+                backgroundSize: "256px 256px",
+                mixBlendMode: "soft-light",
+              }}
+            />
+          ) : <PaperFinish fine zIndex={1} radius="inherit" />}
 
           <div
             style={{

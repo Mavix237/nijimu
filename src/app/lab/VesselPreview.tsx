@@ -129,6 +129,14 @@ export interface VesselTune {
   /* …and two lights set round it: a tint fill above in a pale tone of its hue (strength,
      breadth 0…1, share of the pick's chroma), and a neutral white key (strength, crispness) */
   tintFill: number; tintFillSoft: number; tintFillChroma: number; whiteLight: number; whiteSharp: number;
+  /* Optional (the gallery's dev panel): the stain's shape up the glass — the deep
+     foot band's top and blend, and where the tone thins away (0–1 of the height,
+     .03 / .16 / .5 when absent) — and the foot's tone: below the pick by DeepL in
+     lightness, its chroma × DeepC (.06 / 1.1), unless the foot's own tone is given. */
+  memoryTintFootTop?: number; memoryTintFootBlend?: number; memoryTintReach?: number;
+  memoryTintDeepL?: number; memoryTintDeepC?: number;
+  /** The foot's own tone (OKLCH), in place of the one drawn from the pick, when its lightness is given. */
+  memoryTintFootLight?: number; memoryTintFootChroma?: number; memoryTintFootHue?: number;
   // light
   keyAzimuth: number; keyElevation: number; keyIntensity: number;
   // two catches of the room, sliding slowly over the glass
@@ -741,13 +749,15 @@ export function buildDrapedSheet(glass: Glass, inset: number, d: Drape): Sheet {
    depth below the table (uReflect is its strength, which may be 0 once the eye
    has gone under the table; the thing itself carries −1). uReveal is how much
    of the vessel is there at all — 1 here and in the gallery; the descent brings
-   it up out of the water. */
+   it up out of the water. uReflectFall is the depth it is gone by (1.3 in the
+   lab; the gallery's reflection tunes it). */
 const REFLECT_GLSL = /* glsl */ `
   uniform float uReflect;
   uniform float uGroundY;
   uniform float uReveal;
+  uniform float uReflectFall;
   float reflectFade(vec3 world) {
-    return (uReflect >= 0.0 ? uReflect * (1.0 - smoothstep(0.0, 1.3, uGroundY - world.y)) : 1.0) * uReveal;
+    return (uReflect >= 0.0 ? uReflect * (1.0 - smoothstep(0.0, uReflectFall, uGroundY - world.y)) : 1.0) * uReveal;
   }
 `;
 
@@ -913,6 +923,40 @@ export const glassVertex = /* glsl */ `
    three soft patches (breath on a cold window, placed by the seed). */
 const GLASS_COMMON_GLSL = /* glsl */ `
   ${REFLECT_GLSL}
+  /* A studio sheen on the facing wall (the gallery's knob; 0 everywhere else):
+     a soft lobe of light fixed to the eye, not the form, so the vessel turns
+     under it. uSheenAt: x/y on the screen (−1…1) where it sits; uSheenShape:
+     x size (radians), y softness (share of the size the gradient spans), z how
+     much it gathers toward the silhouette, w how far it wanders; uSheenMotion:
+     x speed, y breath (brightness swelling), z the shape's tilt (radians). The
+     core is uSheenColor, easing to uSheenEdge at its rim. */
+  uniform float uSheen0;
+  uniform vec3 uSheenColor;
+  uniform vec3 uSheenEdge;
+  uniform vec2 uSheenAt;
+  uniform vec4 uSheenShape;
+  uniform vec3 uSheenMotion;
+  uniform float uSheenTime;
+  vec4 studioSheen(vec3 nWorld, float facing) {
+    if (uSheen0 <= 0.0) return vec4(0.0);
+    vec3 nv = normalize((viewMatrix * vec4(nWorld, 0.0)).xyz);
+    float t = uSheenTime * uSheenMotion.x;
+    vec2 at = uSheenAt + uSheenShape.w * vec2(sin(t * .71) + .4 * sin(t * 1.93 + 1.3), cos(t * .53) * .8 + .3 * sin(t * 1.37));
+    // the lobe on the screen: where the normal points, against where the light sits, stretched by the tilt
+    vec2 d = nv.xy - clamp(at, -1.5, 1.5) * .85;
+    float c = cos(uSheenMotion.z), s = sin(uSheenMotion.z);
+    d = vec2(c * d.x + s * d.y, -s * d.x + c * d.y);
+    d.y *= 1.6;
+    float r = length(d);
+    float size = max(.02, uSheenShape.x);
+    float soft = clamp(uSheenShape.y, .01, 1.0);
+    float lobe = 1.0 - smoothstep(size * (1.0 - soft), size * (1.0 + soft * .6), r);
+    lobe *= mix(1.0, smoothstep(.0, .9, 1.0 - facing), uSheenShape.z);
+    float breath = 1.0 + uSheenMotion.y * .5 * sin(uSheenTime * 1.1 + 0.7);
+    float k = clamp(lobe * uSheen0 * breath, 0.0, 1.5);
+    vec3 tone = mix(uSheenEdge, uSheenColor, smoothstep(0.0, 1.0, lobe));
+    return vec4(tone, k);
+  }
   uniform vec3 uKey;
   uniform float uKeyIntensity;
   uniform float uRim;
@@ -927,6 +971,9 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform vec2 uTintSpan;
   uniform vec3 uMemoryTintDeep;
   uniform float uMemoryTintDepth;
+  // the stain's shape up the glass: x where the deep foot band holds to, y where it
+  // has blended into the tone, z where the tone has thinned to nothing (0–1 of the height)
+  uniform vec3 uTintBand;
   uniform vec3 uPatch[3];
   /* distance (each already scaled by the haze): the view through the glass smeared
      further, the rim lines and the gathering of alpha at the silhouette letting go,
@@ -1233,11 +1280,11 @@ const GLASS_COMMON_GLSL = /* glsl */ `
     return clamp((vModel.y - uTintSpan.x) / max(1e-3, uTintSpan.y - uTintSpan.x), 0.0, 1.0);
   }
   float tintRise() {
-    return clamp((.5 - tintUp()) / .47, 0.0, 1.0);
+    return clamp((uTintBand.z - tintUp()) / max(1e-3, uTintBand.z - uTintBand.x), 0.0, 1.0);
   }
   float tintFoot() {
     if (uMemoryTintAmount <= 0.0) return 0.0;
-    return (1.0 - smoothstep(.03, .16, tintUp())) * uMemoryTintDepth;
+    return (1.0 - smoothstep(uTintBand.x, max(uTintBand.x + 1e-3, uTintBand.y), tintUp())) * uMemoryTintDepth;
   }
   float tintAssert() {
     if (uMemoryTintAmount <= 0.0) return 0.0;
@@ -1498,6 +1545,10 @@ export const glassRefractFragment = /* glsl */ `
     float glow = glowAt(1.0 - g, n, 0.0) * (1.0 - back);
     color = mix(color, glowColor(), clamp(glow * .6, 0.0, 1.0));
     alpha += glow * .4;
+    // the studio sheen, on the facing wall only: laid on as light, and it asserts the glass under it
+    vec4 sheen = studioSheen(n, facing) * (1.0 - back);
+    color = mix(color, sheen.rgb, clamp(sheen.a, 0.0, 1.0));
+    alpha += sheen.a * .7;
     gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0) * reflectFade(vWorld));
   }
 `;
@@ -1757,6 +1808,7 @@ export function createSheetUniformSet(edgePrint: THREE.Texture) {
     uReflect: { value: 0 },
     uGroundY: { value: 0 },
     uReveal: { value: 1 },
+    uReflectFall: { value: 1.3 },
     uDevelop: { value: 1.45 },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
@@ -1795,11 +1847,20 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uReflect: { value: 0 },
     uGroundY: { value: 0 },
     uReveal: { value: 1 },
+    uReflectFall: { value: 1.3 },
+    uSheen0: { value: 0 },
+    uSheenColor: { value: new THREE.Color(1, 1, 1) },
+    uSheenEdge: { value: new THREE.Color(1, 1, 1) },
+    uSheenAt: { value: new THREE.Vector2(-.5, .5) },
+    uSheenShape: { value: new THREE.Vector4(.5, .5, 0, 0) },
+    uSheenMotion: { value: new THREE.Vector3(0, 0, 0) },
+    uSheenTime: { value: 0 },
     uMemoryTint: { value: new THREE.Color("#ffffff") },
     uMemoryTintAmount: { value: 0 },
     uTintSpan: { value: new THREE.Vector2(-1, 1) },
     uMemoryTintDeep: { value: new THREE.Color("#ffffff") },
     uMemoryTintDepth: { value: 0 },
+    uTintBand: { value: new THREE.Vector3(.03, .16, .5) },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
     uHazeWash: { value: 0 },
@@ -1958,11 +2019,15 @@ export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   u.uWhiteSharp.value = tune.whiteSharp ?? VESSEL_TUNE_DEFAULT.whiteSharp;
   u.uTintSpan.value.set(w.span.lo, w.span.hi);
   u.uMemoryTintDepth.value = tune.memoryTintDepth ?? 0;
+  u.uTintBand.value.set(tune.memoryTintFootTop ?? .03, tune.memoryTintFootBlend ?? .16, tune.memoryTintReach ?? .5);
   // the picked tone, and the same tone a little deeper for the band at the foot —
   // about as deep as a landing wash's own deep edge, not past it
   const tone = { l: tune.memoryTintLight ?? .66, c: tune.memoryTintChroma ?? 0, h: tune.memoryTintHue ?? 0 };
   u.uMemoryTint.value.set(oklchToHex(tone));
-  u.uMemoryTintDeep.value.set(oklchToHex({ l: Math.max(.2, tone.l - .06), c: Math.min(.2, tone.c * 1.1), h: tone.h }));
+  const deep = tune.memoryTintFootLight !== undefined
+    ? oklchToHex({ l: tune.memoryTintFootLight, c: tune.memoryTintFootChroma ?? 0, h: tune.memoryTintFootHue ?? 0 })
+    : oklchToHex({ l: Math.max(.2, tone.l - (tune.memoryTintDeepL ?? .06)), c: Math.min(.2, tone.c * (tune.memoryTintDeepC ?? 1.1)), h: tone.h });
+  u.uMemoryTintDeep.value.set(deep);
   u.uHazePhoto.value = tune.haze * tune.hazePhoto;
   u.uHazeEdge.value = tune.haze * tune.hazeEdge;
   u.uHazeWash.value = tune.haze * tune.hazeWash;

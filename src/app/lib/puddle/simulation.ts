@@ -61,7 +61,17 @@ export interface PuddleTuning {
   holdPulseStartPeriod: number;
   /** Seconds over which that opening flurry eases into the steady rhythm. */
   holdPulseSettle: number;
+  /* Optional finish (the gallery's dev panel writes these live; absent = as built):
+     the still water's colour (0–1 sRGB; the paper under it keeps its slight warmth
+     below that), the vignette (.16), the grain's cell in device px (1) and how much
+     of the paper's fibre shows (1). */
+  baseColor?: [number, number, number];
+  vignette?: number;
+  grainSize?: number;
+  paperTexture?: number;
 }
+
+const BASE_DEFAULT: [number, number, number] = [0.9294, 0.9294, 0.9333];
 
 export const PUDDLE_TUNING: PuddleTuning = {
   // quieter water: rings travel a little slower and die sooner, so they
@@ -228,6 +238,10 @@ uniform vec2 u_drift;
 // 0 = the dive pass re-applies them after its zoom, so they stay glued to the
 //     screen instead of magnifying with the water like a scaled image.
 uniform float u_postFx;
+uniform vec3 u_base;
+uniform float u_vignette;
+uniform float u_grainSize;
+uniform float u_paperTex;
 
 float hash(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -306,8 +320,8 @@ void main() {
   float flock = valueNoise(pu * vec2(110.0, 140.0) + 8.3);
   float vein = valueNoise(pu * vec2(28.0, 36.0) + 19.0);
   float paperN = fiber * 0.42 + flock * 0.36 + vein * 0.22;
-  vec3 paper = vec3(0.922, 0.918, 0.910) + (paperN - 0.5) * vec3(0.032, 0.028, 0.024);
-  paper += (hash(gl_FragCoord.xy) - 0.5) * u_grain * 0.55 * u_postFx;
+  vec3 paper = u_base + vec3(-0.0074, -0.0114, -0.0233) + (paperN - 0.5) * vec3(0.032, 0.028, 0.024) * u_paperTex;
+  paper += (hash(floor(gl_FragCoord.xy / u_grainSize)) - 0.5) * u_grain * 0.55 * u_postFx;
 
   // watercolor as a light stain over the paper
   tint = mix(tint, vec3(1.0), 0.62);
@@ -331,7 +345,7 @@ void main() {
 
   // vignette, matching the original's soft rgba(0,0,0,0.08) edge
   vec2 vc = v_uv - 0.5;
-  col *= 1.0 - dot(vc, vc) * 0.16 * u_postFx;
+  col *= 1.0 - dot(vc, vc) * u_vignette * u_postFx;
 
   o = vec4(col, 1.0);
 }`;
@@ -354,6 +368,9 @@ uniform float u_zoom;      // fraction of uv pulled toward the focus (0..1)
 uniform float u_blur;      // defocus radius, in uv of the short edge
 uniform float u_wash;      // 0..1 contrast collapse toward the surface color
 uniform float u_grain;     // screen-space paper grain, applied after the zoom
+uniform vec3 u_base;       // the still water's colour the wash settles to
+uniform float u_vignette;
+uniform float u_grainSize; // device px per grain cell
 uniform vec2 u_aspectFix;  // short-edge uv radius -> per-axis uv
 
 const vec2 POISSON[16] = vec2[](
@@ -389,15 +406,15 @@ void main() {
     c = texture(u_scene, uv).rgb;
   }
 
-  vec3 base = vec3(0.9294, 0.9294, 0.9333);
+  vec3 base = u_base;
   c = base + (c - base) * (1.0 - u_wash);
 
   // grain + vignette re-applied here, in final screen space — the paper
   // texture must stay glued to the glass, not magnify with the water (the
   // scene pass skips both while diving; see u_postFx there)
-  c += (hash(gl_FragCoord.xy) - 0.5) * u_grain;
+  c += (hash(floor(gl_FragCoord.xy / u_grainSize)) - 0.5) * u_grain;
   vec2 vc = v_uv - 0.5;
-  c *= 1.0 - dot(vc, vc) * 0.16;
+  c *= 1.0 - dot(vc, vc) * u_vignette;
 
   o = vec4(c, 1.0);
 }`;
@@ -623,7 +640,7 @@ export function createPuddleSimulation(
     dyePass = makePass(gl, vert, DYE_FRAG, ["u_dye", "u_height", "u_texel", "u_advect", "u_diffuse", "u_decay"]);
     renderPass = makePass(gl, vert, RENDER_FRAG, [
       "u_height", "u_dye", "u_texel", "u_time", "u_iri", "u_filmScale", "u_grain", "u_shimmer",
-      "u_drift", "u_postFx",
+      "u_drift", "u_postFx", "u_base", "u_vignette", "u_grainSize", "u_paperTex",
     ]);
     height = makePingPong(gl, simW, simH, gl.RG16F, gl.RG);
     dye = makePingPong(gl, simW, simH, gl.RGBA16F, gl.RGBA);
@@ -708,6 +725,7 @@ export function createPuddleSimulation(
       try {
         divePass = makePass(gl!, vert, DIVE_FRAG, [
           "u_scene", "u_focus", "u_zoom", "u_blur", "u_wash", "u_grain", "u_aspectFix",
+          "u_base", "u_vignette", "u_grainSize",
         ]);
       } catch {
         return false; // fall back to the un-dived composite
@@ -909,6 +927,11 @@ export function createPuddleSimulation(
       gl.uniform2f(renderPass.uniforms.u_drift, driftUv[0], driftUv[1]);
       // while diving, grain + vignette move to the dive pass (screen space)
       gl.uniform1f(renderPass.uniforms.u_postFx, dived ? 0 : 1);
+      const base = tuning.baseColor ?? BASE_DEFAULT;
+      gl.uniform3f(renderPass.uniforms.u_base, base[0], base[1], base[2]);
+      gl.uniform1f(renderPass.uniforms.u_vignette, tuning.vignette ?? 0.16);
+      gl.uniform1f(renderPass.uniforms.u_grainSize, Math.max(1, tuning.grainSize ?? 1));
+      gl.uniform1f(renderPass.uniforms.u_paperTex, tuning.paperTexture ?? 1);
       drawQuad();
 
       // dive pass — dolly toward the focus, defocus, contrast wash
@@ -925,6 +948,9 @@ export function createPuddleSimulation(
         gl.uniform1f(divePass.uniforms.u_blur, diveState.blur);
         gl.uniform1f(divePass.uniforms.u_wash, diveState.wash);
         gl.uniform1f(divePass.uniforms.u_grain, tuning.grainAmount);
+        gl.uniform3f(divePass.uniforms.u_base, base[0], base[1], base[2]);
+        gl.uniform1f(divePass.uniforms.u_vignette, tuning.vignette ?? 0.16);
+        gl.uniform1f(divePass.uniforms.u_grainSize, Math.max(1, tuning.grainSize ?? 1));
         gl.uniform2f(
           divePass.uniforms.u_aspectFix,
           shortEdge / sceneTarget.w,

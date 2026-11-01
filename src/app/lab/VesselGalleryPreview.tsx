@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { memoryColorOf, vesselTint } from "../lib/vesselTint";
 import { MemoryCarouselPage } from "../components/MemoryCarouselPage";
 import { LIFE_EVENTS } from "../data/memoryData";
@@ -11,7 +11,7 @@ import {
 import { pushGalleryPanel, readGalleryPush, useGalleryPush, type GalleryPanel, type GalleryPanelPush } from "../lib/labPush";
 import { entrySignature, galleryLibrary, librarySavedAt, libraryVersion, useGalleryLibrary, type LibraryEntry } from "../lib/galleryLibrary";
 import { formKey } from "../lib/superformula";
-import { GALLERY_VESSEL_MAX_WIDTH } from "../lib/vesselFraming";
+import { galleryGlassChanges, galleryRoomChange, galleryTint, galleryTune, galleryTuneVersion, useGalleryTuneVersion } from "../lib/galleryTune";
 import {
   DISTANCE_FADE, VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
   type Room, type VesselState, type VesselTune,
@@ -99,6 +99,8 @@ export const VESSEL_GALLERY_TUNE: VesselTune = {
   holeSize: 0.6, holeWidth: 0.75, holeFade: 0.75, holeRim: 0.25,
   mono: 0, negative: 0,
   pitch: 4, turn: 0, ground: 0,
+  // the gallery panel's settling (2026-11-01): a softer, less bent view through the glass, the picture a little thinner
+  bend: 0.67, glassSoft: 0.9, photoOpacity: 0.78,
 };
 
 /**
@@ -107,7 +109,7 @@ export const VESSEL_GALLERY_TUNE: VesselTune = {
  * pale water it read as a dark cast on every vessel, so here the room is the
  * water's own light.
  */
-export const VESSEL_GALLERY_ROOM: Room = { above: "#e6e7ea", below: "#ffffff" };
+export const VESSEL_GALLERY_ROOM: Room = { above: "#eae7e6", below: "#ffffff" };
 
 function seedOf(id: string): number {
   let h = 0;
@@ -183,12 +185,13 @@ function withCanvasRoom(seat: SeatPlace, room: number): SeatPlace {
   return { ...seat, scale: seat.scale * room, size: seat.size * room, blurPx: seat.blurPx / room };
 }
 
-/** With capped vessels, the first right seat is about 4% larger than
- * focus. Both right seats sit nearer the centre; the apex retains draw priority.
+/** The apex swells 6%; the first newer seat is 13% smaller and steps out, the
+ * second 45% smaller and back in a little (shrink1/2, out1/2 in galleryTune); both step down. The apex retains draw priority.
  * Smooth weights keep these adjustments continuous while scrolling. */
 function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number; h: number }): SeatPlace {
+  const k = galleryTune().seats;
   const focusWeight = Math.max(0, 1 - offset * offset);
-  const focusBoost = 1 + 0.03 * focusWeight * focusWeight;
+  const focusBoost = 1 + k.focusBoost * focusWeight * focusWeight;
   depth = {
     ...depth,
     scale: depth.scale * focusBoost,
@@ -199,7 +202,7 @@ function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number
   if (offset <= 0) return { ...depth, order };
   const w1 = smooth01(Math.min(offset, 1));
   const w2 = smooth01(Math.max(0, offset - 1));
-  const shrink = 0.065 * w1 + 0.251 * w2;
+  const shrink = k.shrink1 * w1 + k.shrink2 * w2;
   const scale = depth.scale * (1 - shrink);
   // an upright phone has height to spare and no width: the newer ones step
   // further down and out, so the one in hand stays clear
@@ -208,8 +211,8 @@ function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number
     ...depth,
     scale,
     size: depth.size * (1 - shrink),
-    x: depth.x + viewport.w * (0.015 * w1 + 0.025 * w2 + 0.06 * w1 * tall),
-    y: depth.y + viewport.h * (0.025 * w1 + 0.075 * w2 + (0.07 * w1 + 0.05 * w2) * tall),
+    x: depth.x + viewport.w * (k.out1 * w1 + k.out2 * w2 + 0.06 * w1 * tall),
+    y: depth.y + viewport.h * (k.down1 * w1 + k.down2 * w2 + (0.07 * w1 + 0.05 * w2) * tall),
     blurPx: depth.blurPx * (depth.scale / scale),
     order,
   };
@@ -218,13 +221,12 @@ function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number
 /* ───────── the field's clock, camera and shares ───────── */
 
 /** One seat's flight between the views. */
-const FLIGHT_MS = 1500;
+const flightMs = () => galleryTune().timing.flightMs;
 /** Between one seat's departure and the next ring's. */
-const STAGGER_MS = 55;
+const staggerMs = () => galleryTune().timing.staggerMs;
 const STAGGER_MAX = 6;
 /** How far the eye looks round with the pointer, in fractions of the view. */
-const PARALLAX_X = 0.03;
-const PARALLAX_Y = 0.02;
+const parallax = () => galleryTune().timing;
 /** A wheel's pixel into the field. */
 const DOLLY_PER_PX = 0.001;
 
@@ -287,7 +289,7 @@ class FieldDriver {
     for (let i = 0; i < this.count; i++) {
       const ring = Math.min(Math.abs(i - around), STAGGER_MAX);
       // leaving: the outer ones lift first and the one in hand last; coming home: the one in hand first
-      this.delay[i] = (on ? STAGGER_MAX - ring : ring) * STAGGER_MS;
+      this.delay[i] = (on ? STAGGER_MAX - ring : ring) * staggerMs();
     }
     if (!on) { this.dollyTarget = 0; this.camTarget = { x: 0, y: 0 }; this.hovered = -1; }
     this.busy = true;
@@ -302,11 +304,11 @@ class FieldDriver {
     const target = this.on ? 1 : 0;
     let moving = false;
     for (let i = 0; i < this.count; i++) {
-      const p = easeFlight((t - this.delay[i]) / FLIGHT_MS);
+      const p = easeFlight((t - this.delay[i]) / flightMs());
       this.share[i] = this.shareFrom[i] + (target - this.shareFrom[i]) * p;
       if (p < 1) moving = true;
     }
-    const pw = easeFlight(t / (FLIGHT_MS + STAGGER_MAX * STAGGER_MS));
+    const pw = easeFlight(t / (flightMs() + STAGGER_MAX * staggerMs()));
     this.whole = this.wholeFrom + (target - this.wholeFrom) * pw;
     if (pw < 1) moving = true;
     const kCam = 1 - Math.exp(-3 * dt), kDolly = 1 - Math.exp(-4 * dt), kHover = 1 - Math.exp(-8 * dt);
@@ -382,14 +384,34 @@ function vesselForArchive(item: ArchiveArtifact): VesselState {
   };
 }
 
+/* The gallery's dev panel (GalleryDials) over a resolved vessel: the memory's
+   colour as the panel has it, and any glass knob or room it has moved. Cached
+   per state and panel version, so a seat's tune keeps its identity between frames. */
+const dialed = new WeakMap<VesselState, { version: number; state: VesselState }>();
+function withDials(state: VesselState, item: ArchiveArtifact): VesselState {
+  const version = galleryTuneVersion();
+  const hit = dialed.get(state);
+  if (hit?.version === version) return hit.state;
+  const i = curatedIndex(item.id);
+  const pick = i >= 0 ? LIFE_EVENTS[i].feeling : item.look?.oklch;
+  const room = galleryRoomChange();
+  const next: VesselState = {
+    ...state,
+    tune: { ...state.tune, ...galleryGlassChanges(), ...galleryTint(item.id, pick) },
+    ...(room ? { room } : {}),
+  };
+  dialed.set(state, { version, state: next });
+  return next;
+}
+
 /** Same archive vessels for the distance step, including the user's pushed edits. */
 export function galleryStateFor(item: ArchiveArtifact): VesselState {
   const i = curatedIndex(item.id);
   const push = readGalleryPush();
   const panel = push?.panels.find(row => row.id === item.id)?.panel;
-  if (i >= 0) return overCurated(curatedStates()[i], panel, push?.at ?? 0);
+  if (i >= 0) return withDials(overCurated(curatedStates()[i], panel, push?.at ?? 0), item);
   const base = vesselForArchive(item);
-  return panel ? withPanel(base, panel) : base;
+  return withDials(panel ? withPanel(base, panel) : base, item);
 }
 
 /**
@@ -532,8 +554,8 @@ export function VesselGalleryProvider({
     if (!fieldOn || !active) return;
     const move = (e: PointerEvent) => {
       field.camTarget = {
-        x: ((e.clientX / window.innerWidth) * 2 - 1) * PARALLAX_X,
-        y: ((e.clientY / window.innerHeight) * 2 - 1) * PARALLAX_Y,
+        x: ((e.clientX / window.innerWidth) * 2 - 1) * parallax().parallaxX,
+        y: ((e.clientY / window.innerHeight) * 2 - 1) * parallax().parallaxY,
       };
       run();
     };
@@ -585,7 +607,7 @@ export function VesselGalleryProvider({
     const h = 1 - (1 - own.haze) * (1 - haze);
     const q = Math.round(h * 100);
     if (q === Math.round(own.haze * 100)) return own;
-    const key = `${keyRef.current(item)}|${q}`;
+    const key = `${keyRef.current(item)}|${q}|${galleryTuneVersion()}`;
     let t = tunes.current.get(key);
     if (!t) {
       t = { ...own, haze: q / 100 };
@@ -627,7 +649,9 @@ export function VesselGalleryProvider({
         still={seat.still}
         frameloop={field.busy ? "always" : seat.frameloop}
         blurPx={seat.blurPx}
-        maxViewportWidth={GALLERY_VESSEL_MAX_WIDTH / (vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1))}
+        maxViewportWidth={galleryTune().framing.maxWidth / (vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1))}
+        reflection={galleryTune().reflection}
+        sheen={galleryTune().sheen}
         onPick={pickRef.current ? pick : undefined}
         onReady={seat.onFrame}
       />
@@ -674,6 +698,9 @@ export function VesselGalleryProvider({
   return <GalleryOverrideContext.Provider value={override}>{children}</GalleryOverrideContext.Provider>;
 }
 
+/** The gallery's dev panel (DialKit), in development only. */
+const GalleryDials = import.meta.env.DEV ? lazy(() => import("../components/GalleryDials")) : null;
+
 /** /memory — the gallery lab's vessels, with whatever side panel was last pushed. */
 export function LiveVesselGallery({
   active = true,
@@ -699,18 +726,20 @@ export function LiveVesselGallery({
     return map;
   }, [byId, pushedAt, library.version]);
   const extras = useRef(new Map<string, { key: string; state: VesselState }>());
+  const dials = useGalleryTuneVersion();
   const resolve = useCallback((item: ArchiveArtifact) => {
     const known = seated.get(item.id);
-    if (known) return known;
+    if (known) return withDials(known, item);
     const panel = byId.get(item.id);
     const key = `${formKey(item.shape.form)}|${item.shape.evolve}|${item.look?.photoUrl ?? ""}|${item.look?.vividness ?? ""}|${JSON.stringify(item.look?.oklch)}|${panel ? pushedAt : ""}`;
     const hit = extras.current.get(item.id);
-    if (hit?.key === key) return hit.state;
+    if (hit?.key === key) return withDials(hit.state, item);
     const base = vesselForArchive(item);
     const state = panel ? withPanel(base, panel) : base;
     extras.current.set(item.id, { key, state });
-    return state;
-  }, [seated, byId, pushedAt]);
+    return withDials(state, item);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seated, byId, pushedAt, dials]);
   const cacheKeyFor = useCallback((item: ArchiveArtifact) => {
     const i = curatedIndex(item.id);
     const shape = i >= 0 ? entrySignature(library.entries[i]) : "own";
@@ -728,10 +757,11 @@ export function LiveVesselGallery({
     setReading({ id: item.id, event: item.event, year: item.year, transcript: item.transcript ?? "" });
   }, []);
   return (
-    <VesselGalleryProvider active={active} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={`${pushedAt}|${library.version}`} onFocus={onFocus}
+    <VesselGalleryProvider active={active} resolve={resolve} cacheKeyFor={cacheKeyFor} revision={`${pushedAt}|${library.version}|${dials}`} onFocus={onFocus}
       onPick={compact ? read : undefined}>
       {children}
       <MemoryReadingPane memory={reading} onClose={() => setReading(null)} />
+      {GalleryDials && active && <Suspense fallback={null}><GalleryDials /></Suspense>}
     </VesselGalleryProvider>
   );
 }

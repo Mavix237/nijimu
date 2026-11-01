@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { SINK_WASH, SURFACE_LIGHT } from "./atmosphere";
 
 /** The pond's settled lens — shared by the water and anything placed on it. */
 export const POND_LENS = { fov: 48, near: 0.1, far: 2400 } as const;
@@ -20,9 +21,9 @@ export const POND_SINK = {
 } as const;
 
 /** The light the eye passes through at the surface — water and air, not paper. */
-export const SINK_WASH = "#e3eae9";
+export { SINK_WASH };
 /** The light that takes the frame as the memory floats up to be named, and that the naming step opens from. */
-export const SURFACE_LIGHT = "#f4f6f5";
+export { SURFACE_LIGHT };
 /** How long the naming step takes to come out of that light. */
 export const SURFACE_LIGHT_OUT_MS = 1000;
 

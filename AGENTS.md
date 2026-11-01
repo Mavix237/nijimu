@@ -18,6 +18,18 @@ top). The tooth is the gallery panel's `texture` (140 px, soft-light .12),
 read live, so that panel tunes every screen past Enter. Glass panes and the
 phone menu wear both off the landing (`onLanding()`); on the landing they keep
 the landing's grain. Materials (film, ink, washes, glass) keep their own.
+One place to tune it all: the "gallery ground" panel (backdrop grain = the
+fine grain everywhere past Enter, texture = the tooth); the constants are
+in `paperFinish.ts`. Phones (`LIGHT_TIER`) draw it finer and fainter
+(`PHONE`: grain ×.55 at one grain per device pixel to 3×, tooth ×.5 at .7
+of its size; σ ≈ 1.4 on a 3× phone). A way out if it costs too much:
+`?finish=full|lite|off` (kept per device in localStorage `nijimu.finish`,
+`?finish=auto` forgets) — lite is the darker half of the fine grain alone in
+normal blending (one layer, no blend modes, no tooth), off removes the
+finish and the landing's grain too. Unforced, `startFinishWatchdog` (in
+`RootLayout`) steps full → lite → off after three 2 s windows whose median
+frame is over 40 ms, logging it in the console. Headless/software-rendered
+browsers trip it: force `?finish=full` when checking by screenshot.
 
 ## One ramp of grounds (2026-11-01)
 

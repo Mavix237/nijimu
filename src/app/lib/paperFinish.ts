@@ -97,20 +97,21 @@ export function fineGrainTiles(): { light: string; dark: string } {
 /** Measured against the gallery (σ of the screen's fine detail, 2.5 levels there), the
     DOM layers read ~10% stronger over the pond's paler sky; this evens them. */
 const FINE_MATCH = 0.9;
-/** The paler ground the "lite" mode's lighter half is evened for (normal blending only). */
-const LITE_GROUND = 0.92;
+/** "lite" keeps only the darker half; this is how much deeper it goes to show
+    as much grain (σ of ±h is .577h; of the darker half alone at h′, .323h′). */
+const LITE_DEPTH = 0.577 / 0.323;
 
 /**
  * The fine layers' opacities for a grain strength (the gallery panel's
  * backdrop grain, PAPER_GRAIN as built), already scaled for the device.
- * "full" adds the lighter half in plus-lighter; "lite" lays both halves in
- * normal blending (no blend mode for the compositor to work through), the
- * lighter one evened for a pale ground.
+ * "full" adds the lighter half in plus-lighter. "lite" draws the darker half
+ * alone, in normal blending, deep enough to show the same grain — one layer
+ * and no blend mode for the compositor; it leaves the page ~.7% darker.
  */
 export function fineOpacity(grain: number, mode: FinishMode): { light: number; dark: number } {
   const half = (grain * finishScale().grain) / 2 * FINE_MATCH;
   return mode === "lite"
-    ? { light: half / (1 - LITE_GROUND), dark: half / FINE_GROUND }
+    ? { light: 0, dark: (half * LITE_DEPTH) / FINE_GROUND }
     : { light: half, dark: half / FINE_GROUND };
 }
 

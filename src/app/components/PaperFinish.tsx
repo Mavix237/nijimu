@@ -32,8 +32,8 @@ export function PaperFinish({ zIndex, fine = false, radius }: { zIndex?: number;
         const o = fineOpacity(backdrop.grain, mode);
         return <>
           <div aria-hidden style={{ ...layer, backgroundImage: `url(${tiles.dark})`, backgroundSize: size, opacity: o.dark }} />
-          <div aria-hidden style={{ ...layer, backgroundImage: `url(${tiles.light})`, backgroundSize: size, opacity: o.light,
-            mixBlendMode: full ? ("plus-lighter" as CSSProperties["mixBlendMode"]) : undefined }} />
+          {o.light > 0 && <div aria-hidden style={{ ...layer, backgroundImage: `url(${tiles.light})`, backgroundSize: size, opacity: o.light,
+            mixBlendMode: "plus-lighter" as CSSProperties["mixBlendMode"] }} />}
         </>;
       })()}
       {full && t.amount > 0 && (

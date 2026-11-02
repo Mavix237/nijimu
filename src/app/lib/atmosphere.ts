@@ -28,30 +28,36 @@ export const GROUND = "#edecec";
 
 /* ── the pond (seen from above) ──────────────────────────────────────── */
 /** The sky behind the water: overhead, at the horizon band, and low. */
-export const POND_SKY_TOP = "#eeefed";
+export const POND_SKY_TOP = "#eeefef"; // was #eeefed (2026-11-01)
 export const POND_SKY_MIDDLE = "#e4e8e6";
 export const POND_SKY_FOOT = "#c6cccb";
 /** The water's own grey (what `pondAboveColor` keeps as its colour). */
-export const POND_WATER = "#e7e8e5";
-/** The water's faint natural tint, a multiply: grey-green, not blue. */
-export const POND_NATURAL = "#e3eae8";
+export const POND_WATER = "#e6e8e8"; // was #e7e8e5 (2026-11-01)
+/** The water's faint natural tint, a multiply: a cool blue-grey toward the foot. */
+export const POND_NATURAL = "#d2d9dd"; // was #e3eae8 (2026-11-01): a deeper, cooler foot
 /** The light on it, warm, and its shade, cool but green-grey rather than blue. */
-export const POND_LIGHT_WARM = "#eee9e8";
-export const POND_SHADE_COOL = "#dae0e0";
+export const POND_LIGHT_WARM = "#eee8e6"; // was #eee9e8 (2026-11-01)
+export const POND_SHADE_COOL = "#d5dadd"; // was #dae0e0 (2026-11-01)
 /** The glow over the horizon where the sun's path begins. */
 export const POND_GLOW = "#fbf8f3";
 
 /* ── under the water ─────────────────────────────────────────────────── */
-/** The water's body seen from inside (≈ #e2e6e5), 0–1 sRGB. */
-export const UNDERWATER: readonly [number, number, number] = [0.888, 0.902, 0.897];
+/** The water's body seen from inside (≈ #e1e6e8), 0–1 sRGB. Leaned cooler
+ * 2026-11-01 toward the pond's new water (paper #e6e8e8, natural #d2d9dd),
+ * at the same luma, so the pond above — which keeps only this colour's
+ * lightness — is unchanged (was [.888, .902, .897], ≈ #e2e6e5, grey-green). */
+export const UNDERWATER: readonly [number, number, number] = [0.884, 0.901, 0.911];
 /** The same, as a GLSL vec3 literal for the shaders that print it. */
 export const UNDERWATER_GLSL = `vec3(${UNDERWATER.map((v) => v.toFixed(3)).join(", ")})`;
 /** The wash as the eye sinks under the surface. */
-export const SINK_WASH = "#e3eae9";
+export const SINK_WASH = "#e4e9ec"; // was #e3eae9 (2026-11-01): cooler, same luma, with UNDERWATER
 
 /* ── the surface, and naming ─────────────────────────────────────────── */
 /** The light the rise ends in; naming's ground. */
 export const SURFACE_LIGHT = "#f4f6f5";
+
+/** The sink wash as a GLSL vec3 literal (the ascent's last handoff on the glass). */
+export const SINK_WASH_GLSL = `vec3(${hexRgb(SINK_WASH).map((v) => v.toFixed(4)).join(", ")})`;
 
 /** A hex colour as 0–1 sRGB. */
 export function hexRgb(hex: string): [number, number, number] {

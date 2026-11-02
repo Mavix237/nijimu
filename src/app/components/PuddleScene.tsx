@@ -20,7 +20,7 @@ import { DiveGalleryHost, draftAsSaved, type NamingSession } from "./NamingRim";
 import { NameMemoryPage } from "../archive/shape-flow/NameMemoryPage";
 import { buildArchive } from "../lib/archive";
 import { PaperFinish } from "./PaperFinish";
-import { finishMode, finishScale, subscribeFinishMode } from "../lib/paperFinish";
+import { finishMode, finishScale, subscribeFinishMode, useFinishUnder } from "../lib/paperFinish";
 
 /*
  * PuddleScene — WebGL2 homescreen field variants.
@@ -456,6 +456,7 @@ export function PuddleScene({
      so the surface captions and the intro order can read from here. */
   const override = useContext(GalleryOverrideContext);
   useGalleryTuneVersion();
+  const finishUnder = useFinishUnder();
   const liveSaved = useMemo(
     () => (naming ? savedMemories : loadMemories()),
     [naming, savedMemories],
@@ -1268,6 +1269,9 @@ export function PuddleScene({
           transition: `opacity ${WATER_ARRIVE_MS}ms ease, filter ${WATER_ARRIVE_MS}ms ease`,
         }}
       />
+      {/* "under vessels" (gallery ground panel): the finish over the water alone —
+          z 0 in tree order, so everything after it paints over it */}
+      {finishUnder && <PaperFinish zIndex={0} />}
 
       {/* ═══ MEMORY CAPTIONS — live with their ripple: focus in from particles,
              hold, dissolve as the water stills ═══ */}
@@ -1561,7 +1565,7 @@ export function PuddleScene({
       )}
 
       {/* The paper finish (the gallery panel's tint and tooth) over everything; the pond stage wears the same. */}
-      <PaperFinish zIndex={61} />
+      {!finishUnder && <PaperFinish zIndex={61} />}
     </div>
   );
 }

@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { formKey, type ArtifactForm } from "../lib/superformula";
 import { prepareFilmPhoto } from "../lib/filmLook";
 import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
-import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
+import { LIGHT_TIER, MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
 import { setApexHover } from "../lib/apexHover";
 import { cappedVesselDistance, frameVessel } from "../lib/vesselFraming";
 import { useVesselParts, type VesselParts } from "./vesselBuilds";
@@ -36,6 +36,13 @@ const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefe
  */
 
 export interface VesselArtifactProps {
+  /** How much larger than its laid-out box the seat is shown (CSS scale: the
+      gallery's canvas room and apex swell). The canvas is measured unscaled
+      (offsetSize), so without this it is drawn at the box's size and stretched
+      on screen — a 2× stretch put each rendered pixel over two of the
+      screen's, the stair-stepped edges. The canvas renders this much denser,
+      up to SEAT_DPR_HEADROOM × MAX_DPR. */
+  pixelScale?: number;
   form: ArtifactForm;
   /** How far the form has grown from its sphere (the shape step's morph). */
   morph: number;
@@ -134,6 +141,51 @@ export interface VesselReflection {
   soft: number;
   /** Room added under the seat for it, as a share of the seat's height (the vessel itself does not move). */
   room: number;
+  /** Laid on water rather than a still floor (naming): rippled, broken, tinted. Absent: the gallery's still mirror. */
+  water?: VesselWaterReflection;
+}
+
+/**
+ * The mirror seen on the lake (naming): one extra full-canvas pass over the
+ * blurred reflection that reads the pond's own surface under each pixel — the
+ * pond's camera, its wave normal and clock (`surface`) — so the reflection is
+ * bent by the same waves and rings the water shows, as strong as the water's
+ * Fresnel there (bright toward the horizon, clear near the eye), and never
+ * above the horizon.
+ */
+export interface VesselWaterReflection {
+  /** Extra vertical smear, × `soft`. */
+  smear: number;
+  /** × the true bend of a reflected ray by the wave's slope (1 is physical). */
+  ripple: number;
+  /** How much more the slope bends it down the screen than across (the view's foreshortening). */
+  stretch: number;
+  /** 0: even strength; 1: the water's Fresnel decides it. */
+  fresnel: number;
+  /** How far it takes the water's colour (0 its own). */
+  tint: number;
+  /** The water's colour (css). */
+  color: string;
+  /** How much darker the water gives it back. */
+  darken: number;
+  /** The landing: how far under the waterline (share of the canvas's height) the reflection stays clear. */
+  contact: number;
+  /** How clear it is there: unblurred and unbent (0 as the rest, 1 sharp). */
+  contactSharp: number;
+  /** How strong it is there at least, whatever the Fresnel. */
+  contactStrength: number;
+  /** Where the reflection lands on the screen (client px), each frame. */
+  onContact?: (x: number, y: number) => void;
+  /** The pond's surface, when it is there to read (the naming pond registers it). */
+  surface?: PondSurfaceShare | null;
+}
+
+/** What the naming pond lends a reflection: its surface GLSL, its uniforms and camera, its canvas. */
+export interface PondSurfaceShare {
+  glsl: string;
+  uniforms: Record<string, THREE.IUniform>;
+  camera: THREE.PerspectiveCamera;
+  canvas: HTMLCanvasElement;
 }
 
 /* The reflection's own layers: drawn into its target, blurred, and laid under the vessel. */
@@ -142,14 +194,70 @@ const REFLECT_GLASS_LAYER = 4;
 
 interface Built { glass: Glass; sheet: Sheet; distance: number; radius: number }
 
+/* The mirror laid on the lake. Each pixel finds the water under it through
+   the pond's own camera, takes the pond's wave normal there (same clock, same
+   rings), bends the reflection by that slope and weighs it by the water's
+   Fresnel. Premultiplied in and out, as the blur passes are. */
+function waterReflectFragment(surfaceGlsl: string) {
+  return /* glsl */ `
+  ${surfaceGlsl}
+  uniform sampler2D tScene;   // the mirror, softened
+  uniform sampler2D tSharp;   // the mirror as drawn
+  uniform vec3 uContact;      // landing span (uv), sharpness, strength
+  uniform float uWaterline;
+  uniform mat4 uPondProjInv;
+  uniform mat4 uPondWorld;
+  uniform vec3 uPondEye;
+  uniform vec4 uCanvasRect;   // this canvas on the pond's canvas: left, top, width, height (px of the pond's canvas)
+  uniform vec2 uPondSize;     // the pond's canvas (css px)
+  uniform vec4 uWater;        // ripple (uv per radian of slope, down the canvas), stretch, fresnel, canvas height / width
+  uniform vec3 uWaterColor;
+  uniform vec2 uTone;         // tint, darken
+  varying vec2 vUv;
+  void main() {
+    // no early return before the surface: it takes derivatives (fwidth), which need every pixel in step
+    float below = uWaterline - vUv.y;
+    vec2 css = vec2(uCanvasRect.x + vUv.x * uCanvasRect.z, uCanvasRect.y + (1.0 - vUv.y) * uCanvasRect.w);
+    vec2 ndc = vec2(css.x / uPondSize.x * 2.0 - 1.0, 1.0 - css.y / uPondSize.y * 2.0);
+    vec4 a = uPondProjInv * vec4(ndc, -1.0, 1.0);
+    vec4 b = uPondProjInv * vec4(ndc, 1.0, 1.0);
+    vec3 wa = (uPondWorld * vec4(a.xyz / a.w, 1.0)).xyz;
+    vec3 wb = (uPondWorld * vec4(b.xyz / b.w, 1.0)).xyz;
+    vec3 dir = wb - wa;
+    // above the pond's horizon there is no water to hold it
+    float onWater = step(dir.y, -1e-6) * step(0.0, below);
+    vec3 P = wa + dir * (-wa.y / min(dir.y, -1e-6));
+    vec2 flow;
+    vec3 n = pondSurfaceNormal(P.xz, flow);
+    vec3 e = normalize(uPondEye - P);
+    float F = .02 + .98 * pow(1.0 - max(0.0, dot(n, e)), 5.0);
+    // a slope tilts the reflected ray by twice itself: across, and (foreshortened) down
+    // the landing: just under the waterline the reflection falls clear — unbent, unblurred, strong
+    float landing = 1.0 - smoothstep(0.0, max(.001, uContact.x), below);
+    landing *= landing;
+    vec2 bend = vec2(n.x, n.z) * 2.0 * uWater.x * vec2(uWater.w, uWater.y) * (1.0 - landing * uContact.y);
+    vec2 uv = vUv + bend;
+    uv.y = min(uv.y, uWaterline);
+    vec4 c = mix(texture2D(tScene, uv), texture2D(tSharp, uv), landing * uContact.y);
+    c.rgb = mix(c.rgb, uWaterColor * c.a, uTone.x * (1.0 - landing * .6)) * (1.0 - uTone.y);
+    float weight = max(mix(1.0, smoothstep(0.0, .55, F), uWater.z), landing * uContact.z);
+    gl_FragColor = c * weight * onWater * smoothstep(0.0, .006, below);
+  }
+`;
+}
+
 interface Soften {
   frame: THREE.WebGLRenderTarget;
   pong: THREE.WebGLRenderTarget;
+  /** The softened mirror, beside the sharp one (the lake reads both). */
+  soft?: THREE.WebGLRenderTarget;
   blur: THREE.ShaderMaterial;
   quad: THREE.Mesh;
   scene: THREE.Scene;
   ortho: THREE.OrthographicCamera;
 }
+const waterColor = new THREE.Color();
+const waterline = new THREE.Vector3();
 
 /** One separable pass of the lab's 13-tap kernel onto the screen. σ is in device pixels. */
 function spreadSoft(renderer: THREE.WebGLRenderer, s: Soften, sigma: number) {
@@ -221,6 +329,7 @@ function VesselObject({
   parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
+  const canvasDpr = useThree((st) => st.viewport.dpr);
   const mirror = reflection && reflection.strength > 0 ? reflection : null;
   // the canvas reaches below the seat by this share of its height; the seat itself is the top of it
   const extra = mirror ? Math.max(0, mirror.room) : 0;
@@ -380,9 +489,33 @@ function VesselObject({
     if (!m) return;
     m.frame.dispose();
     m.pong.dispose();
+    m.soft?.dispose();
     m.blur.dispose();
     m.quad.geometry.dispose();
+    waterPass.current?.material.dispose();
   }, []);
+  // the lake pass: built once the pond lends its surface, rebuilt if that changes
+  const waterPass = useRef<{ glsl: string; material: THREE.ShaderMaterial } | null>(null);
+  const ensureWater = (share: PondSurfaceShare) => {
+    const have = waterPass.current;
+    if (have && have.glsl === share.glsl) return have.material;
+    have?.material.dispose();
+    const material = new THREE.ShaderMaterial({
+      vertexShader: backdropVertex, fragmentShader: waterReflectFragment(share.glsl),
+      uniforms: {
+        ...share.uniforms,
+        tScene: { value: null }, tSharp: { value: null }, uContact: { value: new THREE.Vector3() }, uWaterline: { value: 0 },
+        uPondProjInv: { value: share.camera.projectionMatrixInverse },
+        uPondWorld: { value: share.camera.matrixWorld },
+        uPondEye: { value: share.camera.position },
+        uCanvasRect: { value: new THREE.Vector4() }, uPondSize: { value: new THREE.Vector2(1, 1) },
+        uWater: { value: new THREE.Vector4() }, uWaterColor: { value: new THREE.Color() }, uTone: { value: new THREE.Vector2() },
+      },
+      depthTest: false, depthWrite: false, blending: THREE.NoBlending,
+    });
+    waterPass.current = { glsl: share.glsl, material };
+    return material;
+  };
   const ensureMirror = () => {
     if (mirrorPass.current) return mirrorPass.current;
     const frame = new THREE.WebGLRenderTarget(1, 1, { samples: RT_SAMPLES, depthBuffer: true, stencilBuffer: false });
@@ -425,7 +558,7 @@ function VesselObject({
     const s = soften.current;
     if (s) { s.frame.setSize(w, h); s.pong.setSize(w, h); }
     invalidate();
-  }, [pass, gl, size, invalidate]);
+  }, [pass, gl, size, canvasDpr, invalidate]);
 
   const framing = useMemo(() => frameVessel(parts.glass.positions, LOOK_Y, FOV), [parts]);
   const built = useMemo<Built>(() => ({
@@ -581,7 +714,50 @@ function VesselObject({
       renderer.autoClear = true;
       // softened, across and back down into its own target
       const mSigma = mirror.soft * renderer.getPixelRatio();
-      if (mSigma > 0.35) {
+      const w = mirror.water;
+      const share = w?.surface;
+      if (w && share) {
+        // on the lake: blurred (longer down than across) beside the sharp mirror, then laid on the water
+        let softTex = m.frame.texture;
+        if (mSigma > 0.35) {
+          if (!m.soft) m.soft = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: false, stencilBuffer: false });
+          if (m.soft.width !== m.frame.width || m.soft.height !== m.frame.height) m.soft.setSize(m.frame.width, m.frame.height);
+          m.blur.uniforms.tScene.value = m.frame.texture;
+          (m.blur.uniforms.uStep.value as THREE.Vector2).set(mSigma / 2.5 / Math.max(1, m.frame.width), 0);
+          renderer.setRenderTarget(m.pong);
+          renderer.render(m.scene, m.ortho);
+          m.blur.uniforms.tScene.value = m.pong.texture;
+          (m.blur.uniforms.uStep.value as THREE.Vector2).set(0, (mSigma * (1 + Math.max(0, w.smear))) / 2.5 / Math.max(1, m.frame.height));
+          renderer.setRenderTarget(m.soft);
+          renderer.render(m.scene, m.ortho);
+          softTex = m.soft.texture;
+        }
+        const water = ensureWater(share);
+        const u = water.uniforms;
+        // the waterline on this canvas: the mirror plane under the vessel's axis
+        waterline.set(0, mirrorY, 0).project(view);
+        u.tScene.value = softTex;
+        u.tSharp.value = m.frame.texture;
+        (u.uContact.value as THREE.Vector3).set(w.contact, w.contactSharp, w.contactStrength);
+        u.uWaterline.value = waterline.y * 0.5 + 0.5;
+        // where this canvas lies on the pond's (both are measured as laid out, transforms and all)
+        const mine = renderer.domElement.getBoundingClientRect();
+        const pond = share.canvas.getBoundingClientRect();
+        // where it lands, for the lake's spot of colour
+        w.onContact?.(mine.left + mine.width * (waterline.x * 0.5 + 0.5), mine.top + mine.height * (0.5 - waterline.y * 0.5));
+        (u.uCanvasRect.value as THREE.Vector4).set(mine.left - pond.left, mine.top - pond.top, mine.width, mine.height);
+        (u.uPondSize.value as THREE.Vector2).set(Math.max(1, pond.width), Math.max(1, pond.height));
+        // a radian of slope, in this canvas's uv down its height: the pond's lens spans its height in fov
+        const pondFov = (share.camera.fov * Math.PI) / 180 / Math.max(1e-3, share.camera.zoom);
+        const perRadian = (pond.height / Math.max(1, mine.height)) / pondFov;
+        (u.uWater.value as THREE.Vector4).set(w.ripple * perRadian, w.stretch, w.fresnel, mine.height / Math.max(1, mine.width));
+        (u.uWaterColor.value as THREE.Color).copy(waterColor.set(w.color));
+        (u.uTone.value as THREE.Vector2).set(w.tint, w.darken);
+        m.quad.material = water;
+        renderer.setRenderTarget(pass.target);
+        renderer.render(m.scene, m.ortho);
+        m.quad.material = m.blur;
+      } else if (mSigma > 0.35) {
         const tap = mSigma / 2.5;
         m.blur.uniforms.tScene.value = m.frame.texture;
         (m.blur.uniforms.uStep.value as THREE.Vector2).set(tap / Math.max(1, m.frame.width), 0);
@@ -657,6 +833,16 @@ function VesselObject({
   </>;
 }
 
+/** How far past MAX_DPR a stretched seat may render (desktop 2 → 3.5; a phone's 1.75 → 2.45). */
+const SEAT_DPR_HEADROOM = LIGHT_TIER ? 1.4 : 1.75;
+
+/** The canvas's pixel ratio: the screen's (to MAX_DPR), times the seat's on-screen stretch. */
+function seatDpr(pixelScale: number | undefined): number | [number, number] {
+  if (!pixelScale || pixelScale <= 1.001) return [1, MAX_DPR];
+  const screen = Math.min(MAX_DPR, Math.max(1, typeof window === "undefined" ? 1 : window.devicePixelRatio || 1));
+  return Math.min(screen * pixelScale, MAX_DPR * SEAT_DPR_HEADROOM);
+}
+
 export function VesselArtifact(props: VesselArtifactProps) {
   // the canvas waits for its glass and cloth: the queue builds them a memory at a
   // time, nearest first, so neither the settle nor the context and its shaders
@@ -672,7 +858,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
     // that tiny size and stretched when it reached the apex
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
-      dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
+      dpr={seatDpr(props.pixelScale)} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       style={extra > 0 ? { width: "100%", height: `${(1 + extra) * 100}%` } : { width: "100%", height: "100%" }}>
       <VesselObject {...props} parts={parts} />

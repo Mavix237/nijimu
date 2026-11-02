@@ -80,16 +80,16 @@ export const POND_TUNE_DEFAULT: PondTune = {
   sky: {
     top: POND_SKY_TOP, middle: POND_SKY_MIDDLE, bottom: POND_SKY_FOOT, middleAt: .42,
     // a soft light over the horizon where the sun's path begins
-    glow: POND_GLOW, glowAmount: .8, glowX: .5, glowY: .5, glowWidth: .5, glowHeight: .22,
+    glow: POND_GLOW, glowAmount: .08, glowX: .5, glowY: .5, glowWidth: .68, glowHeight: .22, // was .8 / width .5 (2026-11-01)
   },
   // highlights ease toward .975 rather than clipping; warm light, cool shade
   light: { shoulder: .85, cap: .975, warm: POND_LIGHT_WARM, warmth: .55, cool: POND_SHADE_COOL, coolness: .35, ringWarm: .4 },
   surface: {
-    paper: POND_WATER, shade: .45, clarity: .42, sharpness: 1.25,
+    paper: POND_WATER, shade: .45, clarity: .55, sharpness: .92, // was .42 / 1.25 (2026-11-01)
     natural: POND_NATURAL, naturalAmount: 1,
-    hazeFrom: 18, hazeRate: .011,
+    hazeFrom: 36, hazeRate: .011, // hazeFrom was 18 (2026-11-01)
     sun: .7, sunGlow: 1.63, sunSharp: 147, pathWidth: 8, pathLength: 28.5,
-    ribbons: .022, fibres: .006, clouds: .06, grain: 0, // the stage lays the fine grain (PaperFinish); this adds to it
+    ribbons: .022, fibres: .006, clouds: .132, /* clouds was .06 (2026-11-01) */ grain: 0, // the stage lays the fine grain (PaperFinish); this adds to it
   },
   waves: {
     swell: 1, chop: 1, wrinkle: 1, wind: 1,

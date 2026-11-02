@@ -9,8 +9,10 @@ import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamer
 import { PortraitFit } from "../lib/portraitView";
 import { POND_PIGMENT_GLSL, POND_SLOW_DROP, createPondPigmentUniforms, type PondPigmentUniforms } from "../lib/pondPigment";
 import { POND_TUNE_GLSL, POND_TUNE_UNIFORMS, pondBackdropCss, pondTune } from "../lib/pondTune";
+import { NAMING_WATER_GLSL, NAMING_WATER_UNIFORMS, lendPondSurface } from "../lib/namingWater";
 import { POND_SKY_FOOT, POND_SKY_MIDDLE, POND_SKY_TOP, POND_WATER, UNDERWATER_GLSL, hexRgb } from "../lib/atmosphere";
 import { PondPigmentDrops } from "./PondPigmentDrops";
+import { MAX_DPR } from "../lib/deviceTier";
 
 /** The pond's water grey (lib/atmosphere.ts), as display values. */
 export const POND_PAPER = hexRgb(POND_WATER);
@@ -378,6 +380,7 @@ const fragmentShader = /* glsl */ `
   ${POND_WAVES_GLSL}
   ${POND_SURFACE_GLSL}
   ${POND_PIGMENT_GLSL}
+  ${NAMING_WATER_GLSL}
   varying vec3 vWorld;
   void main() {
     vec2 p = vWorld.xz;
@@ -388,10 +391,14 @@ const fragmentShader = /* glsl */ `
     // them gradually into the sky instead of ending the water nearby.
     vec3 color = pondAboveColor(p, pondSurfaceColor(p, flow, n, eye), n, eye);
     color = pondPigment(p, n, eye, color);
+    // naming: the memory's colour round its reflection (0 elsewhere)
+    color = namingLake(color, n);
     // Screen-space paper grain stays fine at the horizon as well as nearby.
     color += (hash(gl_FragCoord.xy) - .5) * T_GRAIN;
-    // Dissolve into the horizon long before any finite geometry edge.
-    gl_FragColor = vec4(color, 1.0 - smoothstep(600.0, 1400.0, -p.y));
+    // Dissolve into the sky at the horizon as the recording's water does
+    // (DescentPrototype's waterFragment, 140–400; was 600–1400, 2026-11-01),
+    // so naming's horizon is the same soft meeting with the backdrop.
+    gl_FragColor = vec4(color, 1.0 - smoothstep(140.0, 400.0, -p.y));
   }
 `;
 
@@ -551,6 +558,8 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     uSheetDrop: { value: new THREE.Vector4(0, 0, 0, 0) },
     uSheetShape: { value: new THREE.Vector4(1, 1, 1, 0) },
     ...createPondPigmentUniforms(),
+    // naming's lake tint, shared by reference with PondNamingOverlay
+    ...NAMING_WATER_UNIFORMS,
   }), []);
   const uniforms = sharedWaves ?? ownUniforms;
   const ringUniforms = useMemo(() => ({
@@ -571,6 +580,13 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     ...POND_TUNE_UNIFORMS,
   }), [uniforms]);
 
+  // naming's own pond lends its surface to the vessel's reflection, so the
+  // reflection lies on these waves, under this camera
+  useEffect(() => {
+    if (sharedWaves) return;
+    lendPondSurface({ glsl: `${POND_WAVES_GLSL}\n${POND_SURFACE_GLSL}`, uniforms: uniforms as never, camera: camera as THREE.PerspectiveCamera, canvas: gl.domElement });
+    return () => lendPondSurface(null);
+  }, [sharedWaves, uniforms, camera, gl]);
   useEffect(() => {
     const lost = (event: Event) => { event.preventDefault(); onReady(); };
     gl.domElement.addEventListener("webglcontextlost", lost);
@@ -591,6 +607,11 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
       camera.updateMatrixWorld();
     }
     if (!ready.current) { ready.current = true; onReady(); }
+    if (!sharedWaves) {
+      const buffer = NAMING_WATER_UNIFORMS.uNameTintShape.value;
+      buffer.z = gl.domElement.width;
+      buffer.w = gl.domElement.height;
+    }
     const cue = cueRef.current;
     const thought = POND_THOUGHTS[cue.index];
     // Slot zero belongs to the only visible prompt. Old prompt ripples cannot
@@ -748,7 +769,7 @@ export function PerspectivePond(props: PondProps) {
   const fallback = <StillPond onReady={props.onReady} cueRef={props.cueRef} />;
   return <PondBoundary fallback={fallback}>
     <Canvas camera={{ ...POND_LENS, position: [0, 2.2, 10] }}
-      dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }} fallback={fallback}
+      dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} fallback={fallback}
       style={{ position: "absolute", inset: 0 }}>
       <PortraitFit />
       <PondWater {...props} />

@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { DialRoot, useDialKit } from "dialkit";
 import "dialkit/styles.css";
+import { DIALS_OPEN } from "../lib/dialsOpen";
 import { POND_TUNE_DEFAULT, setPondTune, type PondTune } from "../lib/pondTune";
 
 /*
@@ -106,8 +107,8 @@ export default function PondDials() {
 
   return (
     <>
-      <DialRoot position="bottom-right" theme="light" panels={["pond"]} />
-      <DialRoot position="bottom-left" theme="light" panels={["pond ink"]} />
+      <DialRoot defaultOpen={DIALS_OPEN} position="bottom-right" theme="light" panels={["pond"]} />
+      <DialRoot defaultOpen={DIALS_OPEN} position="bottom-left" theme="light" panels={["pond ink"]} />
     </>
   );
 }

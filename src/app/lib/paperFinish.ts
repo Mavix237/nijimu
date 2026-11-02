@@ -115,11 +115,12 @@ export function fineOpacity(grain: number, mode: FinishMode): { light: number; d
     : { light: half, dark: half / FINE_GROUND };
 }
 
-/** The fine tile's size in CSS px: one grain per device pixel (to 2×, as the water
-    renders; to 3× on a phone, so its grain is as fine as its screen). */
+/** The fine tile's size in CSS px: one grain per device pixel at the screen's own
+    density. (It was capped at 2×, as the water renders; on a zoomed page or a
+    denser screen the tile was then resampled and its grains smeared into
+    soft clumps over the scene.) */
 export function fineGrainSize(): number {
-  const cap = LIGHT_TIER ? 3 : 2;
-  const dpr = typeof window === "undefined" ? 1 : Math.min(window.devicePixelRatio || 1, cap);
+  const dpr = typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1);
   return FINE_TILE / dpr;
 }
 
@@ -199,6 +200,38 @@ export function useFinishMode(): FinishMode {
   return useSyncExternalStore(subscribeFinishMode, finishMode, finishMode);
 }
 
+/* ── a dev comparison, from the "gallery ground" panel ───────────────── */
+
+let beforePreview: FinishMode | null = null;
+/**
+ * Show the finish in a mode for comparison (null: back to the mode it had
+ * before the comparison began). Held for the visit, so a mode chosen in the
+ * gallery stays on the pond; the watchdog leaves it alone meanwhile.
+ */
+export function previewFinishMode(next: FinishMode | null) {
+  if (next === null) {
+    if (beforePreview === null) return;
+    const back = beforePreview;
+    beforePreview = null;
+    setFinishMode(back);
+    return;
+  }
+  if (beforePreview === null) beforePreview = mode;
+  setFinishMode(next);
+}
+
+let under = false;
+/** The gallery's finish laid under the vessels and words (over the water alone), not over everything. */
+export const finishUnder = () => under;
+export function setFinishUnder(next: boolean) {
+  if (next === under) return;
+  under = next;
+  listeners.forEach((l) => l());
+}
+export function useFinishUnder(): boolean {
+  return useSyncExternalStore(subscribeFinishMode, finishUnder, finishUnder);
+}
+
 /**
  * The watchdog: while the finish is on screen (past Enter, or the landing's
  * grain), it reads the frame clock in 2 s windows. Three windows running whose
@@ -228,7 +261,7 @@ export function startFinishWatchdog() {
         frames.sort((a, b) => a - b);
         const median = frames[frames.length >> 1];
         slow = median > SLOW_MS ? slow + 1 : 0;
-        if (slow >= SLOW_WINDOWS) {
+        if (slow >= SLOW_WINDOWS && beforePreview === null) {
           const next = MODES[MODES.indexOf(mode) + 1];
           if (next) setFinishMode(next, `frames at ${median.toFixed(0)} ms`);
           slow = 0;

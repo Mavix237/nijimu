@@ -1,8 +1,10 @@
 import { useEffect, useMemo } from "react";
 import { DialRoot, useDialKit } from "dialkit";
 import "dialkit/styles.css";
+import { DIALS_OPEN } from "../lib/dialsOpen";
 import { LIFE_EVENTS } from "../data/memoryData";
 import { GALLERY_TUNE_DEFAULT, setGalleryTune, type GalleryTune } from "../lib/galleryTune";
+import { previewFinishMode, setFinishUnder, type FinishMode } from "../lib/paperFinish";
 
 /*
  * The gallery's dev panel (DialKit). Development only: LiveVesselGallery
@@ -11,7 +13,8 @@ import { GALLERY_TUNE_DEFAULT, setGalleryTune, type GalleryTune } from "../lib/g
  * shells, each draggable:
  *
  *   gallery          (bottom right) reflection, sheen, glass, room, seats, timing, framing
- *   gallery ground   (top left) the water's colour, grain, paper and vignette;
+ *   gallery ground   (top left) the paper finish's mode and place (to compare);
+ *                    the water's colour, grain, paper and vignette;
  *                    a noise texture and a tint over the whole gallery; a CSS filter
  *   gallery colours  (bottom left) the foot stain (strength, shape, every pick moved together)
  *                    and one folder per curated memory: its stain tone and, with
@@ -43,6 +46,8 @@ const SEAT_RANGES: Record<keyof GalleryTune["seats"], [number, number, number]> 
   out2: [-0.15, 0.25, 0.005],
   down1: [-0.15, 0.2, 0.005],
   down2: [-0.15, 0.25, 0.005],
+  fadeNear: [0, 0.6, 0.01],
+  fadeFar: [0, 0.8, 0.01],
 };
 const TIMING_RANGES: Record<keyof GalleryTune["timing"], [number, number, number]> = {
   transcriptDwellMs: [0, 10000, 100],
@@ -79,8 +84,17 @@ const MEMORY_LABELS = LIFE_EVENTS.map((e) => `${e.year} · ${e.event.replace(/\s
 
 const BLENDS = ["soft-light", "overlay", "multiply", "screen", "color-burn", "luminosity", "normal"];
 
+/** The paper finish, for comparing by eye: its mode everywhere past Enter
+    ("as is" leaves the built/forced/watchdog mode alone), and, in the
+    gallery, whether it lies under the vessels and words or over everything. */
+const FINISH_MODES = ["as is", "full", "lite", "off"] as const;
+
 /** The gallery's ground: the water's colour and paper, a texture over everything, a filter. */
 const GROUND_CONFIG = {
+  finish: {
+    mode: { type: "select" as const, options: [...FINISH_MODES], default: "as is" },
+    underVessels: false,
+  },
   backdrop: {
     color: D.backdrop.color,
     grain: [D.backdrop.grain, 0, 0.4, 0.005] as Range,
@@ -149,7 +163,7 @@ const COLOR_CONFIG = {
 };
 
 type Main = Pick<GalleryTune, "glass" | "room" | "seats" | "timing" | "framing" | "reflection" | "sheen">;
-type Ground = Pick<GalleryTune, "backdrop" | "texture" | "filter">;
+type Ground = Pick<GalleryTune, "backdrop" | "texture" | "filter"> & { finish?: { mode?: string; underVessels?: boolean } };
 type Colors = { foot: GalleryTune["foot"]; memories: Record<string, { stain: string; foot: string }> };
 
 export default function GalleryDials() {
@@ -179,12 +193,19 @@ export default function GalleryDials() {
 
   useEffect(() => { setGalleryTune(tune); }, [tune]);
 
+  const finishPick = ground.finish?.mode ?? "as is";
+  const finishUnder = !!ground.finish?.underVessels;
+  useEffect(() => {
+    previewFinishMode(finishPick === "as is" ? null : finishPick as FinishMode);
+  }, [finishPick]);
+  useEffect(() => { setFinishUnder(finishUnder); }, [finishUnder]);
+
   // two shells, one per panel, in opposite corners (DialRoot's `panels` filter is our patch of dialkit)
   return (
     <>
-      <DialRoot position="bottom-right" theme="light" panels={["gallery"]} />
-      <DialRoot position="bottom-left" theme="light" panels={["gallery colours"]} />
-      <DialRoot position="top-left" theme="light" panels={["gallery ground"]} />
+      <DialRoot defaultOpen={DIALS_OPEN} position="bottom-right" theme="light" panels={["gallery"]} />
+      <DialRoot defaultOpen={DIALS_OPEN} position="bottom-left" theme="light" panels={["gallery colours"]} />
+      <DialRoot defaultOpen={DIALS_OPEN} position="top-left" theme="light" panels={["gallery ground"]} />
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { DialRoot, useDialKit } from "dialkit";
 import "dialkit/styles.css";
+import { DIALS_OPEN } from "../lib/dialsOpen";
 import { WASH_KNOBS, initialWashTune, type WashTune } from "../lib/washTune";
 import { LANDING_MOTION_DEFAULT, setLandingMotion, type LandingMotion } from "../lib/landingMotion";
 import { LANDING_BLENDS, LANDING_LOOK_DEFAULT as L, type LandingLook } from "../lib/landingLook";
@@ -286,8 +287,8 @@ export default function LandingDials({
 
   return (
     <>
-      <DialRoot position="bottom-right" theme="light" panels={["landing", "landing colours"]} />
-      <DialRoot position="top-left" theme="light" panels={["landing opening", "landing look"]} />
+      <DialRoot defaultOpen={DIALS_OPEN} position="bottom-right" theme="light" panels={["landing", "landing colours"]} />
+      <DialRoot defaultOpen={DIALS_OPEN} position="top-left" theme="light" panels={["landing opening", "landing look"]} />
     </>
   );
 }

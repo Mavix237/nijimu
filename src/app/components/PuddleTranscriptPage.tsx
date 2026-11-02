@@ -339,7 +339,8 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             </div>
           </div>
         </div>
-        {/* "record again" is there as soon as the words are; continue waits for the printout (a click skips it) */}
+        {/* "record again" is there as soon as a recording's words are; continue waits for the printout (a click skips it).
+            The sample (no recording behind it) shows the two together, once the printout is nearly through. */}
         {(!awaitingTranscript || transcribeError) && (
           <div
             style={{
@@ -363,7 +364,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                 <TextButton
                   label="record again"
                   onClick={goToRecord}
-                  style={{ width: "9em", justifyContent: "center" }}
+                  style={{ width: "9em", justifyContent: "center", visibility: transcriptionId || pairReady ? "visible" : "hidden" }}
                 />
                 <PillButton
                   label="continue"

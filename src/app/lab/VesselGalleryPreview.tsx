@@ -187,6 +187,7 @@ function withCanvasRoom(seat: SeatPlace, room: number): SeatPlace {
 
 /** The apex swells 6%; the first newer seat is 13% smaller and steps out, the
  * second 45% smaller and back in a little (shrink1/2, out1/2 in galleryTune); both step down. The apex retains draw priority.
+ * Every other seat fades with its distance (fadeNear at the next seat, fadeFar by the third).
  * Smooth weights keep these adjustments continuous while scrolling. */
 function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number; h: number }): SeatPlace {
   const k = galleryTune().seats;
@@ -199,6 +200,13 @@ function adjustCurveSeat(depth: SeatDepth, offset: number, viewport: { w: number
     blurPx: depth.blurPx / focusBoost,
   };
   const order = Math.round(offset * 100 + 140 * Math.max(0, 1 - Math.abs(offset) / 0.8));
+  // every seat but the apex a little fainter with its distance, either side:
+  // fadeNear by the next seat, easing on to fadeFar by the third
+  const away = Math.abs(offset);
+  const fade = away <= 1
+    ? k.fadeNear * smooth01(away)
+    : k.fadeNear + (k.fadeFar - k.fadeNear) * smooth01(Math.min(1, (away - 1) / 2));
+  depth = { ...depth, opacity: depth.opacity * (1 - fade) };
   if (offset <= 0) return { ...depth, order };
   const w1 = smooth01(Math.min(offset, 1));
   const w2 = smooth01(Math.max(0, offset - 1));
@@ -368,6 +376,8 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 
 /** The seat's vessel, skipped when nothing about it changed — the field re-renders the gallery every frame. */
 const SeatVessel = memo(VesselArtifact);
+/** The carousel's own swell at the apex (carouselSeat's focusScale), under the gallery's focusBoost. */
+const APEX_SWELL = 1.08;
 
 /** A memory the lab did not seat, drawn as a vessel of the form it already has. */
 function vesselForArchive(item: ArchiveArtifact): VesselState {
@@ -645,6 +655,9 @@ export function VesselGalleryProvider({
         viewToken={s.facing === undefined ? undefined : `${s.facing}|${s.viewPitch}`}
         holdView={s.viewLocked}
         focused={seat.focused}
+        // the seat at the apex is shown larger than its box (its canvas room × the apex swell):
+        // render it that much denser so it is not stretched; neighbours keep the plain density
+        pixelScale={seat.focused ? vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1) * APEX_SWELL * (1 + galleryTune().seats.focusBoost) : undefined}
         still={seat.still}
         frameloop={field.busy ? "always" : seat.frameloop}
         blurPx={seat.blurPx}

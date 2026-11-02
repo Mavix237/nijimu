@@ -74,7 +74,7 @@ import photoB from "../../assets/memory-photo-02.jpg";
 import { PortraitFit, viewHalfTan } from "../lib/portraitView";
 import { readPhoto } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
-import { UNDERWATER, UNDERWATER_GLSL } from "../lib/atmosphere";
+import { SINK_WASH_GLSL, UNDERWATER, UNDERWATER_GLSL } from "../lib/atmosphere";
 
 /*
  * Lab: the whole shot from the photo to the named memory, in one canvas.
@@ -793,7 +793,7 @@ const touchFragment = /* glsl */ `
       c.rgb = mix(c.rgb, ${UNDERWATER_GLSL}, spill);
     }
     // The atmospheric wash begins with the artifact's light, in the water's
-    // grey-green palette. Keep it translucent so the contour survives;
+    // own (cool grey) palette. Keep it translucent so the contour survives;
     // only the last surface handoff takes the scene to full exposure.
     float wash = .32 * (1.0 - exp(-4.0 * pow(uAscentExposure, 2.0)));
     float exposure = mix(wash, 1.0 - exp(-9.0), uAscentHandoff);
@@ -816,7 +816,7 @@ function surfaceShader(fragment: string, interior = false) {
       gl_FragColor.rgb = mix(gl_FragColor.rgb, waterLight, 1.0 - exp(-light * .32));
       gl_FragColor.rgb += waterLight * light * .045;
       ${interior ? `gl_FragColor.rgb += ${UNDERWATER_GLSL} * ascentInterior(vWorld, normalize(vNormalW));` : ""}
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.890196, 0.917647, 0.913725), uSurfaceLight);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, ${SINK_WASH_GLSL}, uSurfaceLight);
       gl_FragColor.a *= 1.0 - uSurfaceLight;
     }`;
 }

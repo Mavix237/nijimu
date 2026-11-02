@@ -30,6 +30,23 @@ finish and the landing's grain too. Unforced, `startFinishWatchdog` (in
 `RootLayout`) steps full → lite → off after three 2 s windows whose median
 frame is over 40 ms, logging it in the console. Headless/software-rendered
 browsers trip it: force `?finish=full` when checking by screenshot.
+To compare by eye (dev), the "gallery ground" panel's `finish` folder sets
+the mode for the visit (`previewFinishMode`; "as is" restores it, and the
+watchdog waits meanwhile) and, in the gallery only, `underVessels` lays the
+finish over the water alone instead of over vessels and words (the descent
+draws its vessel in the water's canvas, so there it stays over all). The fine
+tile now follows the screen's real DPR (no 2× cap, which resampled it on a
+zoomed page), and `PerspectivePond` (naming's pond) renders at `MAX_DPR`, not 1.5.
+The apex vessel's canvas renders denser by its on-screen stretch
+(`VesselArtifact` `pixelScale` = canvas room × library size × the apex swell
+1.08 × focusBoost, up to 1.75 × `MAX_DPR`, 1.4 × on a phone): the seat is
+measured unscaled (offsetSize), so a spiky, large form was drawn at its box's
+size and stretched ~2× by its CSS scale — the jagged edges. Neighbours keep
+`[1, MAX_DPR]`.
+Every seat but the apex fades with its distance along the curve, either
+side (`seats.fadeNear` .1 at the next seat, easing to `seats.fadeFar` .2 by
+the third; `adjustCurveSeat`, on top of `carouselSeat`'s own opacity), tuned
+in the "gallery" panel's seats folder.
 
 ## One ramp of grounds (2026-11-01)
 
@@ -41,10 +58,16 @@ The temperature shift is deliberate (warm paper → grey-green water), each
 step small. `landingLook`, `galleryTune`, `pondTune`, `pondCamera`,
 `landingReturn`, `LandingPage`, `PerspectivePond` and the descent read it;
 change a ground there, not in a literal. The pond, which had gone steel-blue
-(near water #b6c3c7), now leans grey-green: sky #eeefed → #e4e8e6 →
-#c6cccb, water #e7e8e5, natural #e3eae8, shade #dae0e0 (near water ≈
+(near water #b6c3c7), now leans grey-green: sky #eeefef → #e4e8e6 →
+#c6cccb, water #e6e8e8 (was #e7e8e5), natural #d2d9dd (was #e3eae8, now a deeper, cooler foot), shade #d5dadd, warm light #eee8e6; clarity .55, sharpness .92, haze from 36, clouds .132 (near water ≈
 #bac2be). The transcript's foot fades by a mask on the words, not a
 coloured block over the water.
+Under the water leans cooler with it (2026-11-01): `UNDERWATER` [.884,
+.901, .911] ≈ #e1e6e8 (was [.888, .902, .897], grey-green) at the same luma,
+so the pond above, which keeps only its lightness, is unchanged; `SINK_WASH`
+#e4e9ec (was #e3eae9), now also the ascent's last handoff on the glass
+(`SINK_WASH_GLSL`, was a literal). With the sample memory, "record again"
+waits for continue and shows with it; a recording's shows with the words.
 
 ## Naming panel (2026-11-01)
 
@@ -55,6 +78,41 @@ the room the glass reflects, and its light near & clear / far & faded.
 `lib/namingTune.ts` holds `NAMING_TUNE_DEFAULT` (the overlay's former
 constants). The vessel now sits 6vh up (was 3vh), so its crown stands over
 the horizon.
+Naming's water is the recording's: it already shares `POND_TUNE_UNIFORMS`
+(through `createPondPigmentUniforms`), lens and settled camera; since
+2026-11-01 it also dissolves into the sky at 140–400 units as the descent's
+`waterFragment` does (was 600–1400), and the white radial light that
+`MemoryPondPage` laid over naming alone (#fff9 at 48% 24%) is gone.
+The vessel is mirrored on the lake (2026-11-01): the gallery's planar mirror
+(`VesselReflection`, the plane `gap` under the foot) with `water` set, which
+adds one full-canvas pass (`waterReflectFragment` in `VesselArtifact`) over
+the blurred mirror (`smear`: longer down than across). Each pixel finds the
+water under it through naming's pond camera, takes that pond's own wave
+normal (`pondSurfaceNormal`, its uniform objects shared by reference — same
+clock, rings, touches, knobs), bends the reflection by twice the slope
+(`ripple` 1 is physical, `stretch` foreshortens it down the screen) and
+weighs it by the water's Fresnel (`fresnel`: strong toward the horizon, clear
+near the eye); nothing is drawn above the pond's horizon. The pond lends its
+surface while mounted (`lendPondSurface` in `lib/namingWater.ts`); without it
+there is no reflection. The gallery passes no `water` and is unchanged. The
+naming row of actions sits over the taller canvas (zIndex 2).
+Where it lands it falls clear, as the still mirror did: within `contact`
+(share of the canvas) under the waterline the pass blends the sharp mirror
+(kept beside the blurred one) over the soft, unbent (`contactSharp`) and at
+least `contactStrength` whatever the Fresnel. The vessel reports that landing
+point on the screen (`onContact`), and the lake centres on it: a spot in the
+foot's own tone (the glass's foot band, l −.1, chroma ×1.25; the water's
+shade with no colour), laid in as a dye and moved by the waves (`spot*`),
+with the memory's hue spreading round it.
+The memory's colour reaches the lake round the reflection
+(`lib/namingWater.ts`: `NAMING_WATER_UNIFORMS` spread into naming's pond
+material, `namingLake` in its shader): a filter evened to its own luma, so it
+turns the water's hue and leaves its lightness, strongest in an ellipse at
+the seat's foot and thinning out, with a faint `wash` beyond; a grey pick or
+one within `guard` degrees of the water's own hue (`POND_NATURAL`'s) gives
+nothing. PondNamingOverlay writes its place each frame and eases it with the
+vessel's appearance and lift; it is cleared on unmount. Both are folders of
+the "naming" panel ("reflection", "lake"; `NAMING_TUNE_DEFAULT`).
 
 ## Pond panel and its light (2026-11-01)
 

@@ -19,7 +19,7 @@ import { PAPER_GRAIN } from "./paperFinish";
  *            a pushed panel) only once moved off the gallery's own value
  *   room     what the glass reflects and shows through where nothing is behind it
  *   seats    the curve's adjustments: the apex's swell, the two newer seats'
- *            shrink and step out/down
+ *            shrink and step out/down, every other seat's fade with distance
  *   timing   the transcript's dwell, the flight between the views, the parallax
  *   framing  the vessel's width cap in its seat
  *   reflection  a soft mirror image under each vessel: strength, how deep it fades,
@@ -55,6 +55,9 @@ export interface GalleryTune {
     shrink1: number; shrink2: number;
     out1: number; out2: number;
     down1: number; down2: number;
+    /** Every seat but the apex fades with its distance along the curve: by fadeNear
+        at the next seat, easing on to fadeFar by the third (and beyond). */
+    fadeNear: number; fadeFar: number;
   };
   timing: { transcriptDwellMs: number; flightMs: number; staggerMs: number; parallaxX: number; parallaxY: number };
   framing: { maxWidth: number };
@@ -111,7 +114,7 @@ export const GALLERY_TUNE_DEFAULT: GalleryTune = {
   // the gallery's own values (VESSEL_GALLERY_TUNE); kept in step by hand
   glass: { rim: .38, thickness: .3, bend: .67, glassSoft: .9, bodyAlpha: .85, thickDark: .21, highlight: .34, photoOpacity: .78 },
   room: { above: "#eae7e6", below: "#ffffff" },
-  seats: { focusBoost: .06, shrink1: .13, shrink2: .45, out1: .02, out2: -.025, down1: .045, down2: .05 },
+  seats: { focusBoost: .06, shrink1: .13, shrink2: .45, out1: .02, out2: -.025, down1: .045, down2: .05, fadeNear: .1, fadeFar: .2 },
   timing: { transcriptDwellMs: 3000, flightMs: 1500, staggerMs: 55, parallaxX: .03, parallaxY: .02 },
   framing: { maxWidth: 1 },
   // settled in the panel (2026-11-01): warm like the landing's paper, a step under it

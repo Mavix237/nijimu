@@ -52,6 +52,8 @@ export interface FilmLook {
   mottle: number;
   /** Light let into the camera from one side — the side comes from the seed — 0–1. */
   leak: number;
+  /** How much of the film's warmth goes (cream highlights, cream bloom, orange halation and leak): 0 as built, 1 neutral. */
+  cool: number;
 }
 
 export const FILM_LOOK_DEFAULT: FilmLook = {
@@ -71,6 +73,7 @@ export const FILM_LOOK_DEFAULT: FilmLook = {
   vignette: 0.1,
   mottle: 0.35,
   leak: 0.4,
+  cool: 0,
 };
 
 export const FILM_LOOK_KEYS = Object.keys(FILM_LOOK_DEFAULT) as (keyof FilmLook)[];
@@ -130,6 +133,7 @@ export const FILM_LOOK_GLSL = /* glsl */ `
   uniform float uFilmVignette;
   uniform float uFilmMottle;
   uniform float uFilmLeak;
+  uniform float uFilmCool;
   uniform float uFilmSeed;
 
   float filmHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -173,13 +177,13 @@ export const FILM_LOOK_GLSL = /* glsl */ `
     vec3 dull = mix(vec3(l), c, .65) + vec3(-.012, -.006, .02);
     c = mix(c, dull, shadow * uFilmSplit);
     float high = smoothstep(.6, 1.0, l);
-    c = mix(c, mix(vec3(l), c, .5) + vec3(.022, .004, -.03), high * uFilmSplit);
+    c = mix(c, mix(vec3(l), c, .5) + vec3(.022, .004, -.03) * (1.0 - uFilmCool), high * uFilmSplit);
 
     // the brights spill, wide and a little cream; a thinner orange fringe where they are hottest
     vec3 glow = max(wide - .42, 0.0) * 1.7;
-    c = filmScreen(c, glow * vec3(1.0, .96, .88) * uFilmBloom);
+    c = filmScreen(c, glow * mix(vec3(1.0, .96, .88), vec3(.95), uFilmCool) * uFilmBloom);
     float bright = smoothstep(.6, 1.0, filmLuma(wide));
-    c = filmScreen(c, vec3(1.0, .62, .38) * bright * uFilmHalation * .45);
+    c = filmScreen(c, mix(vec3(1.0, .62, .38), vec3(.67), uFilmCool) * bright * uFilmHalation * .45);
 
     // the emulsion: unevenly developed, and grainy — most in the shadows, least in the highlights
     float mottle = filmNoise(uv * vec2(5.0, 7.0) + uFilmSeed) * .65 + filmNoise(uv * vec2(13.0, 17.0) - uFilmSeed) * .35;
@@ -205,11 +209,12 @@ export const FILM_LOOK_GLSL = /* glsl */ `
     float wander = filmNoise(vec2(across * 3.0 + uFilmSeed, along * 2.0 - uFilmSeed)) - .5;
     float lobe = smoothstep(.0, .6, along + wander * .3 - abs(across) * .3 + .1);
     vec3 leakColor = mix(vec3(1.0, .6, .68), vec3(1.0, .82, .58), smoothstep(.25, 1.0, lobe));
+    leakColor = mix(leakColor, vec3(dot(leakColor, vec3(.333))), uFilmCool);
     c = filmScreen(c, leakColor * lobe * uFilmLeak);
     vec2 heart = dir * .36 + vec2(-dir.y, dir.x) * (filmHash(vec2(uFilmSeed)) - .5) * .3;
     vec2 h = (q - heart) * vec2(1.0, 1.4);
     float spot = exp(-dot(h, h) * 14.0);
-    c = filmScreen(c, vec3(1.0, .95, .86) * spot * uFilmLeak * 1.1);
+    c = filmScreen(c, mix(vec3(1.0, .95, .86), vec3(.94), uFilmCool) * spot * uFilmLeak * 1.1);
 
     return mix(shot, clamp(c, 0.0, 1.0), uFilmAmount);
   }

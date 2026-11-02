@@ -14,9 +14,11 @@ import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch, rh
 import { createDistancePush } from "../lib/memoryDistanceGesture";
 import { createGestureHold } from "../lib/gestureHold";
 import { advanceArtifactPose } from "../lib/artifactPose";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+/** The film look's dev panel (DialKit), development only. */
+const FilmDials = import.meta.env.DEV ? lazy(() => import("../components/FilmDials")) : null;
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
 import { CAROUSEL_PATH, DESCENT_PATH as DESCENT_ROUTE, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
@@ -3298,6 +3300,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             transition: "color 600ms ease" }} />
       )}
       </>}
+      {/* the photo's film look on the vessel (dev): leak, warmth, halation, crossover, bloom */}
+      {FilmDials && !prelude && <Suspense fallback={null}><FilmDials /></Suspense>}
     </main>
   );
 }

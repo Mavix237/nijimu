@@ -69,6 +69,18 @@ so the pond above, which keeps only its lightness, is unchanged; `SINK_WASH`
 (`SINK_WASH_GLSL`, was a literal). With the sample memory, "record again"
 waits for continue and shows with it; a recording's shows with the words.
 
+## Vessel film panel (2026-11-01)
+
+The warm yellow above and below a vessel's photo is the film look: the light
+leak (`dyeLeak` .72, an orange-cream lobe from one side and a hot spot — on
+the upright strip, above or below the picture), the crossover's cream
+highlights (`split`), the cream bloom and the orange halation. A "vessel
+film" DialKit panel (dev, `components/FilmDials.tsx`; the descent while a
+vessel is in hand, bottom right; naming, bottom left) tunes them for every
+vessel through `lookFor` (`lib/filmTune.ts`): `leak` (× dyeLeak), `cool`
+(how much of the warmth goes — `uFilmCool` in `FILM_LOOK_GLSL`, 0 as built),
+`halation`, `split`, `bloom`. Defaults are the look as built.
+
 ## Naming panel (2026-11-01)
 
 Naming has its own DialKit panel (dev only, `components/NamingDials.tsx`,

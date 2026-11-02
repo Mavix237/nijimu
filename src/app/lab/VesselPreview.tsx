@@ -1,3 +1,4 @@
+import { filmTune } from "../lib/filmTune";
 import { oklchToHex } from "../lib/oklch";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
@@ -323,12 +324,15 @@ export const airFor = (t: VesselTune, mode: GlassMode, room: Room) => airOf(back
     photo blur, the tone fades with the wash. */
 export function lookFor(t: VesselTune): FilmLook {
   const blur = Math.min(1, (t.haze * t.hazePhoto) / 2), fade = t.haze * t.hazeTone;
+  // the "vessel film" panel's settling (lib/filmTune.ts); as built until it is moved
+  const film = filmTune();
   return {
     ...FILM_LOOK_DEFAULT,
-    bloom: 0.3 + t.haze * 0.3, halation: 0.1, mottle: 0.25, vignette: 0.1,
+    bloom: (0.3 + t.haze * 0.3) * film.bloom, halation: film.halation, mottle: 0.25, vignette: 0.1,
+    split: film.split, cool: film.cool,
     lift: t.dyeLift + fade * 0.1, contrast: t.dyeContrast * (1 - fade * 0.35), shoulder: t.dyeShoulder,
     saturation: t.dyeSaturation * (1 - fade * 0.4),
-    grain: t.dyeGrain, soft: t.dyeSoft + (1 - t.dyeSoft) * blur, exposure: t.dyeExposure, leak: t.dyeLeak,
+    grain: t.dyeGrain, soft: t.dyeSoft + (1 - t.dyeSoft) * blur, exposure: t.dyeExposure, leak: t.dyeLeak * film.leak,
   };
 }
 

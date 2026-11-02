@@ -20,6 +20,7 @@ import { useCompact } from "../hooks/useCompact";
 import { useNamingTune, type NamingLightTune } from "../lib/namingTune";
 
 const NamingDials = import.meta.env.DEV ? lazy(() => import("./NamingDials")) : null;
+const FilmDials = import.meta.env.DEV ? lazy(() => import("./FilmDials")) : null;
 import {
   useNamingRim,
   type NameFlowState,
@@ -325,6 +326,7 @@ export function PondNamingOverlay({
   return (
     <div className="absolute inset-0 select-none" style={{ zIndex: 30, pointerEvents: "none" }}>
       {NamingDials && <div style={{ pointerEvents: "auto" }}><Suspense fallback={null}><NamingDials /></Suspense></div>}
+      {FilmDials && <div style={{ pointerEvents: "auto" }}><Suspense fallback={null}><FilmDials position="bottom-left" /></Suspense></div>}
       {/* The light the ascent ended in; the step opens out of it. */}
       {rising && <div ref={lightRef} aria-hidden
         style={{ position: "fixed", inset: 0, zIndex: 2, pointerEvents: "none", background: SURFACE_LIGHT, opacity: 1 }} />}

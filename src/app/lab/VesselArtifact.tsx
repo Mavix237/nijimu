@@ -6,6 +6,7 @@ import { prepareFilmPhoto } from "../lib/filmLook";
 import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
 import { LIGHT_TIER, MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
 import { setApexHover } from "../lib/apexHover";
+import { useFilmTune } from "../lib/filmTune";
 import { cappedVesselDistance, frameVessel } from "../lib/vesselFraming";
 import { useVesselParts, type VesselParts } from "./vesselBuilds";
 import { createEdgePrint } from "./filmStrip";
@@ -329,6 +330,8 @@ function VesselObject({
   parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
+  // the film panel (lib/filmTune.ts) re-renders the seat, which rewrites its photo's look
+  const film = useFilmTune();
   const canvasDpr = useThree((st) => st.viewport.dpr);
   const mirror = reflection && reflection.strength > 0 ? reflection : null;
   // the canvas reaches below the seat by this share of its height; the seat itself is the top of it
@@ -598,7 +601,7 @@ function VesselObject({
     sheetM.uImageAspect.value = sheetU.uImageAspect.value;
   }
   // a still seat draws on demand: a new tune or room (the gallery's dev panel) asks for a frame
-  useEffect(() => { invalidate(); }, [tune, room, reflection, sheen, invalidate]);
+  useEffect(() => { invalidate(); }, [tune, room, reflection, sheen, film, invalidate]);
 
   // the picture, from the shared stock: already there if it was preloaded, else set as it arrives
   const photo = photoUrl ? peekSeatPhoto(photoUrl) : undefined;

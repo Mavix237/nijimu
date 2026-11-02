@@ -106,10 +106,14 @@ export interface VesselTune {
   // sheet
   inset: number; arc: number; band: number; lift: number; foldScale: number; stock: number;
   stockThick: number; stockThin: number; wear: number; backFace: number; holeRim: number;
+  /** The photo's window fading into the stock, mm (2.5 as built), and the torn ends' depth (× 1.4 mm). */
+  edgeFade: number; tornDepth: number;
   holeSize: number; holeWidth: number; holeFade: number;
   // drape (the second sheet: its own cloth, hung from the wall)
   sheetSize: number; anchorAngle: number; anchorHeight: number; tilt: number; contact: number;
   sag: number; peel: number; curl: number; twist: number; gap: number; soft: number;
+  /** The cloth gathers where the wall pushes it in rather than buckling (Drape.gather; 0 as built). */
+  gather: number;
   // feel (the draped sheet's material: gauze or soaked paper rather than film)
   sheer: number; softRim: number; sheen: number; gloss: number; grain: number;
   // dye
@@ -180,9 +184,10 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   frostPatches: 2, frostSize: 1.25, frostStrength: unitParam("frost", GLASS_MODE === "refract" ? 0.15 : 0.4), rim: 0.38, thickness: 0.3,
   inset: 0.92, arc: 211, band: 1.2, lift: 0.048, foldScale: 1.7, stock: 0,
   stockThick: 0.6, stockThin: 0.4, wear: 1.16, backFace: 0.44, holeRim: 0.55,
+  edgeFade: 2.5, tornDepth: 1,
   holeSize: 1, holeWidth: 1, holeFade: 0,
   sheetSize: 2.26, anchorAngle: 180, anchorHeight: 1.0, tilt: 2, contact: 30.5,
-  sag: 21, peel: 69, curl: 0.35, twist: 15, gap: 0.03, soft: 0.7,
+  sag: 21, peel: 69, curl: 0.35, twist: 15, gap: 0.03, soft: 0.7, gather: 0,
   sheer: 0.92, softRim: 0.2, sheen: 0.31, gloss: 0.43, grain: 0.04,
   dyeLift: 0.06, dyeContrast: 0.96, dyeShoulder: 0.5, dyeSaturation: 0.9, dyeGrain: 0.03,
   dyeSoft: 0.45, dyeExposure: 0.01, dyeLeak: 0.72, photoOpacity: 0.83, bleed: 0.53,
@@ -517,6 +522,10 @@ const v3turn = (v: V3, axis: V3, angle: number): V3 => {
 export interface Drape {
   sheetSize: number; anchorAngle: number; anchorHeight: number; tilt: number; contact: number;
   sag: number; peel: number; curl: number; twist: number; gap: number; soft: number;
+  /** How far the cloth may gather (shorten) where the wall pushes it in, rather than keep its length
+      and buckle — the accordion pleats a strip fitted to a round form shows edge-on at its sides as
+      teeth. 0 as built. */
+  gather?: number;
 }
 
 /**
@@ -698,12 +707,14 @@ export function buildDrapedSheet(glass: Glass, inset: number, d: Drape): Sheet {
   const soft = Math.min(1, Math.max(0, d.soft));
   const lambda = 0.6 * soft, mu = -(lambda + 0.03 * soft);
   const spread = 1 + Math.round(soft * 3);
+  // squeezed cells give way by this much instead of pushing back (they still resist stretching)
+  const give = 1 - Math.min(1, Math.max(0, d.gather ?? 0));
   hold(1, spread);
   for (let it = 0; it < 24; it++) {
     for (const [p, q, rest] of edges) {
       const dx = pos[q * 3] - pos[p * 3], dy = pos[q * 3 + 1] - pos[p * 3 + 1], dz = pos[q * 3 + 2] - pos[p * 3 + 2];
       const len = Math.hypot(dx, dy, dz) || 1e-6;
-      const c = ((len - rest) / len) * 0.4 * 0.5;
+      const c = ((len - rest) / len) * 0.4 * 0.5 * (len < rest ? give : 1);
       pos[p * 3] += dx * c; pos[p * 3 + 1] += dy * c; pos[p * 3 + 2] += dz * c;
       pos[q * 3] -= dx * c; pos[q * 3 + 1] -= dy * c; pos[q * 3 + 2] -= dz * c;
     }
@@ -1725,6 +1736,8 @@ export function createSheetUniformSet(edgePrint: THREE.Texture) {
     uArc: { value: 1 },
     uYScale: { value: 1 },
     uWear: { value: 1 },
+    uTorn: { value: 1 },
+    uTornOn: { value: 1 },
     uBackFace: { value: 1 },
     uBleed: { value: 0 },
     uMmAttr: { value: 0 },
@@ -1869,6 +1882,8 @@ export function writeSheetUniforms(u: SheetUniformSet, w: SheetWrite) {
   u.uArc.value = sheet.arc;
   u.uYScale.value = sheet.yScale;
   u.uWear.value = tune.wear / 1.6;
+  u.uTorn.value = tune.tornDepth ?? 1;
+  u.uEdgeFade.value = tune.edgeFade ?? 2.5;
   u.uBackFace.value = tune.backFace;
   u.uBleed.value = tune.bleed;
   u.uMmAttr.value = sheet.mmAttr ? 1 : 0;
@@ -2189,11 +2204,11 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
   const glass = useMemo(() => buildGlass(form, morph), [form, morph]);
   useEffect(() => () => glass.geometry.dispose(), [glass]);
   const { inset, arc, band, lift, foldScale } = tune;
-  const { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft } = tune;
+  const { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather } = tune;
   const sheet = useMemo(() => sheetMode === "draped"
-    ? buildDrapedSheet(glass, inset, { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft })
+    ? buildDrapedSheet(glass, inset, { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather })
     : buildSheet(glass, inset, arc, band, lift, foldScale, seed),
-  [glass, sheetMode, inset, arc, band, lift, foldScale, seed, sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft]);
+  [glass, sheetMode, inset, arc, band, lift, foldScale, seed, sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather]);
   useEffect(() => () => sheet.geometry.dispose(), [sheet]);
   const groundY = glass.lo - 0.02;
   const radius = (glass.hi - glass.lo) * 0.5;
@@ -2306,11 +2321,11 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
 
 /* ───────── the panel ───────── */
 
-interface Knob { key: keyof VesselTune; label: string; min: number; max: number; step: number; only?: SheetMode }
+export interface Knob { key: keyof VesselTune; label: string; min: number; max: number; step: number; only?: SheetMode }
 /** The glass's surface textures, by `texKind` — the order `texHeight` reads them in. */
-const TEXTURES = ["clear", "satin", "sandblast", "brushed", "ripple", "hammered"] as const;
+export const TEXTURES = ["clear", "satin", "sandblast", "brushed", "ripple", "hammered"] as const;
 
-const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
+export const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
   // the form itself, as the shape step has it: a category, a deviation inside it, and how far it has grown from its sphere
   { group: "form", knobs: [
     { key: "morph", label: "grown from the sphere  (the shape step's morph)", min: 0, max: 1, step: 0.01 },
@@ -2382,6 +2397,8 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "stockThick", label: "stock alpha  thick", min: 0.2, max: 1, step: 0.01 },
     { key: "stockThin", label: "stock alpha  thin", min: 0.1, max: 0.95, step: 0.01 },
     { key: "wear", label: "edge wear  mm", min: 0.05, max: 1.6, step: 0.01 },
+    { key: "tornDepth", label: "torn ends  (× 1.4 mm; 0 is a clean cut)", min: 0, max: 4, step: 0.01 },
+    { key: "edgeFade", label: "photo edge fade  mm  (the picture thins into the stock)", min: 0, max: 10, step: 0.1 },
     { key: "holeSize", label: "perforations  size  (0 is none)", min: 0, max: 1, step: 0.01 },
     { key: "holeWidth", label: "perforations  width", min: 0, max: 1, step: 0.01 },
     { key: "holeFade", label: "perforations  fade  (1 is a mark, not a cut)", min: 0, max: 1, step: 0.01 },
@@ -2401,6 +2418,7 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "twist", label: "twist °", min: -90, max: 90, step: 1 },
     { key: "gap", label: "air from the wall", min: 0, max: 0.15, step: 0.002 },
     { key: "soft", label: "softness  (0 is crisp)", min: 0, max: 1, step: 0.01 },
+    { key: "gather", label: "gathers, not pleats  (0 buckles where the wall narrows)", min: 0, max: 1, step: 0.01 },
   ] },
   { group: "feel", only: "draped", knobs: [
     { key: "sheer", label: "sheer  (how much shows through)", min: 0.3, max: 1, step: 0.01 },
@@ -2464,7 +2482,7 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
 ];
 
 /** m is linear; the exponents span orders of magnitude, so they ride a log slider. */
-const FORM_SLIDERS: { key: keyof SuperParams; label: string; min: number; max: number; step?: number; log?: boolean }[] = [
+export const FORM_SLIDERS: { key: keyof SuperParams; label: string; min: number; max: number; step?: number; log?: boolean }[] = [
   { key: "m", label: "m  symmetry", min: 0, max: 24, step: 0.05 },
   { key: "n1", label: "n1  pinch", min: 0.1, max: 60, log: true },
   { key: "n2", label: "n2  one half", min: 0.1, max: 60, log: true },

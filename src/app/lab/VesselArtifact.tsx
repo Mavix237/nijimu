@@ -95,6 +95,11 @@ export interface VesselArtifactProps {
   reflection?: VesselReflection;
   /** A soft studio sheen on the glass's facing wall (the gallery's). Absent or amount 0: none. */
   sheen?: VesselSheen;
+  /** The canvas's pixel ratio, in place of the seat's own (the studio renders denser for an export). */
+  dpr?: number;
+  /** Set to a function and the next complete frame (with its reflection) is copied and handed to it,
+      then the slot is emptied: read in the same task as the render, before WebGL clears its buffer. */
+  capture?: { current: ((frame: HTMLCanvasElement) => void) | null };
 }
 
 /** A lobe of light fixed to the eye, laid on the facing wall; the vessel turns under it. */
@@ -285,6 +290,10 @@ function spreadSoft(renderer: THREE.WebGLRenderer, s: Soften, sigma: number) {
 export interface SeatPhoto { texture: THREE.Texture; aspect: number }
 const photos = new Map<string, SeatPhoto>();
 const photosLoading = new Map<string, Promise<SeatPhoto>>();
+/** The longest side a seat's picture is kept at. The studio raises it for its exports;
+    pictures already in the stock keep the size they were loaded at. */
+let seatPhotoMax = SEAT_PHOTO_MAX;
+export function setSeatPhotoMax(px: number) { seatPhotoMax = px; }
 
 export function loadSeatPhoto(url: string): Promise<SeatPhoto> {
   const have = photos.get(url);
@@ -293,7 +302,7 @@ export function loadSeatPhoto(url: string): Promise<SeatPhoto> {
   if (!pending) {
     pending = photoLoader.loadAsync(url).then((t) => {
       // every seat's context holds its own copy: no larger than the seat can show
-      (t as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = scaledImage(t.image as HTMLImageElement, SEAT_PHOTO_MAX);
+      (t as THREE.Texture<HTMLImageElement | HTMLCanvasElement>).image = scaledImage(t.image as HTMLImageElement, seatPhotoMax);
       const image = t.image as { width: number; height: number };
       const photo = { texture: prepareFilmPhoto(t), aspect: image.width / image.height };
       photos.set(url, photo);
@@ -327,7 +336,7 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
 }
 
 function VesselObject({
-  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen,
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen, capture,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // the film panel (lib/filmTune.ts) re-renders the seat, which rewrites its photo's look
@@ -648,6 +657,16 @@ function VesselObject({
     }
   };
   const refract = glassMode === "refract";
+  // a capture waits for a frame that has its reflection (the first is drawn without it)
+  const deliver = (first: boolean) => {
+    const take = capture?.current;
+    if (!take || !didRender.current || (first && mirror)) return;
+    capture.current = null;
+    const copy = document.createElement("canvas");
+    copy.width = gl.domElement.width; copy.height = gl.domElement.height;
+    copy.getContext("2d")?.drawImage(gl.domElement, 0, 0);
+    take(copy);
+  };
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
     if (compiledFor.current !== glassMode) return;
     const step = Math.min(dt, 0.1);
@@ -692,7 +711,9 @@ function VesselObject({
       renderer.render(scene, view);
       renderer.setRenderTarget(null);
       if (s) spreadSoft(renderer, s, sigma);
+      const firstFrost = !didRender.current;
       reportReady();
+      deliver(firstFrost);
       return;
     }
     glassU.uResolution.value.set(pass.target.width, pass.target.height);
@@ -800,6 +821,7 @@ function VesselObject({
     reportReady();
     // the outline has been kept: the next frame brings the reflection in
     if (first && didRender.current && mirror) invalidate();
+    deliver(first);
   }, 1);
 
   return <>
@@ -861,7 +883,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
     // that tiny size and stretched when it reached the apex
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
-      dpr={seatDpr(props.pixelScale)} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
+      dpr={props.dpr ?? seatDpr(props.pixelScale)} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       style={extra > 0 ? { width: "100%", height: `${(1 + extra) * 100}%` } : { width: "100%", height: "100%" }}>
       <VesselObject {...props} parts={parts} />

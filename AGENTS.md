@@ -69,6 +69,45 @@ so the pond above, which keeps only its lightness, is unchanged; `SINK_WASH`
 (`SINK_WASH_GLSL`, was a literal). With the sample memory, "record again"
 waits for continue and shows with it; a recording's shows with the words.
 
+## Vessel studio (2026-11-02)
+
+`/studio` (`src/app/studio/VesselStudio.tsx`, `studioSettings.ts`) is the
+vessel alone, apart from the experience (outside `RootLayout`: no header,
+music or gallery; nothing set there reaches another screen), to tune its 3D
+look and export it. It draws with the gallery's own `VesselArtifact`
+(refraction, draped strip, film look, reflection, sheen, stain), opening on
+`VESSEL_GALLERY_TUNE` and the gallery's room/reflection/sheen. Two DialKit
+panels (`productionEnabled`, persisted as `nijimu-studio*`; DialKit's version
+menu keeps presets): "studio" top left — a gallery memory to load
+(`galleryStateFor`), the form (category, "draw", morph, both superformula
+sets, proportion), photo (stills or upload), glass/sheet/face modes, view,
+frame (aspect, size, offset), backdrop, export — and "vessel" top right, every
+`KNOBS` group from `VesselPreview` (now exported, with `TEXTURES` and
+`FORM_SLIDERS`) plus room, film (`setFilmTune`), colour, reflection, sheen.
+Export: a PNG of the frame at a chosen long side, with the backdrop or
+transparent — the vessel's canvas is re-rendered at that density
+(`VesselArtifact` `dpr`, and `capture`, which copies the next complete frame
+with its reflection) and composed onto the frame; settings as .json
+("import settings…" reads it back); "copy tune diff" puts the keys moved off
+`VESSEL_GALLERY_TUNE` on the clipboard. The studio raises the seat photo
+size (`setSeatPhotoMax` 2400, was fixed at `SEAT_PHOTO_MAX`).
+Two sheet knobs came with it (every vessel; built values as defaults):
+`tornDepth` (× the torn ends' 1.4 mm, `uTorn`/`uTornOn` in `stripTornOutline` —
+a material without them keeps the built tear) and `edgeFade` (the photo's
+window thinning into the stock, mm; was the fixed `SHEET_DEFAULT.edgeFade` 2.5).
+The teeth seen at a fitted strip's sides on a round form were not the tear:
+the cloth settle held every cell at its length against squeezing too, so
+where the strip follows a narrowing wall it buckled into accordion pleats,
+seen edge-on at the silhouette. `gather` (drape; `Drape.gather`, in the build
+key) lets squeezed cells give way instead (still resisting stretch): 1 is
+smooth, .5 still shows faint teeth. 0 as built everywhere but the studio (1).
+Kept vessels: the "studio" panel's "saved" folder (name, save, pick, load,
+delete) keeps every setting with its photo in IndexedDB (`nijimu-studio` /
+`vessels`, `studio/savedVessels.ts`) — the photo as a Blob, fetched from
+whatever it was shown from, back as a data URL — so a kept vessel survives a
+reload and a rebuild. Saving under a name already kept replaces it. The
+downloaded settings .json now carries its photo as data too.
+
 ## Vessel film panel (2026-11-01)
 
 The warm yellow above and below a vessel's photo is the film look: the light

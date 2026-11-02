@@ -178,11 +178,14 @@ export const STRIP_FACE_GLSL = /* glsl */ `
     return mix(stripHash1(i), stripHash1(i + 1.0), f * f * (3.0 - 2.0 * f));
   }
   /* The outline: a rounded box whose short ends are torn. Signed distance, mm. */
+  // how deep the torn ends bite, × the built 1.4 mm; a material without these uniforms reads 0 for both and keeps the built tear
+  uniform float uTorn;
+  uniform float uTornOn;
   float stripTornOutline(vec2 mm, float seed) {
     float side = sign(mm.x) * 13.0;
     float torn = (stripNoise1(mm.y * .32 + side + seed * 7.0) * .75
       + stripNoise1(mm.y * 1.3 + side + seed) * .2
-      + stripNoise1(mm.y * 6.0 + side) * .05) * 1.4;
+      + stripNoise1(mm.y * 6.0 + side) * .05) * 1.4 * mix(1.0, uTorn, uTornOn);
     return stripRoundedBox(mm, vec2(STRIP.x * .5 - torn, STRIP.y * .5), .35);
   }
   /* Coverage at mm: the edge is worn — it blurs out over a fraction of a millimetre, more where

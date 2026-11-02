@@ -9,7 +9,7 @@ import { POND_TUNE_DEFAULT, setPondTune, type PondTune } from "../lib/pondTune";
  * lazily behind import.meta.env.DEV, while the pond is the screen in front.
  * Two shells, each draggable:
  *
- *   pond      (bottom right) the water: surface, sun, waves, rings, sphere, sky
+ *   pond      (bottom right) the prompts over the water (words, ripples), the water: surface, sun, waves, rings, sphere, sky
  *   pond ink  (bottom left) the pigment: drops, ink, the water's stain
  *
  * Every default is POND_TUNE_DEFAULT (the pond as built, with the sun and
@@ -36,6 +36,7 @@ function folder<T extends object>(defaults: T, ranges: Ranges<T>, collapsed = fa
 const { sun, sunGlow, sunSharp, pathWidth, pathLength, ...surfaceRest } = D.surface;
 
 const WATER_CONFIG = {
+  prompts: { _collapsed: false, words: D.prompts.words, ripples: D.prompts.ripples },
   sun: folder({ sun, sunGlow, sunSharp, pathWidth, pathLength }, {
     sun: [0, 2, 0.01], sunGlow: [0, 4, 0.01], sunSharp: [4, 400, 1],
     pathWidth: [0.5, 20, 0.1], pathLength: [2, 60, 0.5],
@@ -82,7 +83,7 @@ const INK_CONFIG = {
   }),
 };
 
-type Water = { sun: Partial<PondTune["surface"]>; surface: Partial<PondTune["surface"]> } & Pick<PondTune, "waves" | "rings" | "sphere" | "sky" | "light">;
+type Water = { sun: Partial<PondTune["surface"]>; surface: Partial<PondTune["surface"]> } & Pick<PondTune, "prompts" | "waves" | "rings" | "sphere" | "sky" | "light">;
 type Ink = Pick<PondTune, "drops" | "ink" | "tone">;
 
 export default function PondDials() {
@@ -91,6 +92,7 @@ export default function PondDials() {
 
   const key = JSON.stringify([water, ink]);
   const tune = useMemo<PondTune>(() => ({
+    prompts: { ...D.prompts, ...water.prompts },
     sky: { ...D.sky, ...water.sky },
     light: { ...D.light, ...water.light },
     surface: { ...D.surface, ...water.surface, ...water.sun },

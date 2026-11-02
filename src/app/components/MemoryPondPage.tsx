@@ -78,7 +78,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       cueRef.current = cue;
       promptRefs.current.forEach((label, i) => {
         if (!label) return;
-        const opacity = enabled && i === cue.index ? cue.opacity : 0;
+        const opacity = enabled && pondTune().prompts.words && i === cue.index ? cue.opacity : 0;
         label.style.opacity = String(opacity);
         label.style.translate = `0 ${reducedMotion ? 0 : cue.lift}px`;
         label.style.filter = reducedMotion ? "none" : `blur(${(1 - opacity) * 3}px)`;

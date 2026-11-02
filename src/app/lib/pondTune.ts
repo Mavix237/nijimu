@@ -39,6 +39,10 @@ import { POND_GLOW, POND_LIGHT_WARM, POND_NATURAL, POND_SHADE_COOL, POND_SKY_FOO
  */
 
 export interface PondTune {
+  /** The questions floating over the water ("What is a small moment…"):
+   *  `words` draws them, `ripples` keeps the ring each one is cued with.
+   *  The words are off by default (2026-11-02). */
+  prompts: { words: boolean; ripples: boolean };
   sky: {
     top: string; middle: string; bottom: string; middleAt: number;
     glow: string; glowAmount: number; glowX: number; glowY: number; glowWidth: number; glowHeight: number;
@@ -77,6 +81,7 @@ export interface PondTune {
  * then (same day) leaned grey-green toward the water under it — the colours
  * are in lib/atmosphere.ts, with what they were. */
 export const POND_TUNE_DEFAULT: PondTune = {
+  prompts: { words: false, ripples: true },
   sky: {
     top: POND_SKY_TOP, middle: POND_SKY_MIDDLE, bottom: POND_SKY_FOOT, middleAt: .42,
     // a soft light over the horizon where the sun's path begins

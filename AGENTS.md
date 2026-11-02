@@ -144,6 +144,8 @@ highlights ease toward .975 (`shoulder` .85) instead of clipping; warm light
 horizon where the sun's path begins, so the light in the water has a source.
 The pigment drops, their ink and the water's stain are off by default
 (`drops.show`, `ink.show`, `tone.show`); the prompts' ripples still come.
+The floating questions' words are off by default too (2026-11-02, the
+"pond" panel's `prompts` folder: `words`, `ripples` — ripples kept on).
 
 ## Landing opening and look panels (2026-11-01)
 

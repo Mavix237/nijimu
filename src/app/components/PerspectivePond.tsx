@@ -618,7 +618,7 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     // accumulate; the other slots are reserved for the user's own touches.
     if (promptRipples) {
       uniforms.uDrops.value[0].set(size.width < 600 ? 0 : thought.x, thought.z,
-        reducedMotion ? -1.5 : time.current - cue.age, lifeReady ? cue.ripple : 0);
+        reducedMotion ? -1.5 : time.current - cue.age, lifeReady && pondTune().prompts.ripples ? cue.ripple : 0);
     }
     if (touch && touch.serial !== seenTouch.current) {
       seenTouch.current = touch.serial;

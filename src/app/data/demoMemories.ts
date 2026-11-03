@@ -49,7 +49,7 @@ export const DEMO_MEMORIES: DemoMemory[] = [
     year: "",
     // the pointed 2022 vessel, "Left a place I thought I'd stay longer"
     vesselId: "8",
-    transcript: "I remember this one night last spring when him and I went for a drive around LA. It was midnight, and we didn't really have anywhere to go. We stopped at this parking lot overlooking the city, listening to music with the windows down. We were talking about graduation, and how weird it felt that everyone was figuring out what to do next. At some point we just stopped talking. I don't remember how long we stayed, but I still think about that night sometimes.",
+    transcript: "I remember this one night last spring when him and I went for a drive around LA. It was midnight, and we didn't really have anywhere to go. We stopped at this parking lot overlooking the city, listening to music with the windows down. We were talking how weird it felt that everyone was figuring out what to do next. I don't remember how long we stayed, but I still think about that night sometimes.",
   },
   {
     title: "東京で創った日",

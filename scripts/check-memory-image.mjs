@@ -8,7 +8,7 @@ const code = ts.transpileModule(readFileSync(new URL('../src/app/lib/memoryImage
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 runInNewContext(code, { module, exports: module.exports, require: () => ({}) });
-const { imageTextLines, surfaceTooth, surfaceGrain, surfaceSettingsOf, SURFACE_DEFAULT, SURFACE_RANGE } = module.exports;
+const { imageTextLines, surfaceTooth, surfaceGrain, IMAGE_CARD_PRESET } = module.exports;
 
 // the wall's tooth and grain: static, zero mean, unit σ (the strengths are applied when worn)
 {
@@ -28,14 +28,10 @@ const { imageTextLines, surfaceTooth, surfaceGrain, surfaceSettingsOf, SURFACE_D
   }
   const g = stats(surfaceGrain(w, h));
   assert.ok(Math.abs(g.mean) < .01 && Math.abs(g.sd - 1) < .01 && g.max <= Math.sqrt(6) + 1e-6, 'grain: zero mean, unit σ, bounded');
-  assert.deepEqual({ ...surfaceSettingsOf(undefined) }, { ...SURFACE_DEFAULT });
-  const wild = surfaceSettingsOf({ density: 99, densitySize: -1, tooth: 'x', toothSize: 2, grain: -3 });
-  assert.equal(wild.density, SURFACE_RANGE.density.max);
-  assert.equal(wild.densitySize, SURFACE_RANGE.densitySize.min);
-  assert.equal(wild.tooth, SURFACE_DEFAULT.tooth);
-  assert.equal(wild.toothSize, 2);
-  assert.equal(wild.grain, 0);
-  console.log('Wall tooth and grain checks passed: static, zero mean, unit σ; settings clamped.');
+  assert.deepEqual({ ...IMAGE_CARD_PRESET.wall }, { density: 0, densitySize: .5, tooth: 0, toothSize: .6, grain: 1 });
+  assert.equal(IMAGE_CARD_PRESET.tonalContrast, 1);
+  assert.deepEqual({ ...IMAGE_CARD_PRESET.filmGrain }, { kind: 'tonal', intensity: .2, size: .5 });
+  console.log('Wall tooth and grain checks passed: static, zero mean, unit σ; the card preset is fixed.');
 }
 const measure = text => Array.from(text).length;
 for (const text of [

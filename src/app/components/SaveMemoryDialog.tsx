@@ -8,7 +8,7 @@ import { draftArtifactOf } from "../lib/namingDraft";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { VesselArtifact } from "../lab/VesselArtifact";
 import { withNamingLights } from "../lib/namingTune";
-import { copyArtifactFrame, downloadMemoryImage, memoryImage, readGrainSettings, readSurfaceSettings, readTonalContrast } from "../lib/memoryImage";
+import { copyArtifactFrame, downloadMemoryImage, memoryImage } from "../lib/memoryImage";
 
 export function SaveMemoryDialog({ session, title, year, onClose, onContinue, storageError }: {
   session: NamingSession; title: string; year: string;
@@ -55,7 +55,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
       const tone = vessel.tune.memoryTintAmount > 0
         ? { l: vessel.tune.memoryTintLight, c: vessel.tune.memoryTintChroma, h: vessel.tune.memoryTintHue }
         : undefined;
-      const blob = await memoryImage(frame, title, year, session.state.transcript ?? "", tone, { tonalContrast: readTonalContrast(), surface: readSurfaceSettings(), grain: readGrainSettings() });
+      const blob = await memoryImage(frame, title, year, session.state.transcript ?? "", tone);
       if (attempt.current !== current) return;
       downloadMemoryImage(blob, title);
       setBusy(false);

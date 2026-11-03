@@ -1,7 +1,7 @@
 import { CHROME_GRAY } from "./colors";
 import { SERIF, SERIF_CJK } from "./theme";
 import { oklabToSrgb, type Oklch } from "./oklch";
-import { GrainStudy, grainSettingsOf, type GrainSettings } from "./filmGrain";
+import { GrainStudy, type GrainSettings } from "./filmGrain";
 
 /**
  * The downloaded image's ground: a seamless studio sweep photographed in
@@ -16,9 +16,9 @@ import { GrainStudy, grainSettingsOf, type GrainSettings } from "./filmGrain";
  * Places are in widths of the page: x 0…1, y 0…height/width.
  */
 const LIGHT = {
-  /** The ambient base (OKLab lightness). The paper stays neutral. */
+  /** The ambient base (OKLab lightness) and the paper's faint cool cast (a, b). */
   base: .912,
-  cool: [0, 0] as const,
+  cool: [-.0012, -.0046] as const,
   /** Above this lightness the exposure rolls off rather than clipping, up to `ceiling`. */
   shoulder: .935,
   ceiling: .992,
@@ -41,10 +41,9 @@ const LIGHT = {
  *
  * Its tooth, at the card's own pixels and laid on the ground alone: three
  * turned octaves of soft noise (`toothPx` px, weighted as the landing's paper)
- * and a fine static grain. Together they read as paper on the card, not only
- * when the file is opened at full size. Each is a standard deviation of
- * `tooth`/`grain` in lightness, as a multiplier so the colour keeps its
- * ratios. Tonal contrast moves both by a tenth either way.
+ * and a very fine static grain, each a standard deviation of `tooth`/`grain`
+ * in lightness, as a multiplier so the colour keeps its ratios. Tonal contrast
+ * moves both by a tenth either way.
  */
 const SURFACE = {
   light: .0065,
@@ -53,16 +52,15 @@ const SURFACE = {
   chroma: .08,
   scales: [.9, .44, .2] as const,
   warp: .22,
-  // strong enough to read as paper once the card is on a screen, not only at full pixels
-  tooth: .022,
+  tooth: .0038,
   toothPx: [1.35, 3.4, 9] as const,
   toothWeights: [.45, .35, .2] as const,
-  grain: .009,
+  grain: .0022,
   seed: 0x6e696a6d,
 } as const;
 
-/** The wall as set on the image preview, each a multiple of `SURFACE`'s own (1 is it). */
-export interface SurfaceSettings {
+/** The wall's strengths, each a multiple of `SURFACE` (1 is that wall). */
+interface SurfaceSettings {
   /** The broad density's strength, and its size (larger is broader). */
   density: number;
   densitySize: number;
@@ -71,56 +69,34 @@ export interface SurfaceSettings {
   toothSize: number;
   grain: number;
 }
-export const SURFACE_DEFAULT: SurfaceSettings = { density: 1, densitySize: 1, tooth: 1, toothSize: 1, grain: 1 };
-export const SURFACE_RANGE: Record<keyof SurfaceSettings, { min: number; max: number }> = {
-  density: { min: 0, max: 6 },
-  densitySize: { min: .3, max: 3 },
-  tooth: { min: 0, max: 8 },
-  toothSize: { min: .5, max: 4 },
-  grain: { min: 0, max: 8 },
-};
-const SURFACE_KEY = "nijimu.memoryImage.surface";
-
-export function surfaceSettingsOf(raw: Partial<Record<keyof SurfaceSettings, unknown>> | null | undefined): SurfaceSettings {
-  const out = { ...SURFACE_DEFAULT };
-  for (const key of Object.keys(out) as (keyof SurfaceSettings)[]) {
-    const v = Number(raw?.[key]);
-    if (raw?.[key] !== undefined && Number.isFinite(v)) out[key] = Math.min(SURFACE_RANGE[key].max, Math.max(SURFACE_RANGE[key].min, v));
-  }
-  return out;
-}
-
-/** The wall last set on the image preview, which the download uses too. */
-export function readSurfaceSettings(): SurfaceSettings {
-  try {
-    const kept = localStorage.getItem(SURFACE_KEY);
-    if (kept) return surfaceSettingsOf(JSON.parse(kept));
-  } catch { /* storage unavailable */ }
-  return { ...SURFACE_DEFAULT };
-}
-
-export function keepSurfaceSettings(settings: SurfaceSettings) {
-  try { localStorage.setItem(SURFACE_KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
-}
 
 /** Tonal contrast: 0 nearly flat, 1 the intended depth, 2 deeper still. */
-export const TONAL_CONTRAST = { min: 0, max: 2, standard: 1 } as const;
-const TONAL_KEY = "nijimu.memoryImage.tonalContrast";
+const TONAL_CONTRAST = { min: 0, max: 2, standard: 1 } as const;
 
-/** The tonal contrast last set on the image preview, which the download uses too. */
-export function readTonalContrast(): number {
-  try {
-    const kept = Number(localStorage.getItem(TONAL_KEY));
-    if (localStorage.getItem(TONAL_KEY) !== null && Number.isFinite(kept)) {
-      return Math.min(TONAL_CONTRAST.max, Math.max(TONAL_CONTRAST.min, kept));
-    }
-  } catch { /* storage unavailable */ }
-  return TONAL_CONTRAST.standard;
-}
-
-export function keepTonalContrast(value: number) {
-  try { localStorage.setItem(TONAL_KEY, String(value)); } catch { /* storage unavailable */ }
-}
+/**
+ * The card as it is printed: the values the preview was approved on. Tonal
+ * contrast at its standard; no broad density and no tooth, only the fine grain;
+ * film grain B · tonal, faint and small. The download reads this and nothing else.
+ */
+export const IMAGE_CARD_PRESET: {
+  tonalContrast: number;
+  wall: SurfaceSettings;
+  filmGrain: GrainSettings;
+} = {
+  tonalContrast: TONAL_CONTRAST.standard,
+  wall: {
+    density: 0,
+    densitySize: .5,
+    tooth: 0,
+    toothSize: .6,
+    grain: 1,
+  },
+  filmGrain: {
+    kind: "tonal",
+    intensity: .2,
+    size: .5,
+  },
+};
 
 /** How the contrast scales each kind of field. The light stays where it is;
  *  depth deepens in proportion; the grounding only a little past the standard. */
@@ -163,22 +139,22 @@ type Placement = { ox: number; oy: number; fy: number; bodyW: number; aspect: nu
 function fieldsFor({ ox, oy, fy, bodyW }: Placement): Field[] {
   return [
     // the exposure: broad light coming in from the upper left, its source well off the page
-    { role: "light", x: -.34, y: -.2, sx: 1.02, sy: .8, turn: 34, amount: .012, tint: -.05, clear: .85 },
+    { role: "light", x: -.34, y: -.2, sx: 1.02, sy: .8, turn: 34, amount: .08, tint: -.05, clear: .85 },
     // luminous air low and to the left, in front of the vessel
-    { role: "light", x: ox - .3, y: fy + .08, sx: .7, sy: .5, turn: -10, amount: .003, tint: -.02, clear: .2 },
+    { role: "light", x: ox - .3, y: fy + .08, sx: .7, sy: .5, turn: -10, amount: .02, tint: -.02, clear: .2 },
     // the depth behind the vessel: an oversized, tilted body of denser air, its
     // deepest part up and to the right of the vessel so the glass's edges read against it
-    { role: "depth", x: ox + .2, y: oy - .14, sx: .66, sy: .52, turn: 26, amount: -.007, tint: .12 },
+    { role: "depth", x: ox + .2, y: oy - .14, sx: .66, sy: .52, turn: 26, amount: -.088, tint: .12 },
     // the sweep falls away overhead, denser toward the upper right
-    { role: "depth", x: ox + .46, y: -.56, sx: 1.25, sy: .66, turn: -9, amount: -.006, tint: .14 },
+    { role: "depth", x: ox + .46, y: -.56, sx: 1.25, sy: .66, turn: -9, amount: -.07, tint: .14 },
     // a denser body of air off the right edge, low
-    { role: "depth", x: 1.26, y: fy + .02, sx: .55, sy: .85, turn: 18, amount: -.0044, tint: .2 },
+    { role: "depth", x: 1.26, y: fy + .02, sx: .55, sy: .85, turn: 18, amount: -.055, tint: .2 },
     // grounding: a wide, soft shade under the vessel, falling away from the light, gone well before the edges
-    { role: "ground", x: ox + .07, y: fy + .045, sx: .5, sy: .1, turn: -4, amount: -.006, tint: .16 },
+    { role: "ground", x: ox + .07, y: fy + .045, sx: .5, sy: .1, turn: -4, amount: -.028, tint: .16 },
     // the vessel's own shade where it stands
-    { role: "ground", x: ox + .018, y: fy + .008, sx: bodyW * .38, sy: .024, amount: -.008, tint: .18 },
+    { role: "ground", x: ox + .018, y: fy + .008, sx: bodyW * .38, sy: .024, amount: -.042, tint: .18 },
     // light reaching across the ground in front of it
-    { role: "light", x: ox - .2, y: fy + .17, sx: 1.05, sy: .13, turn: 4, amount: .0024, tint: -.02, clear: .3 },
+    { role: "light", x: ox - .2, y: fy + .17, sx: 1.05, sy: .13, turn: 4, amount: .016, tint: -.02, clear: .3 },
   ];
 }
 
@@ -420,33 +396,11 @@ export function copyArtifactFrame(source: HTMLCanvasElement): HTMLCanvasElement 
   return copy;
 }
 
-const GRAIN_KEY = "nijimu.memoryImage.grain";
-
-/** The grain the image is printed with — the preview's choice, kept so the download matches it. */
-export function readGrainSettings(): GrainSettings {
-  try {
-    const kept = localStorage.getItem(GRAIN_KEY);
-    return grainSettingsOf(kept ? JSON.parse(kept) : null);
-  } catch {
-    return grainSettingsOf(null);
-  }
-}
-
-export function keepGrainSettings(settings: GrainSettings) {
-  try { localStorage.setItem(GRAIN_KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
-}
-
-export interface MemoryImageOptions {
-  tonalContrast?: number;
-  surface?: SurfaceSettings;
-  grain?: GrainSettings;
-}
-
 /** The downloaded image: the card, its grain applied at full size, as a PNG. */
-export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch,
-  { tonalContrast, surface, grain }: MemoryImageOptions = {}): Promise<Blob> {
-  const canvas = await memoryCard(artifact, title, year, transcript, tone, tonalContrast, surface);
-  if (grain && grain.kind !== "off") {
+export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<Blob> {
+  const canvas = await memoryCard(artifact, title, year, transcript, tone);
+  const grain = IMAGE_CARD_PRESET.filmGrain;
+  if (grain.kind !== "off") {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Image canvas unavailable");
     const source = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -462,8 +416,7 @@ export function pngOf(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /** The card before any grain: the room, the vessel and the words, at full size. */
-export async function memoryCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch,
-  tonalContrast: number = TONAL_CONTRAST.standard, surface: SurfaceSettings = SURFACE_DEFAULT): Promise<HTMLCanvasElement> {
+export async function memoryCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<HTMLCanvasElement> {
   await Promise.all([
     document.fonts.load(`28px ${SERIF}`),
     document.fonts.load(`32px ${SERIF_CJK}`, "滲む nijimu"),
@@ -503,8 +456,8 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  const contrast = Math.min(TONAL_CONTRAST.max, Math.max(TONAL_CONTRAST.min, tonalContrast));
-  const wall = surfaceSettingsOf(surface);
+  const contrast = IMAGE_CARD_PRESET.tonalContrast;
+  const wall = IMAGE_CARD_PRESET.wall;
   ctx.drawImage(lightCanvas(w, h, place, tone, seed, contrast, wall), 0, 0, w, h);
   ctx.restore();
   // the tooth is the wall's, so it goes on before the vessel and the words

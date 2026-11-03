@@ -2853,7 +2853,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     exitStarted.current = false;
     setLeaving(false);
     const previous: Record<Step, Step | null> = {
-      shape: null, rhythm: "shape", distance: fixedShape ? null : "rhythm", color: "distance",
+      shape: null, rhythm: "shape", distance: "rhythm", color: "distance",
     };
     void goStep(previous[step]);
   };
@@ -2991,7 +2991,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
           onDescend={() => setPhase("descending")}
-          onUnder={() => { void goStep(fixedShape ? "distance" : "shape"); }}
+          onUnder={() => { void goStep("shape"); }}
           onWrapped={() => { stage.current.rise = true; setPhase("rising"); }}
           onRisen={() => setPhase("naming")}
           onAscended={ascended}

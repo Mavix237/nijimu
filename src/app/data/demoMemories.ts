@@ -5,8 +5,8 @@ import type { ArtifactForm } from "../lib/superformula";
 /**
  * Three prepared memories, reached by the small numbers beside "Skip to a
  * sample story". Each prints on the transcript as a recording would. English
- * and Japanese wear a gallery vessel already (no shape or rhythm step);
- * Chinese is still read, and its form stays in the hands.
+ * and Japanese wear a gallery vessel already; Chinese is still read. The
+ * handling steps stay in the hands.
  */
 export interface DemoMemory {
   title: string;

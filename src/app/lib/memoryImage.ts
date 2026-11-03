@@ -16,9 +16,9 @@ import { GrainStudy, grainSettingsOf, type GrainSettings } from "./filmGrain";
  * Places are in widths of the page: x 0…1, y 0…height/width.
  */
 const LIGHT = {
-  /** The ambient base (OKLab lightness) and the paper's faint cool cast (a, b). */
+  /** The ambient base (OKLab lightness). The paper stays neutral. */
   base: .912,
-  cool: [-.0012, -.0046] as const,
+  cool: [0, 0] as const,
   /** Above this lightness the exposure rolls off rather than clipping, up to `ceiling`. */
   shoulder: .935,
   ceiling: .992,
@@ -41,9 +41,10 @@ const LIGHT = {
  *
  * Its tooth, at the card's own pixels and laid on the ground alone: three
  * turned octaves of soft noise (`toothPx` px, weighted as the landing's paper)
- * and a very fine static grain, each a standard deviation of `tooth`/`grain`
- * in lightness, as a multiplier so the colour keeps its ratios. Tonal contrast
- * moves both by a tenth either way.
+ * and a fine static grain. Together they read as paper on the card, not only
+ * when the file is opened at full size. Each is a standard deviation of
+ * `tooth`/`grain` in lightness, as a multiplier so the colour keeps its
+ * ratios. Tonal contrast moves both by a tenth either way.
  */
 const SURFACE = {
   light: .0065,
@@ -52,10 +53,11 @@ const SURFACE = {
   chroma: .08,
   scales: [.9, .44, .2] as const,
   warp: .22,
-  tooth: .0038,
+  // strong enough to read as paper once the card is on a screen, not only at full pixels
+  tooth: .022,
   toothPx: [1.35, 3.4, 9] as const,
   toothWeights: [.45, .35, .2] as const,
-  grain: .0022,
+  grain: .009,
   seed: 0x6e696a6d,
 } as const;
 
@@ -161,22 +163,22 @@ type Placement = { ox: number; oy: number; fy: number; bodyW: number; aspect: nu
 function fieldsFor({ ox, oy, fy, bodyW }: Placement): Field[] {
   return [
     // the exposure: broad light coming in from the upper left, its source well off the page
-    { role: "light", x: -.34, y: -.2, sx: 1.02, sy: .8, turn: 34, amount: .08, tint: -.05, clear: .85 },
+    { role: "light", x: -.34, y: -.2, sx: 1.02, sy: .8, turn: 34, amount: .012, tint: -.05, clear: .85 },
     // luminous air low and to the left, in front of the vessel
-    { role: "light", x: ox - .3, y: fy + .08, sx: .7, sy: .5, turn: -10, amount: .02, tint: -.02, clear: .2 },
+    { role: "light", x: ox - .3, y: fy + .08, sx: .7, sy: .5, turn: -10, amount: .003, tint: -.02, clear: .2 },
     // the depth behind the vessel: an oversized, tilted body of denser air, its
     // deepest part up and to the right of the vessel so the glass's edges read against it
-    { role: "depth", x: ox + .2, y: oy - .14, sx: .66, sy: .52, turn: 26, amount: -.088, tint: .12 },
+    { role: "depth", x: ox + .2, y: oy - .14, sx: .66, sy: .52, turn: 26, amount: -.007, tint: .12 },
     // the sweep falls away overhead, denser toward the upper right
-    { role: "depth", x: ox + .46, y: -.56, sx: 1.25, sy: .66, turn: -9, amount: -.07, tint: .14 },
+    { role: "depth", x: ox + .46, y: -.56, sx: 1.25, sy: .66, turn: -9, amount: -.006, tint: .14 },
     // a denser body of air off the right edge, low
-    { role: "depth", x: 1.26, y: fy + .02, sx: .55, sy: .85, turn: 18, amount: -.055, tint: .2 },
+    { role: "depth", x: 1.26, y: fy + .02, sx: .55, sy: .85, turn: 18, amount: -.0044, tint: .2 },
     // grounding: a wide, soft shade under the vessel, falling away from the light, gone well before the edges
-    { role: "ground", x: ox + .07, y: fy + .045, sx: .5, sy: .1, turn: -4, amount: -.028, tint: .16 },
+    { role: "ground", x: ox + .07, y: fy + .045, sx: .5, sy: .1, turn: -4, amount: -.006, tint: .16 },
     // the vessel's own shade where it stands
-    { role: "ground", x: ox + .018, y: fy + .008, sx: bodyW * .38, sy: .024, amount: -.042, tint: .18 },
+    { role: "ground", x: ox + .018, y: fy + .008, sx: bodyW * .38, sy: .024, amount: -.008, tint: .18 },
     // light reaching across the ground in front of it
-    { role: "light", x: ox - .2, y: fy + .17, sx: 1.05, sy: .13, turn: 4, amount: .016, tint: -.02, clear: .3 },
+    { role: "light", x: ox - .2, y: fy + .17, sx: 1.05, sy: .13, turn: 4, amount: .0024, tint: -.02, clear: .3 },
   ];
 }
 

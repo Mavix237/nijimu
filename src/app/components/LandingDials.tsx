@@ -93,9 +93,6 @@ const LOOK_CONFIG = {
     color: L.vignette.color,
     inner: [L.vignette.inner, 0, 0.95, 0.01],
   },
-  ambient: {
-    amount: [L.ambient.amount, 0, 2, 0.01],
-  },
 };
 
 /*
@@ -280,7 +277,6 @@ export default function LandingDials({
       paper: { ...L.paper, ...look.paper },
       grain: { ...L.grain, ...look.grain },
       vignette: { ...L.vignette, ...look.vignette },
-      ambient: { ...L.ambient, ...look.ambient },
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lookPanelKey]);

@@ -4,12 +4,18 @@ import "dialkit/styles.css";
 import { buildArchive } from "../lib/archive";
 import { setFilmTune } from "../lib/filmTune";
 import { blobToDataUrl, deleteSaved, listSaved, loadSaved, photoBlob, saveVessel, type SavedSummary } from "./savedVessels";
-import { galleryTune } from "../lib/galleryTune";
+import { galleryTune, useGalleryTuneVersion } from "../lib/galleryTune";
+import { PaperFinish } from "../components/PaperFinish";
 import { createArtifactForm, type ArtifactCategory } from "../lib/superformula";
 import { SANS } from "../lib/theme";
 import { CHROME_GRAY } from "../lib/colors";
 import { VesselArtifact, setSeatPhotoMax } from "../lab/VesselArtifact";
-import { galleryStateFor } from "../lab/VesselGalleryPreview";
+import { VESSEL_GALLERY_TUNE, galleryStateFor } from "../lab/VesselGalleryPreview";
+import { buildGlass, fitSheetSize } from "../lab/VesselPreview";
+import { galleryLibrary } from "../lib/galleryLibrary";
+import { LIFE_EVENTS } from "../data/memoryData";
+import { oklchToHex } from "../lib/oklch";
+import { STUDIO_DIALS_OPEN } from "../lib/dialsOpen";
 import {
   STUDIO_DEFAULT, parseSettings, settingsFrom, studioConfig, tuneDiff, valuesFor, vesselConfig,
   type ExportBackground, type StudioSettings,
@@ -54,6 +60,7 @@ function useViewport() {
 }
 
 function backdropCss(b: StudioSettings["backdrop"]): string {
+  if (b.kind === "gallery") return galleryTune().backdrop.color;
   if (b.kind === "solid") return b.top;
   if (b.kind === "gradient") return `linear-gradient(${b.top}, ${b.bottom})`;
   return "repeating-conic-gradient(#e2e2e2 0% 25%, #f4f4f4 0% 50%) 0 0 / 16px 16px";
@@ -66,6 +73,60 @@ function download(blob: Blob, name: string) {
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/** Per memory, set by the library entry itself (or the memory's colour), never as a look override. */
+const OWN_KEYS = new Set(["morph", "sheetSize", "anchorHeight", "anchorAngle", "pitch", "turn"]);
+/** The foot's colour: this memory's tone (stain, foot) — the rest of these are the gallery's one foot shape. */
+const TINT_KEYS = ["memoryTintHue", "memoryTintChroma", "memoryTintLight", "memoryTintFootLight", "memoryTintFootChroma", "memoryTintFootHue"];
+const FOOT_SHAPE_KEYS = ["memoryTintAmount", "memoryTintDepth", "memoryTintReach", "memoryTintFootTop", "memoryTintFootBlend",
+  "memoryTintDeepL", "memoryTintDeepC", "memoryFlash", "flashEvery", "flashGain"];
+const round = (v: number) => Math.round(v * 10000) / 10000;
+
+/** A curated memory's library entry as tuned here: its shape, picture place and view, and the look
+    keys moved since it was loaded (over any it already had) — a TUNED row for lib/galleryLibrary.ts. */
+function galleryEntry(index: number, from: StudioSettings, now: StudioSettings): string {
+  const was = galleryLibrary()[index];
+  const t = now.tune;
+  const glass = buildGlass(now.form, t.morph);
+  const fit = fitSheetSize(glass);
+  glass.geometry.dispose();
+  const photoAround = wrapDegrees(t.anchorAngle - VESSEL_GALLERY_TUNE.anchorAngle);
+  const viewMoved = Math.abs(now.view.around - from.view.around) > 0.01 || Math.abs(now.view.pitch - from.view.pitch) > 0.01;
+  const view = was.view || viewMoved
+    ? { around: round(wrapDegrees(now.view.around + photoAround)), pitch: round(now.view.pitch) }
+    : null;
+  const nowT = t as unknown as Record<string, number | undefined>;
+  const wasT = from.tune as unknown as Record<string, number | undefined>;
+  const moved = (k: string) => {
+    const a = nowT[k], b = wasT[k];
+    return a === undefined || b === undefined ? a !== b : Math.abs(a - b) > 1e-6;
+  };
+  const tune: Record<string, number> = { ...was.tune };
+  for (const [k, v] of Object.entries(t)) {
+    if (OWN_KEYS.has(k) || TINT_KEYS.includes(k) || FOOT_SHAPE_KEYS.includes(k) || typeof v !== "number" || !moved(k)) continue;
+    tune[k] = round(v);
+  }
+  // the foot's colour, as the gallery keeps it (galleryTune tones[id]); the shape of the stain is one for all
+  const tone = TINT_KEYS.some(moved) ? {
+    stain: oklchToHex({ l: t.memoryTintLight, c: t.memoryTintChroma, h: t.memoryTintHue }),
+    ...(t.memoryTintFootLight !== undefined
+      ? { foot: oklchToHex({ l: t.memoryTintFootLight, c: t.memoryTintFootChroma ?? 0, h: t.memoryTintFootHue ?? 0 }), ownFoot: true }
+      : {}),
+  } : undefined;
+  const footShape = Object.fromEntries(FOOT_SHAPE_KEYS.filter(moved).map((k) => [k, round(nowT[k] ?? 0)]));
+  const e = LIFE_EVENTS[index];
+  const entry = {
+    key: was.key, morph: round(t.morph), size: was.size,
+    photoHeight: round(t.anchorHeight), photoAround: round(photoAround),
+    photoSize: round(now.fitSheet ? 1 : t.sheetSize / fit),
+    ...(was.photo === undefined ? {} : { photo: was.photo }),
+    view, form: now.form,
+    ...(Object.keys(tune).length ? { tune } : {}),
+    ...(tone ? { tone } : {}),
+    ...(Object.keys(footShape).length ? { footShape } : {}),
+  };
+  return `// gallery entry · LIFE_EVENTS[${index}] · ${e.year} ${e.event.replace(/\n/g, " ")}\n${JSON.stringify(entry)}`;
 }
 
 const stamp = () => new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "").replace(/^(\d{8})/, "$1-");
@@ -101,6 +162,8 @@ export function VesselStudio() {
   const seatRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const busy = useRef(false);
+  // the gallery memory last loaded, and the settings it opened with — "copy for gallery" writes what moved since
+  const loaded = useRef<{ index: number; from: StudioSettings } | null>(null);
 
   // the frame: the aspect, as large as the room between the two panels allows
   const vp = useViewport();
@@ -161,7 +224,7 @@ export function VesselStudio() {
           g.addColorStop(0, s.backdrop.top);
           g.addColorStop(1, s.backdrop.bottom);
           ctx.fillStyle = g;
-        } else ctx.fillStyle = s.backdrop.top;
+        } else ctx.fillStyle = s.backdrop.kind === "gallery" ? galleryTune().backdrop.color : s.backdrop.top;
         ctx.fillRect(0, 0, W, H);
       }
       const fr = frame.getBoundingClientRect(), cr = canvas.getBoundingClientRect();
@@ -219,14 +282,21 @@ export function VesselStudio() {
       if (!item) { say("choose a memory first"); return; }
       const state = galleryStateFor(item);
       const g = galleryTune();
-      apply({
+      const opened: StudioSettings = {
         ...s,
         form: state.form, tune: { ...state.tune }, mode: state.mode, sheetMode: state.sheetMode, face: state.face, room: { ...state.room },
         photo: state.url || s.photo, seed: state.seed, fitSheet: false,
         reflection: { ...g.reflection }, sheen: { ...g.sheen },
         view: { around: wrapDegrees((state.facing ?? state.tune.anchorAngle) - state.tune.anchorAngle), pitch: state.viewPitch ?? state.tune.pitch },
-      });
+      };
+      apply(opened);
+      const index = LIFE_EVENTS.findIndex((e) => e.id === item.id);
+      loaded.current = index >= 0 ? { index, from: opened } : null;
       say(`loaded ${item.year} · ${item.event}`);
+    } else if (name === "gallery") {
+      if (!loaded.current) { say("load a gallery memory first"); return; }
+      navigator.clipboard.writeText(galleryEntry(loaded.current.index, loaded.current.from, s))
+        .then(() => say("gallery entry copied — paste it to Claude"), () => say("the clipboard refused"));
     } else if (name === "reset") {
       setViewReset((n) => n + 1);
     } else if (name === "png") {
@@ -248,12 +318,26 @@ export function VesselStudio() {
   };
 
   const facing = wrapDegrees(s.tune.anchorAngle + s.view.around);
+  // the gallery's ground over the whole page, so a vessel tuned here sits as it does there
+  useGalleryTuneVersion();
+  const onGround = s.backdrop.kind === "gallery";
+  const ground = galleryTune().backdrop;
+  // once: a studio kept from before opens on the gallery's ground
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("nijimu.studio.ground")) return;
+      localStorage.setItem("nijimu.studio.ground", "1");
+    } catch { return; }
+    studio.setValues({ backdrop: { kind: "gallery" } } as never);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
-    <main style={{ position: "fixed", inset: 0, background: "#dededd", fontFamily: SANS, color: CHROME_GRAY, overflow: "hidden" }}>
+    <main data-studio style={{ position: "fixed", inset: 0, background: onGround ? ground.color : "#dededd", fontFamily: SANS, color: CHROME_GRAY, overflow: "hidden" }}>
       <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", paddingBottom: 40 }}>
         <div ref={frameRef}
-          style={{ position: "relative", width: fw, height: fh, background: backdropCss(s.backdrop), overflow: "hidden", boxShadow: "0 1px 2px #0000000d, 0 12px 40px #00000012" }}>
+          style={{ position: "relative", width: fw, height: fh, background: backdropCss(s.backdrop), overflow: "hidden",
+            boxShadow: onGround ? "inset 0 0 0 1px #0000000a" : "0 1px 2px #0000000d, 0 12px 40px #00000012" }}>
           {/* the seat is the square the vessel is framed in; its reflection's room hangs below it */}
           <div ref={seatRef} style={{ position: "absolute", left: seatLeft, top: seatTop, width: seat, height: seat }}>
               <VesselArtifact
@@ -284,6 +368,12 @@ export function VesselStudio() {
           </div>
         </div>
       </div>
+      {onGround && <>
+        {/* the gallery water's vignette (col *= 1 − |uv − .5|² · v), then its paper finish */}
+        <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none",
+          background: `radial-gradient(ellipse 70.71% 70.71% at 50% 50%, rgba(0,0,0,0) 0%, rgba(0,0,0,${ground.vignette * 0.125}) 50%, rgba(0,0,0,${ground.vignette * 0.28}) 75%, rgba(0,0,0,${ground.vignette * 0.5}) 100%)` }} />
+        <PaperFinish fine />
+      </>}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 14, textAlign: "center", fontSize: 11, letterSpacing: ".02em", pointerEvents: "none" }}>
         {status || `vessel studio · ${fw} × ${fh} frame · drag the vessel to turn it`}
       </div>
@@ -295,8 +385,8 @@ export function VesselStudio() {
           file.text().then((text) => { apply(parseSettings(text)); say(`imported ${file.name}`); })
             .catch((err: Error) => say(`import failed: ${err.message}`));
         }} />
-      <DialRoot position="top-left" theme="light" productionEnabled panels={["studio"]} />
-      <DialRoot position="top-right" theme="light" productionEnabled panels={["vessel"]} />
+      <DialRoot defaultOpen={STUDIO_DIALS_OPEN} position="top-left" theme="light" productionEnabled panels={["studio"]} />
+      <DialRoot defaultOpen={STUDIO_DIALS_OPEN} position="top-right" theme="light" productionEnabled panels={["vessel"]} />
     </main>
   );
 }

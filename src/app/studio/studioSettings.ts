@@ -24,7 +24,8 @@ import photoB from "../../assets/memory-photo-02.jpg";
 
 export const STUDIO_APP = "nijimu-vessel-studio";
 
-export type BackdropKind = "transparent" | "solid" | "gradient";
+/** "gallery": the gallery's own ground, read live from its panel — its colour, vignette, grain and tooth, over the whole page. */
+export type BackdropKind = "gallery" | "transparent" | "solid" | "gradient";
 export type ExportBackground = "backdrop" | "transparent";
 export const ASPECTS = ["1:1", "4:5", "3:4", "2:3", "16:9", "9:16"] as const;
 export const RESOLUTIONS = ["1080", "2048", "3000", "4096"] as const;
@@ -72,7 +73,7 @@ export const STUDIO_DEFAULT: StudioSettings = {
   seed: 3.1,
   view: { around: 0, pitch: VESSEL_GALLERY_TUNE.pitch },
   frame: { aspect: "4:5", size: 0.78, x: 0, y: 0 },
-  backdrop: { kind: "solid", top: GROUND, bottom: GROUND },
+  backdrop: { kind: "gallery", top: GROUND, bottom: GROUND },
 };
 
 /* ───────── panel configs ───────── */
@@ -123,6 +124,7 @@ export function studioConfig(s: StudioSettings, memories: { value: string; label
       _collapsed: false,
       memory: select([{ value: "", label: "—" }, ...memories], ""),
       load: action("load this memory"),
+      gallery: action("copy for gallery"),
     },
     form: formFolder,
     photo: {
@@ -147,7 +149,7 @@ export function studioConfig(s: StudioSettings, memories: { value: string; label
       y: range(s.frame.y, -0.5, 0.5, 0.005),
     },
     backdrop: {
-      kind: select(["solid", "gradient", "transparent"], s.backdrop.kind),
+      kind: select(["gallery", "solid", "gradient", "transparent"], s.backdrop.kind),
       top: color(s.backdrop.top),
       bottom: color(s.backdrop.bottom),
     },
@@ -295,7 +297,7 @@ export function settingsFrom(studio: Values, vessel: Values, base: StudioSetting
       size: num(fr.size, base.frame.size), x: num(fr.x, base.frame.x), y: num(fr.y, base.frame.y),
     },
     backdrop: {
-      kind: bd.kind === "transparent" || bd.kind === "gradient" ? bd.kind : "solid",
+      kind: bd.kind === "transparent" || bd.kind === "gradient" || bd.kind === "solid" ? bd.kind : "gallery",
       top: str(bd.top, base.backdrop.top), bottom: str(bd.bottom, base.backdrop.bottom),
     },
   };

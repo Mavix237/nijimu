@@ -29,7 +29,7 @@ const TRANSCRIPTS: Record<string, string> = Object.fromEntries(
 const HIGHLIGHTS: Record<string, string[]> = {
   "0": ["my memory", "orange peels", "different stories", "only exists"],
   "1": ["underwater", "a corner", "worth keeping", "it's empty"],
-  "2": ["never finished", "the ending", "running after", "that feeling"],
+  "2": ["counting", "held back", "a breath", "feel it pull", "not practice"],
   "3": ["completely sure", "collars", "something falls", "That stayed"],
   "4": ["inside me", "my hand", "was gone", "losing it"],
   "5": ["having edges", "the rectangle", "paying attention", "whole thing"],
@@ -51,7 +51,7 @@ const HIGHLIGHTS: Record<string, string[]> = {
 const FEELINGS: Record<string, { u: number; v: number }> = {
   "0": { u: 0.125, v: 0.45 }, // winter, orange peels on the radiators — sand-orange
   "1": { u: 0.43, v: 0.4 }, // the little green screen, underwater — sea green
-  "2": { u: 0.21, v: 0.5 }, // a summer stairwell, a pencil — amber
+  "2": { u: 0.21, v: 0.5 }, // a slow phrase held back at the piano — amber
   "3": { u: 0.93, v: 0.45 }, // coats and collars, mother's scarves — rose-violet
   "4": { u: 0.81, v: 0.55 }, // a door inside — violet
   "5": { u: 0.24, v: 0.3 }, // the window's four o'clock light — pale yellow
@@ -81,7 +81,7 @@ const withTranscripts = (events: Omit<MemoryEvent, "transcript" | "highlightedWo
 export const LIFE_EVENTS: MemoryEvent[] = withTranscripts([
   { id: "0", year: "2003", event: "Born in Beijing", color: 0 },
   { id: "1", year: "2009", event: "First camera", color: 1 },
-  { id: "2", year: "2012", event: "The first urge to write a story", color: 2 },
+  { id: "2", year: "2012", event: "Heard the music, not the practice", color: 2 },
   { id: "3", year: "2016", event: "Wanted to be a fashion designer", color: 3 },
   { id: "4", year: "2017", event: "Read a book that changed my life", color: 4 },
   { id: "5", year: "2020", event: "The year everything slowed down", color: 5 },

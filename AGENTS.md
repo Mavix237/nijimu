@@ -69,6 +69,15 @@ so the pond above, which keeps only its lightness, is unchanged; `SINK_WASH`
 (`SINK_WASH_GLSL`, was a literal). With the sample memory, "record again"
 waits for continue and shows with it; a recording's shows with the words.
 
+## DialKit panels start folded (2026-11-02)
+
+Every DialKit panel (landing, gallery, pond, naming, film, studio) opens
+folded; a tap on its header opens it. `DIALS_OPEN` in `lib/dialsOpen.ts` is
+the one switch: `?dials=open` opens them expanded, `?dials=closed` folds
+them, kept per device in localStorage `nijimu.dials`; `?dials=auto` forgets.
+The studio is the exception: its two panels open expanded unless
+`?dials=closed` was chosen (`STUDIO_DIALS_OPEN`).
+
 ## Vessel studio (2026-11-02)
 
 `/studio` (`src/app/studio/VesselStudio.tsx`, `studioSettings.ts`) is the
@@ -107,6 +116,20 @@ delete) keeps every setting with its photo in IndexedDB (`nijimu-studio` /
 whatever it was shown from, back as a data URL — so a kept vessel survives a
 reload and a rebuild. Saving under a name already kept replaces it. The
 downloaded settings .json now carries its photo as data too.
+Tuning a gallery vessel in the studio (2026-11-02): load a memory, tune it,
+"copy for gallery" (source folder) puts that memory's library row on the
+clipboard — form, morph, picture place/size, view, the look keys moved since
+loading (`tune`, a new optional `ShapePlacement` field laid over
+`VESSEL_GALLERY_TUNE` for that vessel alone, in `entrySignature`), its foot
+colour (`tone` → `GALLERY_TUNE_DEFAULT.tones[id]`; a tone's own `ownFoot`
+lets one memory keep its own foot tone) and any change to the stain's shape
+(`footShape`, one for every vessel). It is written into `TUNED` in
+`lib/galleryLibrary.ts`; a library kept in /lab/shapes still wins over it.
+The "gallery colours" panel persists, so its key now carries a hash of
+the code's tones and foot (`COLOR_KEY` in `GalleryDials`): a tone changed in
+code is no longer covered by colours the panel kept before.
+The studio's backdrop now opens on `gallery`: the gallery ground's colour,
+its vignette and the paper finish over the whole page, read live.
 
 ## Vessel film panel (2026-11-01)
 
@@ -207,7 +230,8 @@ flat #e4e4e6; the gallery's ground is a step under it, #edecec, was #eae9e9,
 and the grounds between — the shared layout's #edecec, the return veil
 `LANDING_PAPER` #efeeee — sit between the two, so Enter and the return cross
 a little rather than jump), the grain (overlay .48), the vignette (#c4b8b5 at .105, was
-black .2) and the ambient lights. Brightness is 1.01; the rest of the
+black .2). The three ambient lights that drifted under the washes
+(teal, pale cyan, peach) are removed (2026-11-02), landing and Enter alike. Brightness is 1.01; the rest of the
 filter, the tint and the light are neutral; the opening is as built.
 
 ## Gallery reflection and sheen (2026-11-01)

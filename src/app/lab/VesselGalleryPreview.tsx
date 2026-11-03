@@ -153,7 +153,7 @@ export function libraryVessel(index: number, entry: LibraryEntry, url = memoryPh
   const sheetSize = fitSheetSize(glass) * entry.photoSize;
   glass.geometry.dispose();
   const tune = {
-    ...VESSEL_GALLERY_TUNE, ...vesselTint(e.feeling), morph: entry.morph, sheetSize,
+    ...VESSEL_GALLERY_TUNE, ...entry.tune, ...vesselTint(e.feeling), morph: entry.morph, sheetSize,
     anchorHeight: entry.photoHeight, anchorAngle: wrapDegrees(VESSEL_GALLERY_TUNE.anchorAngle + entry.photoAround),
   };
   return {

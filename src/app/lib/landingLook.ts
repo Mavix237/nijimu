@@ -24,8 +24,6 @@ export type LandingLook = {
   grain: { amount: number; blend: string };
   /** The darkened edges: how strong, in what colour, clear out to `inner` of the way. */
   vignette: { amount: number; color: string; inner: number };
-  /** The three faint lights that drift under the washes (× as built). */
-  ambient: { amount: number };
 };
 
 export const LANDING_LOOK_DEFAULT: LandingLook = {
@@ -38,7 +36,6 @@ export const LANDING_LOOK_DEFAULT: LandingLook = {
   paper: { top: PAPER_TOP, bottom: PAPER_FOOT, angle: 180 },
   grain: { amount: 0.48, blend: "overlay" },
   vignette: { amount: 0.105, color: "#c4b8b5", inner: 0.22 },
-  ambient: { amount: 1 },
 };
 
 export const LANDING_BLENDS = ["normal", "multiply", "screen", "overlay", "soft-light", "hard-light", "color", "luminosity", "lighten", "darken"];

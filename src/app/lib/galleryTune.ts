@@ -34,6 +34,8 @@ export interface MemoryTone {
   stain: string;
   /** The very foot's tone. Empty: drawn from the stain (`foot.deepLight`/`deepChroma`). */
   foot: string;
+  /** This memory's foot wears its own tone (`foot`) even while `foot.ownFoot` is off for the rest. */
+  ownFoot?: boolean;
 }
 
 export interface GalleryTune {
@@ -82,17 +84,17 @@ const deepOf = (ok: Oklch | undefined, light = .06, chroma = 1.1) =>
 
 /** Each curated memory's stain and foot, by id (settled in the gallery panel, 2026-11-01). */
 const GALLERY_TONES: Record<string, MemoryTone> = {
-  "0": { stain: "#b38985", foot: "#ccbdb4" }, // 2003 · Born in Beijing
-  "1": { stain: "#a0bcbf", foot: "#adc6be" }, // 2009 · First camera
-  "2": { stain: "#99b3c2", foot: "#4f6876" }, // 2012 · The first urge to write a story
-  "3": { stain: "#c7a8b8", foot: "#b694a6" }, // 2016 · Wanted to be a fashion designer
-  "4": { stain: "#6e6085", foot: "#9f879c" }, // 2017 · Read a book that changed my life
+  "0": { stain: "#b8999d", foot: "#ccbdb4" }, // 2003 · Born in Beijing (stain was #b38985; /studio 2026-11-02)
+  "1": { stain: "#a0bbc3", foot: "#adc6be" }, // 2009 · First camera (stain was #a0bcbf; /studio 2026-11-02)
+  "2": { stain: "#d0afaa", foot: "#4f6876" }, // 2012 · Heard the music, not the practice (stain was #99b3c2; /studio 2026-11-02)
+  "3": { stain: "#8d9d9f", foot: "#b694a6" }, // 2016 · Wanted to be a fashion designer (stain was #c7a8b8; /studio 2026-11-02)
+  "4": { stain: "#b18881", foot: "#9f879c" }, // 2017 · Read a book that changed my life (stain was #6e6085; /studio 2026-11-02)
   "5": { stain: "#8da2a5", foot: "#7e959e" }, // 2020 · The year everything slowed down
   "6": { stain: "#c39a97", foot: "#99676a" }, // 2021 · Started designing seriously
   "7": { stain: "#97b4b4", foot: "#6a8e96" }, // 2021 · Wrote something true for the first time
-  "8": { stain: "#abc1af", foot: "#97af9b" }, // 2022 · Left a place I thought I'd stay longer
-  "9": { stain: "#8ca4c2", foot: "#7892b2" }, // 2023 · Started learning to trust my own eye
-  "10": { stain: "#7ba5b9", foot: "#6593a9" }, // 2024 · A friendship that quietly ended
+  "8": { stain: "#8da6b4", foot: "#97af9b" }, // 2022 · Left a place I thought I'd stay longer (stain was #abc1af; /studio 2026-11-03)
+  "9": { stain: "#656c6f", foot: "#727a7f", ownFoot: true }, // 2023 · Started learning to trust my own eye (was #8ca4c2 / #7892b2, foot drawn from the stain; /studio 2026-11-03)
+  "10": { stain: "#a9bcbe", foot: "#6593a9" }, // 2024 · A friendship that quietly ended (stain was #7ba5b9; /studio 2026-11-03)
   "11": { stain: "#caaeaf", foot: "#b89e89" }, // 2024 · Showed work I wasn't sure about
   "12": { stain: "#bdb9ca", foot: "#aebfc8" }, // 2024 · Met someone through a screen
   "13": { stain: "#8db7bc", foot: "#77a5a8" }, // 2025 · Finding the thread between poetry, film, and design
@@ -210,7 +212,7 @@ export function galleryTint(id: string, pick?: Oklch) {
     };
   }
   const ok = shifted(base, f);
-  const footOk = f.ownFoot && tone ? hexToOklch(tone.foot) : null;
+  const footOk = (f.ownFoot || tone?.ownFoot) && tone?.foot ? hexToOklch(tone.foot) : null;
   const foot = footOk ? shifted(footOk, f) : null;
   return {
     memoryTintHue: ok.h, memoryTintChroma: ok.c, memoryTintLight: ok.l,

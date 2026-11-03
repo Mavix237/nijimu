@@ -162,13 +162,23 @@ const COLOR_CONFIG = {
   }])),
 };
 
+/** The panel's values persist, so a colour kept there would cover a tone changed in code since
+    (tuned in /studio and written into GALLERY_TUNE_DEFAULT.tones). Its key carries the code's
+    tones and foot: change them and the panel opens afresh on them. */
+const COLOR_KEY = (() => {
+  const text = JSON.stringify([D.tones, D.foot]);
+  let h = 0;
+  for (let i = 0; i < text.length; i++) h = (h * 31 + text.charCodeAt(i)) | 0;
+  return `nijimu-gallery-colours-${(h >>> 0).toString(36)}`;
+})();
+
 type Main = Pick<GalleryTune, "glass" | "room" | "seats" | "timing" | "framing" | "reflection" | "sheen">;
 type Ground = Pick<GalleryTune, "backdrop" | "texture" | "filter"> & { finish?: { mode?: string; underVessels?: boolean } };
 type Colors = { foot: GalleryTune["foot"]; memories: Record<string, { stain: string; foot: string }> };
 
 export default function GalleryDials() {
   const main = useDialKit("gallery", MAIN_CONFIG as never, { id: "nijimu-gallery", persist: true }) as unknown as Main;
-  const colors = useDialKit("gallery colours", COLOR_CONFIG as never, { id: "nijimu-gallery-colours", persist: true }) as unknown as Colors;
+  const colors = useDialKit("gallery colours", COLOR_CONFIG as never, { id: COLOR_KEY, persist: true }) as unknown as Colors;
   const ground = useDialKit("gallery ground", GROUND_CONFIG as never, { id: "nijimu-gallery-ground", persist: true }) as unknown as Ground;
 
   const key = JSON.stringify([main, colors, ground]);
@@ -186,7 +196,7 @@ export default function GalleryDials() {
     foot: { ...D.foot, ...colors.foot },
     tones: Object.fromEntries(LIFE_EVENTS.map((e, i) => {
       const row = colors.memories?.[MEMORY_LABELS[i]];
-      return [e.id, { stain: row?.stain ?? D.tones[e.id].stain, foot: row?.foot ?? D.tones[e.id].foot }];
+      return [e.id, { ...D.tones[e.id], stain: row?.stain ?? D.tones[e.id].stain, foot: row?.foot ?? D.tones[e.id].foot }];
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [key]);

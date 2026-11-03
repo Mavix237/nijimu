@@ -473,13 +473,6 @@ export function BlobScene({
   /** When (entry ms) each wash was first known to have no seat on screen; its close is timed from there. */
   const closeSeen = useRef(new Map<number, number>());
   const captionWords = useRef<number[]>([]);
-  const [ambientIn, setAmbientIn] = useState(false);
-  useEffect(() => {
-    // two frames, so the cleared state is painted before the fade begins
-    let b = 0;
-    const a = requestAnimationFrame(() => { b = requestAnimationFrame(() => setAmbientIn(true)); });
-    return () => { cancelAnimationFrame(a); cancelAnimationFrame(b); };
-  }, []);
   /* Each memory's vessel colour as the gallery's glass wears it (galleryTune:
      the tuned tone per curated memory, a saved memory's own pick, moved
      together by the foot knobs) — the stain and the deep band at the foot as
@@ -1899,42 +1892,6 @@ export function BlobScene({
           />
         )}
 
-        {/* ═══ AMBIENT BLOBS ═══ */}
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            opacity: washTune.fieldOpacity * clamp(1 - morphVal * 3, 0, 1) * (landingArrival ? (1 - entryShrink) * entryPaper : 1)
-              * (classicChrome && !ambientIn ? 0 : 1) * (classicChrome ? landingLook.ambient.amount : 1),
-            // the ambient light comes up with the washes, from clear paper
-            transition: classicChrome ? "opacity 6.8s cubic-bezier(.45, 0, .2, 1)" : undefined,
-          }}
-        >
-          <div className="absolute" style={{
-            left: "20%", top: "30%",
-            width: `${500 * scale}px`, height: `${500 * scale}px`,
-            background: "radial-gradient(circle, rgba(26,138,110,0.25), transparent 70%)",
-            borderRadius: "50%", filter: `blur(${60 * scale}px)`,
-            animation: "ambientDrift1 20s ease-in-out infinite",
-            animationPlayState: hoveredIdx !== null ? "paused" : "running",
-          }} />
-          <div className="absolute" style={{
-            left: "60%", top: "50%",
-            width: `${450 * scale}px`, height: `${450 * scale}px`,
-            background: "radial-gradient(circle, rgba(93,212,224,0.2), transparent 70%)",
-            borderRadius: "50%", filter: `blur(${50 * scale}px)`,
-            animation: "ambientDrift2 18s ease-in-out infinite",
-            animationPlayState: hoveredIdx !== null ? "paused" : "running",
-          }} />
-          <div className="absolute" style={{
-            left: "45%", top: "65%",
-            width: `${400 * scale}px`, height: `${400 * scale}px`,
-            background: "radial-gradient(circle, rgba(242,196,170,0.25), transparent 70%)",
-            borderRadius: "50%", filter: `blur(${55 * scale}px)`,
-            animation: "ambientDrift3 22s ease-in-out infinite",
-            animationPlayState: hoveredIdx !== null ? "paused" : "running",
-          }} />
-        </div>
-
         {classicChrome && (
           <WatercolorField key={fieldKey} width={canvasWidth} height={canvasHeight} blobs={washBlobs}
             blobEls={blobEls} containerRef={containerRef} tune={washTune}
@@ -2398,18 +2355,6 @@ export function BlobScene({
         @keyframes blobScale {
           0%, 100% { scale: 1; }
           50% { scale: 1.12; }
-        }
-        @keyframes ambientDrift1 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(80px, -60px) scale(1.15); }
-        }
-        @keyframes ambientDrift2 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(-70px, 50px) scale(1.1); }
-        }
-        @keyframes ambientDrift3 {
-          0%, 100% { transform: translate(0, 0) scale(1); }
-          50% { transform: translate(50px, -40px) scale(1.2); }
         }
         @keyframes dotPulse {
           0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }

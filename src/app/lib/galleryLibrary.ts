@@ -8,7 +8,7 @@ import {
 } from "./superformula";
 
 /*
- * The gallery's library: the sixteen shapes its curated memories wear, in
+ * The gallery's library: the fifteen shapes its curated memories wear, in
  * memory order (the first entry is the first memory, 2003), each with its
  * size in the seat and where the picture hangs inside it. It is chosen in
  * /lab/shapes from two sets — the sixteen the gallery drew before the Y
@@ -18,7 +18,8 @@ import {
  * ORIGINAL_LIBRARY is BUILT_IN, the settling saved from /lab/shapes on 2026-10-11.
  */
 
-export const LIBRARY_SIZE = 16;
+/** One shape per curated memory (16 until 2026-11-03, when "Met someone through a screen", id 12, was removed). */
+export const LIBRARY_SIZE = LIFE_EVENTS.length;
 
 export interface ShapeCandidate {
   key: string;
@@ -73,7 +74,8 @@ const EARLIER_SEATS: Record<string, { category: ArtifactCategory; draw?: number 
 
 function earlierCandidate(index: number): ShapeCandidate {
   const e = LIFE_EVENTS[index];
-  const name = `E-${String(index + 1).padStart(2, "0")}`;
+  // named for the memory's id, not its place, so a memory removed from the list leaves the others' names as they were
+  const name = `E-${String(Number(e.id) + 1).padStart(2, "0")}`;
   const seat = EARLIER_SEATS[e.id];
   if (seat) {
     const seed = seat.draw === undefined ? `vessel|${e.id}` : `vessel|${seat.category}|${seat.draw}`;
@@ -110,7 +112,7 @@ export const libraryEntry = (c: ShapeCandidate, p: ShapePlacement = PLACEMENT_DE
   ...(p.tune && Object.keys(p.tune).length ? { tune: { ...p.tune } } : {}),
 });
 
-/** The gallery's built-in sixteen, in memory order (2003 first). A library kept in the browser still wins over it. */
+/** The gallery's built-in fifteen, in memory order (2003 first). A library kept in the browser still wins over it. */
 const BUILT_IN: { key: string; place: ShapePlacement }[] = [
   { key: "Y-01", place: { size: 1, photoHeight: 1, photoAround: -41, photoSize: 1.13, view: { around: -45, pitch: -18 } } },
   { key: "Y-09", place: { size: 0.94, photoHeight: 0.68, photoAround: 42, photoSize: 1.22, view: { around: 43, pitch: -9 } } },
@@ -124,7 +126,6 @@ const BUILT_IN: { key: string; place: ShapePlacement }[] = [
   { key: "Y-07", place: { size: 1.5, photoHeight: 1, photoAround: 0, photoSize: 1, view: { around: 0, pitch: 4 } } },
   { key: "Y-08", place: { size: 0.9, photoHeight: 0.9, photoAround: 1, photoSize: 1.32, view: { around: -23, pitch: -35 } } },
   { key: "E-14", place: { size: 1.16, photoHeight: 0.9, photoAround: -1, photoSize: 0.92, view: { around: -33, pitch: -31 } } },
-  { key: "Y-16", place: { size: 1.05, photoHeight: 1, photoAround: 0, photoSize: 1, view: { around: 10, pitch: 25 } } },
   { key: "E-02", place: { size: 1.32, photoHeight: 1, photoAround: -2, photoSize: 1.03, view: { around: 0, pitch: 4 } } },
   { key: "Y-12", place: { size: 1.3, photoHeight: 1, photoAround: 0, photoSize: 1, view: null } },
   { key: "Y-13", place: { size: 0.79, photoHeight: 1, photoAround: 0, photoSize: 1, view: { around: -5, pitch: -17 } } },
@@ -155,10 +156,13 @@ const TUNED: Tuned[] = [
   { key: "E-10", morph: 0.31, size: 1.17, photoHeight: 1, photoAround: -26, photoSize: 1.328, photo: 2, view: { around: -39, pitch: -32 },
     form: { category: "star", top: { m: 6.85, n1: 0.404, n2: 0.385, n3: 0.385 }, side: { m: 0.846, n1: 0.391, n2: 0.746, n3: 0.746 } } },
   // 2017 · tuned in /studio 2026-11-02: top m 10 → 13.4, vertical 1.07, morph .46 → .5, the strip smaller (2.51 → 1.8)
-  { key: "Y-03", morph: 0.5, size: 1.2, photoHeight: 1, photoAround: 29, photoSize: 0.944, photo: 0, view: { around: 19, pitch: -35 },
+  // the view turned 2026-11-03 (−10° / −35° from the picture's side → 11° / 20.5°)
+  { key: "Y-03", morph: 0.5, size: 1.2, photoHeight: 1, photoAround: 29, photoSize: 0.944, photo: 0, view: { around: 40, pitch: 20.5 },
     form: { category: "hybrid", top: { m: 13.4, n1: 1.621, n2: 1.227, n3: 1.089, a: 1.55, b: 0.95 }, side: { m: 3.95, n1: 1.17, n2: 0.793, n3: 2.144, a: 1, b: 1 }, proportion: { radial: 1, vertical: 1.07 } } },
-  { key: "Y-04", morph: 0.71, size: 1.39, photoHeight: 0.8, photoAround: -18, photoSize: 1.1, photo: 3, view: { around: 2, pitch: 1 },
-    form: { category: "hybrid", top: { m: 8, n1: 1.037, n2: 1.037, n3: 1.037, a: 1, b: 1 }, side: { m: 4.3, n1: 1.037, n2: 1.037, n3: 1.037, a: 1, b: 1 } } },
+  // 2020 · tuned in /studio 2026-11-03: the picture higher (.8 → 1), the strip smaller (2.68 → 2.38) and tilted 7, the view turned
+  { key: "Y-04", morph: 0.71, size: 1.39, photoHeight: 1, photoAround: -18, photoSize: 0.975, photo: 3, view: { around: -19, pitch: -10 },
+    form: { category: "hybrid", top: { m: 8, n1: 1.037, n2: 1.037, n3: 1.037, a: 1, b: 1 }, side: { m: 4.3, n1: 1.037, n2: 1.037, n3: 1.037, a: 1, b: 1 } },
+    tune: { tilt: 7 } },
   // 2021 · tuned in /studio 2026-11-02: a new urchin, morph .42 → .21 (strip kept at the size it had: 1 of the old fit)
   { key: "Y-17", morph: 0.21, size: 1.2, photoHeight: 1, photoAround: 0, photoSize: 1.112, photo: 0, view: { around: -9, pitch: 4 },
     form: { category: "urchin", top: { m: 8.1, n1: 0.497, n2: 0.497, n3: 0.497, a: 1, b: 1 }, side: { m: 11, n1: 0.537, n2: 0.537, n3: 0.537, a: 1, b: 1 } } },
@@ -175,12 +179,11 @@ const TUNED: Tuned[] = [
   // (strip kept at the size it had: 1.32 of the old fit)
   { key: "Y-08", morph: 0.41, size: 0.92, photoHeight: 0.9, photoAround: 1, photoSize: 1.171, photo: 0, view: { around: -14, pitch: -24.5 },
     form: { category: "hybrid", top: { m: 16.8, n1: 12.806, n2: 5.045, n3: 2.995, a: 1.45, b: 0.75 }, side: { m: 2.6, n1: 0.858, n2: 0.179, n3: 0.858, a: 0.85, b: 1.25 }, proportion: { radial: 0.95, vertical: 1.04 } } },
-  // 2024 · tuned in /studio 2026-11-03: a new form, morph .58 → .4, the view turned (strip kept at the size it had: .92 of the old fit)
-  { key: "E-14", morph: 0.4, size: 1.1, photoHeight: 0.9, photoAround: -1, photoSize: 0.969, photo: 7, view: { around: -27, pitch: -25.5 },
-    form: { category: "hybrid", top: { m: 9.6, n1: 2.49, n2: 1.13, n3: 0.432, a: 1, b: 1 }, side: { m: 4, n1: 2.179, n2: 2.179, n3: 2.179, a: 1, b: 1 } } },
-  // 2024 · tuned in /studio 2026-11-03: a new urchin, morph .75 → .3 (strip kept at the size it had: 1 of the old fit)
-  { key: "Y-16", morph: 0.3, size: 1.05, photoHeight: 1, photoAround: 0, photoSize: 0.955, photo: 0, view: { around: 10, pitch: 25 },
-    form: { category: "urchin", top: { m: 11, n1: 0.449, n2: 0.449, n3: 0.449, a: 1, b: 1 }, side: { m: 14, n1: 0.555, n2: 0.555, n3: 0.555, a: 1, b: 1 } } },
+  // 2024 · My first audiovisual performance, tuned in /studio 2026-11-03: a diamond, morph .45, the picture a little lower,
+  // the strip larger (2.47 → 2.76) and its own: inset, a deeper tear, a wider edge fade, small perforations, hung flatter
+  { key: "E-14", morph: 0.45, size: 1.1, photoHeight: 0.96, photoAround: -1, photoSize: 1.302, photo: 7, view: { around: 14, pitch: -3 },
+    form: { category: "diamond", top: { m: 4, n1: 1.026, n2: 1.026, n3: 1.026, a: 1, b: 1 }, side: { m: 4, n1: 0.878, n2: 0.878, n3: 0.878, a: 1, b: 1 } },
+    tune: { inset: 0.865, tornDepth: 3.2, edgeFade: 5, holeSize: 0.2, tilt: 0, contact: 29.5, sag: 17, peel: 10, gap: 0, flowSheer: 0.24 } },
   { key: "E-02", morph: 0.67, size: 1.32, photoHeight: 1, photoAround: -2, photoSize: 1.03, photo: 8, view: { around: 0, pitch: 4 },
     form: { category: "hybrid", top: { m: 6, n1: 0.198, n2: 1.714, n3: 1.714 }, side: { m: 0, n1: 1.01, n2: 1.01, n3: 1.01 }, hybridOf: ["flower", "sphere"] } },
   // 2025 · tuned in /studio 2026-11-03: top m 20.9 → 13.65, n1 3.24 → 6.09, n2 4.44 → 3.11, morph .46 → .37, a kept view
@@ -267,7 +270,7 @@ export function forgetGalleryLibrary() {
 /** Bumps whenever the library is saved or forgotten, here or in another tab. */
 export const libraryVersion = () => version;
 
-/** The sixteen shapes the curated memories wear: the kept library, else the built-in settling. */
+/** The fifteen shapes the curated memories wear: the kept library, else the built-in settling. */
 export function galleryLibrary(): LibraryEntry[] {
   return current().entries;
 }

@@ -43,7 +43,7 @@ import timelineIcon from "../../../timeline icon.svg";
  * memory wears its shape from the gallery library (lib/galleryLibrary, chosen
  * in /lab/shapes) at the size and with the picture placed as kept there; the
  * photos are src/assets/vessel-gallery, one per memory, named for it
- * (`13.jpg` is LIFE_EVENTS[13]; the bundled stills stand in for any missing).
+ * (`13.jpg` is the memory with id "13"; the bundled stills stand in for any missing).
  *
  * Pressing the vessel at the apex opens it in the lab as an editor for that
  * one memory — its form, glass, sheet, dye, light and photo — and "back to
@@ -67,7 +67,7 @@ const GALLERY_FILES = Object.entries(
   import.meta.glob("../../assets/vessel-gallery/*.{jpg,jpeg,png,webp}", { eager: true, import: "default" }) as Record<string, string>,
 ).sort(([a], [b]) => a.localeCompare(b));
 export const PHOTOS = GALLERY_FILES.map(([, url]) => url);
-/** A still named for a memory — `13.jpg` is LIFE_EVENTS[13]'s — keyed by that number. */
+/** A still named for a memory — `13.jpg` is the memory with id "13" — keyed by that number. */
 const PHOTO_BY_MEMORY = new Map(GALLERY_FILES.flatMap(([path, url]) => {
   const stem = path.split("/").pop()!.replace(/\.[^.]+$/, "");
   return /^\d+$/.test(stem) ? [[Number(stem), url] as const] : [];
@@ -89,8 +89,8 @@ const SEATS: { event: number }[] = [
   { event: 8 },
   { event: 9 },
   { event: 11 },
-  { event: 13 },
-  { event: 15 },
+  { event: 12 }, // id 13 (id 12 was removed)
+  { event: 14 }, // id 15
 ];
 
 /**
@@ -135,7 +135,7 @@ export function slotPhotoIndex(index: number): number {
     pick, else the still the shapes lab shows for that place. Replacing a memory's picture
     is replacing its numbered file. */
 export function memoryPhoto(index: number, picked?: number): string {
-  const named = PHOTO_BY_MEMORY.get(index);
+  const named = LIFE_EVENTS[index] ? PHOTO_BY_MEMORY.get(Number(LIFE_EVENTS[index].id)) : undefined;
   if (named) return named;
   const i = picked !== undefined && PHOTOS[picked] ? picked : slotPhotoIndex(index);
   return PHOTOS[i] ?? FALLBACK[i % FALLBACK.length];

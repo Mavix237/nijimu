@@ -69,6 +69,17 @@ so the pond above, which keeps only its lightness, is unchanged; `SINK_WASH`
 (`SINK_WASH_GLSL`, was a literal). With the sample memory, "record again"
 waits for continue and shows with it; a recording's shows with the words.
 
+## One memory fewer (2026-11-03)
+
+"Met someone through a screen" (id 12) is gone — its event, transcript,
+highlights, feeling, tone, still (12.jpg) and library row. Fifteen curated
+memories remain; ids are not renumbered (13–15 keep theirs). `LIBRARY_SIZE`
+is `LIFE_EVENTS.length`, a still is found by the memory's id (`13.jpg` is id
+13, `memoryPhoto`), and the E-NN shapes are named by id, so nothing after the
+gap shifts. A library kept in /lab/shapes with sixteen rows no longer loads
+(the built-in one is used). Memory 07 is now "Heard the music, not the
+practice" (the piano), in place of "Wrote something true for the first time".
+
 ## DialKit panels start folded (2026-11-02)
 
 Every DialKit panel (landing, gallery, pond, naming, film, studio) opens
@@ -2000,7 +2011,7 @@ nijimu/
 │   │   ├── archive/                # unused former record-loop pages
 │   │   ├── hooks/                  # reusable behavior (see §7)
 │   │   ├── lib/                    # pure/shared modules (see §6)
-│   │   └── data/memoryData.ts      # the 16 curated demo memories + color indices
+│   │   └── data/memoryData.ts      # the 15 curated demo memories + color indices
 │   ├── styles/                     # global CSS, fonts, tokens
 │   ├── assets/fonts/               # self-hosted Exposure Trial .otf files
 │   └── imports/                    # Figma-export raw SVG/asset files (9 kept, still referenced)
@@ -2170,7 +2181,7 @@ environment variables for production.
 3. **Guest-session persistence.** User-made memories use tab-scoped sessionStorage
    (`lib/memoryStore.ts`) and survive refreshes during this visit. Store the complete
    artifact and photo; do not claim success when browser storage fails. There is no
-   permanent or public archive. The 16 curated memories in `data/memoryData.ts`
+   permanent or public archive. The 15 curated memories in `data/memoryData.ts`
    remain available alongside the guest’s saved memories.
 
 4. **The soundtrack is one player outside React** (`lib/soundtrack.ts`):

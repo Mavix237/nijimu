@@ -86,17 +86,16 @@ const deepOf = (ok: Oklch | undefined, light = .06, chroma = 1.1) =>
 const GALLERY_TONES: Record<string, MemoryTone> = {
   "0": { stain: "#b8999d", foot: "#ccbdb4" }, // 2003 · Born in Beijing (stain was #b38985; /studio 2026-11-02)
   "1": { stain: "#a0bbc3", foot: "#adc6be" }, // 2009 · First camera (stain was #a0bcbf; /studio 2026-11-02)
-  "2": { stain: "#d0afaa", foot: "#4f6876" }, // 2012 · Heard the music, not the practice (stain was #99b3c2; /studio 2026-11-02)
+  "2": { stain: "#d0afaa", foot: "#4f6876" }, // 2012 · The first urge to write a story (stain was #99b3c2; /studio 2026-11-02)
   "3": { stain: "#8d9d9f", foot: "#b694a6" }, // 2016 · Wanted to be a fashion designer (stain was #c7a8b8; /studio 2026-11-02)
   "4": { stain: "#b18881", foot: "#9f879c" }, // 2017 · Read a book that changed my life (stain was #6e6085; /studio 2026-11-02)
   "5": { stain: "#8da2a5", foot: "#7e959e" }, // 2020 · The year everything slowed down
   "6": { stain: "#c39a97", foot: "#99676a" }, // 2021 · Started designing seriously
-  "7": { stain: "#97b4b4", foot: "#6a8e96" }, // 2021 · Wrote something true for the first time
+  "7": { stain: "#97b4b4", foot: "#6a8e96" }, // 2021 · Heard the music, not the practice
   "8": { stain: "#8da6b4", foot: "#97af9b" }, // 2022 · Left a place I thought I'd stay longer (stain was #abc1af; /studio 2026-11-03)
   "9": { stain: "#656c6f", foot: "#727a7f", ownFoot: true }, // 2023 · Started learning to trust my own eye (was #8ca4c2 / #7892b2, foot drawn from the stain; /studio 2026-11-03)
   "10": { stain: "#a9bcbe", foot: "#6593a9" }, // 2024 · A friendship that quietly ended (stain was #7ba5b9; /studio 2026-11-03)
-  "11": { stain: "#caaeaf", foot: "#b89e89" }, // 2024 · Showed work I wasn't sure about
-  "12": { stain: "#bdb9ca", foot: "#aebfc8" }, // 2024 · Met someone through a screen
+  "11": { stain: "#caaeaf", foot: "#b89e89" }, // 2024 · My first audiovisual performance
   "13": { stain: "#8db7bc", foot: "#77a5a8" }, // 2025 · Finding the thread between poetry, film, and design
   "14": { stain: "#d2b1b2", foot: "#c09e98" }, // 2025 · Found my muse
   "15": { stain: "#c49ea9", foot: "#b38a96" }, // 2026 · Still figuring out what love means

@@ -56,7 +56,7 @@ import { CAPTION_TITLE_GAP, CAPTION_TITLE_STYLE, CAPTION_YEAR_STYLE } from "../c
 import { MODEL_SPACE } from "../components/SceneViewer";
 import { buildPhotoUv } from "../components/MemoryPhotoLayer";
 import { createArtifactGeometry } from "../hooks/useArtifactGeometry";
-import { computeMeshNormals, formFromState, formKey, getArtifactMesh, type ArtifactForm } from "../lib/superformula";
+import { computeMeshNormals, formFromState, formKey, getArtifactMesh, isArtifactForm, type ArtifactForm } from "../lib/superformula";
 import { assignMemoryShape, isMemoryAssignment, type MemoryAssignment } from "../lib/memoryShape";
 import { requestMemoryAssessment } from "../lib/assessMemory";
 import { DEFAULT_OKLCH, meshCoreFromOklch, oklchToHex, type Oklch } from "../lib/oklch";
@@ -2396,6 +2396,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const [resume] = useState(() => routeStep || location.state?.resumeStep === "color" ? location.state ?? {} : null);
   const from = resume ? "color" : FROM;
   const restoredForm = useMemo(() => resume ? formFromState(resume) : null, [resume]);
+  /** A prepared memory may bring a gallery vessel's form and growth, worn instead of the reading's. */
+  const carriedFixed = location.state?.fixedShape as { form?: unknown; morph?: unknown } | undefined;
+  const fixedShape = useMemo(() => carriedFixed && isArtifactForm(carriedFixed.form) && typeof carriedFixed.morph === "number"
+    ? { form: carriedFixed.form, morph: clamp01(carriedFixed.morph) } : null, [carriedFixed]);
   const recording = !lab && location.pathname === RECORD_START_PATH;
   const readingTranscript = !lab && location.pathname === TRANSCRIPT_PATH;
   const invitation = !lab && !recording && !readingTranscript && !isDescentPath(location.pathname);
@@ -2447,13 +2451,14 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       : sampleAssignment(transcript) ?? (isMemoryAssignment(location.state?.memoryAssignment, transcript) ? location.state.memoryAssignment as MemoryAssignment : null),
     [location.state?.memoryAssignment, transcript]);
   const [assignment, setAssignment] = useState<MemoryAssignment>(() => isMemoryAssignment(resume?.assignment, transcript) ? resume.assignment : supplied ?? assignMemoryShape(null, memoryId, "fallback", undefined, transcript));
-  const [assessmentPending, setAssessmentPending] = useState(!prelude && !supplied && !!transcript.trim());
+  const [assessmentPending, setAssessmentPending] = useState(!prelude && !supplied && !fixedShape && !!transcript.trim());
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
   const assignmentLocked = useRef(from !== null);
   useEffect(() => {
     if (prelude || awaitingTranscript) { setAssessmentPending(awaitingTranscript && !prelude); return; }
     if (!transcript.trim() || assignmentLocked.current) { setAssessmentPending(false); return; }
     if (supplied) { setAssignment(supplied); setAssessmentPending(false); setAssessmentError(null); return; }
+    if (fixedShape) { setAssessmentPending(false); setAssessmentError(null); return; }
     setAssessmentPending(true);
     setAssessmentError(null);
     setAssignment(assignMemoryShape(null, memoryId, "fallback", undefined, transcript));
@@ -2464,9 +2469,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       setAssessmentError(result.error); setAssessmentPending(false);
     });
     return () => controller.abort();
-  }, [prelude, awaitingTranscript, transcript, memoryId, supplied]);
+  }, [prelude, awaitingTranscript, transcript, memoryId, supplied, fixedShape]);
   const [editedM2, setEditedM2] = useState<number | null>(null);
-  const form = useMemo(() => editedM2 === null ? restoredForm ?? assignment.form : withRhythm(restoredForm ?? assignment.form, editedM2), [restoredForm, assignment.form, editedM2]);
+  const baseForm = restoredForm ?? fixedShape?.form ?? assignment.form;
+  const form = useMemo(() => editedM2 === null ? baseForm : withRhythm(baseForm, editedM2), [baseForm, editedM2]);
   const m2 = form.side.m;
   const m2Ref = useRef(m2);
   m2Ref.current = m2;
@@ -2477,7 +2483,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     voicePulses: [],
     foregroundBounds: null,
     request: null, holding: false, step: null,
-    morph: resume ? clamp01(resume.shape?.evolve ?? .5) : FROM ? PREVIEW_MORPH : 0, frost: resume ? 1 - clamp01(resume.look?.vividness ?? 1) : FROM ? PREVIEW_FROST : 0,
+    morph: resume ? clamp01(resume.shape?.evolve ?? .5) : FROM ? PREVIEW_MORPH : (fixedShape?.morph ?? 0), frost: resume ? 1 - clamp01(resume.look?.vividness ?? 1) : FROM ? PREVIEW_FROST : 0,
     oklch: resume?.look?.oklch ?? DEFAULT_OKLCH, hands: [], wrap: false, rise: false, release: false, ascend: false,
   });
   stage.current.photoReady = !prelude;
@@ -2847,7 +2853,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     exitStarted.current = false;
     setLeaving(false);
     const previous: Record<Step, Step | null> = {
-      shape: null, rhythm: "shape", distance: "rhythm", color: "distance",
+      shape: null, rhythm: "shape", distance: fixedShape ? null : "rhythm", color: "distance",
     };
     void goStep(previous[step]);
   };
@@ -2985,7 +2991,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           onFallStart={() => setPhase("falling")}
           onSettled={() => setPhase("floating")}
           onDescend={() => setPhase("descending")}
-          onUnder={() => { void goStep("shape"); }}
+          onUnder={() => { void goStep(fixedShape ? "distance" : "shape"); }}
           onWrapped={() => { stage.current.rise = true; setPhase("rising"); }}
           onRisen={() => setPhase("naming")}
           onAscended={ascended}

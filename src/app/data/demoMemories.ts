@@ -1,14 +1,33 @@
+import { LIFE_EVENTS } from "./memoryData";
+import { galleryLibrary } from "../lib/galleryLibrary";
+import type { ArtifactForm } from "../lib/superformula";
+
 /**
  * Three prepared memories, reached by the small numbers beside "Skip to a
- * sample story". Each goes through the flow as a recording would: its words
- * print on the transcript step and are read by the assessment like any other;
- * only the title and year are offered to naming, still editable there.
+ * sample story". Each prints on the transcript as a recording would. English
+ * and Japanese wear a gallery vessel already (no shape or rhythm step);
+ * Chinese is still read, and its form stays in the hands.
  */
 export interface DemoMemory {
   title: string;
   /** Empty when the year was not given. */
   year: string;
   transcript: string;
+  /** A curated gallery memory whose vessel this one wears. */
+  vesselId?: string;
+}
+
+export interface DemoVessel {
+  form: ArtifactForm;
+  morph: number;
+}
+
+/** The gallery vessel a prepared memory wears, if it has one. */
+export function demoVessel(memory: DemoMemory): DemoVessel | undefined {
+  if (!memory.vesselId) return undefined;
+  const i = LIFE_EVENTS.findIndex((e) => e.id === memory.vesselId);
+  const entry = i >= 0 ? galleryLibrary()[i] : undefined;
+  return entry ? { form: entry.form, morph: entry.morph } : undefined;
 }
 
 export const DEMO_MEMORIES: DemoMemory[] = [
@@ -28,11 +47,15 @@ export const DEMO_MEMORIES: DemoMemory[] = [
   {
     title: "that midnight parking lot",
     year: "",
+    // the pointed 2022 vessel, "Left a place I thought I'd stay longer"
+    vesselId: "8",
     transcript: "I remember this one night last spring when him and I went for a drive around LA. It was midnight, and we didn't really have anywhere to go. We stopped at this parking lot overlooking the city, listening to music with the windows down. We were talking about graduation, and how weird it felt that everyone was figuring out what to do next. At some point we just stopped talking. I don't remember how long we stayed, but I still think about that night sometimes.",
   },
   {
     title: "東京で創った日",
     year: "2026",
+    // the soft 2021 vessel, "Heard the music, not the practice"
+    vesselId: "7",
     transcript: [
       "先月、ずっと憧れていたデザイナーに会うために、東京まで行きました。",
       "東京の街を歩きながら、アイデアを話したり、一緒に撮影をしたりして、忘れられない一日になりました。",

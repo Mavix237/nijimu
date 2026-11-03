@@ -7,7 +7,7 @@ import { CHROME_GRAY } from "../lib/colors";
 import { FLOW_PAGE, SERIF, NOTE_SIZE, INSTRUCTION_SIZE, TRANSCRIPT, TRANSCRIPT_WIDTH, UNDERWATER_PHONE } from "../lib/theme";
 import { PAGE_HEADER_MARK } from "./PageHeader";
 import { beginTranscription } from "../lib/transcribe";
-import { DEMO_MEMORIES, type DemoMemory } from "../data/demoMemories";
+import { DEMO_MEMORIES, demoVessel, type DemoMemory } from "../data/demoMemories";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
@@ -150,6 +150,7 @@ export function PondRecordingOverlay({
     if (leaving) return;
     setSkipping(true);
     setLeaving(true);
+    const vessel = memory ? demoVessel(memory) : undefined;
     setTimeout(() => {
       navigate(TRANSCRIPT_PATH + location.search, {
         state: {
@@ -159,6 +160,7 @@ export function PondRecordingOverlay({
             transcript: memory.transcript,
             suggestedTitle: memory.title,
             ...(memory.year ? { suggestedYear: memory.year } : {}),
+            ...(vessel ? { fixedShape: vessel } : {}),
           } : {}),
         },
       });

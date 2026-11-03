@@ -24,7 +24,7 @@ export function HandTrackingDialog({ open, busy, error, onAllow, onManual }: {
     </div>
     <PaneOptions>
       <PaneOption primary mark={<CameraIcon />} disabled={busy} onClick={onAllow}
-        label={busy ? "Starting hand tracking…" : error ? "Try camera again" : "Allow camera & Begin"} />
+        label={busy ? "Starting hand tracking…" : error ? "Try camera again" : "Allow camera & begin"} />
       <PaneOption mark={<ClockIcon />} ring label="Maybe later" disabled={busy} onClick={onManual} />
     </PaneOptions>
   </GlassPane>;

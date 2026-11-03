@@ -729,9 +729,12 @@ export function LiveVesselGallery({
   panels,
   pushedAt,
   onFocus,
+  dials: showDials = true,
   children,
 }: {
   active?: boolean;
+  /** The DialKit panels (dev only); /gallery leaves them out. */
+  dials?: boolean;
   panels?: GalleryPanelPush[];
   pushedAt: number;
   onFocus?: (id: string) => void;
@@ -783,7 +786,7 @@ export function LiveVesselGallery({
       onPick={compact ? read : undefined}>
       {children}
       <MemoryReadingPane memory={reading} onClose={() => setReading(null)} />
-      {GalleryDials && active && <Suspense fallback={null}><GalleryDials /></Suspense>}
+      {GalleryDials && showDials && active && <Suspense fallback={null}><GalleryDials /></Suspense>}
     </VesselGalleryProvider>
   );
 }

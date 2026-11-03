@@ -2229,9 +2229,11 @@ export function BlobScene({
               >
                 <span
                   style={{
+                    // the sans' one tracked moment: a short word that leads, at 500
                     fontFamily: SANS,
                     fontSize: HEADER_DESC_SIZE + 1,
-                    letterSpacing: "0.01em",
+                    fontWeight: 500,
+                    letterSpacing: "0.04em",
                     whiteSpace: "nowrap",
                     marginRight: -4,
                     opacity: entryHeader * (returnReveal && !headerShown ? 0 : 1),

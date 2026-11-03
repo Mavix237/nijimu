@@ -277,7 +277,7 @@ export function StyleGuidePage() {
             </span>
           </Specimen>
 
-          <Specimen name="spoken" note={`TRANSCRIPT, Exposure Trial Plus, ${PROSE_SIZE}`}>
+          <Specimen name="spoken" note={`TRANSCRIPT, EB Garamond, ${PROSE_SIZE}`}>
             <p style={{ ...TRANSCRIPT, margin: 0, color: CHROME_GRAY, maxWidth: "36em" }}>
               I keep coming back to that summer. Not to him, exactly — but to who I was when I was around him.
             </p>
@@ -388,7 +388,7 @@ export function StyleGuidePage() {
           <Specimen name="pane option" note="camera, with a clock that opens into the ring">
             <div style={{ width: "min(420px, 100%)" }}>
               <PaneOptions>
-                <PaneOption primary mark={<CameraIcon />} label="Allow camera & Begin" onClick={noop} />
+                <PaneOption primary mark={<CameraIcon />} label="Allow camera & begin" onClick={noop} />
                 <PaneOption mark={<ClockIcon />} ring label="Maybe later" onClick={noop} />
               </PaneOptions>
             </div>

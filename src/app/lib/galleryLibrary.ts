@@ -195,6 +195,9 @@ const TUNED: Tuned[] = [
   // 2026 · tuned in /studio 2026-11-03: a gear, morph .25 → .3, the picture 144° round, the strip larger (.73 → 1), the view from its side
   { key: "Y-13", morph: 0.3, size: 1.34, photoHeight: 1, photoAround: 144, photoSize: 0.964, photo: 9, view: { around: 125, pitch: -17 },
     form: { category: "gear", top: { m: 4.8, n1: 1.15, n2: 6.09, n3: 10.1, a: 0.9, b: 1 }, side: { m: 4, n1: 10, n2: 10, n3: 10, a: 1, b: 1 }, proportion: { radial: 1, vertical: 1.2 } } },
+  // 16 · 東京で創った日 (2026, added 2026-11-03): a soft pumpkin — eight broad rounded lobes round a round, slightly squat body
+  { key: "E-17", morph: 0.72, size: 1.2, photoHeight: 1, photoAround: 0, photoSize: 1, view: { around: 0, pitch: 6 },
+    form: { category: "hybrid", top: { m: 8, n1: 0.8, n2: 2.5, n3: 2.5, a: 1, b: 1 }, side: { m: 0, n1: 1, n2: 1, n3: 1, a: 1, b: 1 }, proportion: { radial: 1, vertical: 0.9 } } },
 ];
 
 const TUNED_LIBRARY: LibraryEntry[] = TUNED.map(({ key, form, morph, ...place }) => {
@@ -221,7 +224,7 @@ function entryOf(value: unknown): LibraryEntry | null {
     || !finite(e.photoAround, -360, 360) || !finite(e.photoSize, 0.2, 3)) return null;
   const v = e.view as Partial<ShapeView> | null | undefined;
   const view = v && finite(v.around, -360, 360) && finite(v.pitch, -90, 90) ? { around: v.around, pitch: v.pitch } : null;
-  const photo = finite(e.photo, 0, 15) ? Math.round(e.photo) : undefined;
+  const photo = finite(e.photo, 0, 31) ? Math.round(e.photo) : undefined;
   const tune = e.tune && typeof e.tune === "object"
     ? Object.fromEntries(Object.entries(e.tune).filter(([, v]) => typeof v === "number" && Number.isFinite(v)))
     : {};
@@ -289,10 +292,10 @@ function current() {
   return memo;
 }
 
-/** A curated memory's library shape, by its id ("0" … "15"); null for any other memory. */
+/** A curated memory's library shape, by its id; null for any other memory. The library is in LIFE_EVENTS order, not by id (ids skip 12). */
 export function curatedShape(id: string): LibraryEntry | null {
-  if (!/^\d+$/.test(id)) return null;
-  return galleryLibrary()[Number(id)] ?? null;
+  const i = LIFE_EVENTS.findIndex((e) => e.id === id);
+  return i < 0 ? null : galleryLibrary()[i] ?? null;
 }
 
 /** The library and its version, re-rendering when it changes. */

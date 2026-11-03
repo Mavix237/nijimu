@@ -69,6 +69,44 @@ so the pond above, which keeps only its lightness, is unchanged; `SINK_WASH`
 (`SINK_WASH_GLSL`, was a literal). With the sample memory, "record again"
 waits for continue and shows with it; a recording's shows with the words.
 
+## The demo's type, brought over; a serif switch (2026-11-03)
+
+The demo branch's sans and type pass (`6419655`, 2026-10-22) is now here,
+without its reading layout or photos. The sans is self-hosted Roboto
+(`Roboto-latin.woff2` + italic, OFL; `SANS_UI` = `SANS`; Switzer stays on
+disk unrequested); `SANS_TYPE` is the scale (micro 11 +.04em, ui 13, option
+15, title 19; 400/500). Ink is `INK` in `colors.ts` (action #5a5a63, body
+#6e6e77, whisper #8e8e96) and `PANE_INK` maps onto it; "Hold to begin" is
+`POND_INK` #4f6b73. PillButton: action ink at 500, hairline edge, "›" a thin
+arrow, plus the demo's `ghost` variant (not yet used here). Pane titles 19/500,
+header labels `INK.body` (keeping their two lines). Phone underwater label
+11px, copy 13px. The spoken words (`TRANSCRIPT`: transcript page, naming) are
+EB Garamond (`SERIF_DISPLAY`, `PROSE_SIZE` clamp(14px, 2.7vw, 17px), .01em);
+Exposure Trial Plus is no longer drawn.
+The serif switch (`lib/serifPreview.ts`, `SerifPreviewToggle` in RootLayout;
+no longer temporary): Rowan (default) or EB Garamond in every serif stack
+("EB Garamond Preview", size-adjust 110% to sit at Rowan's size). The T key
+flips it and reloads; `?serif=garamond|rowan` sets it from a link; kept per
+device in localStorage `nijimu.serifPreview`. The spoken words are EB Garamond
+in both; CJK keeps GenRyuMin2 TW.
+
+## A Tokyo memory, Enter lands on the piano, /gallery (2026-11-03)
+
+Memory 16, "東京で創った日" (2026), is the newest: its still `16.jpg` (from
+"tokyo.jpg"), transcript `16-tokyo-de-tsukutta-hi.txt`, Japanese highlights,
+a soft blue feeling, and library row E-17 in `TUNED` — a soft pumpkin (top m 8,
+n1 .8, n2 = n3 2.5; side round; vertical .9; morph .72). Sixteen memories
+again, so a library kept in /lab/shapes with fifteen rows no longer loads.
+`curatedShape(id)` now finds the row by the memory's place in `LIFE_EVENTS`
+(it indexed by id, which went wrong after the gap at 12: 13–15 wore the next
+row). Enter now lands on `LANDING_FOCUS_ID` ("7", the piano, 2025;
+`landingGalleryIndex` in `lib/landingTransition.ts`), not a random seat.
+`/gallery` (`GALLERY_ONLY_PATH`, `components/GalleryOnlyPage.tsx`) is the
+live gallery alone, for screen recording: no landing behind it, no pond past
+its ends, no DialKit panels (`LiveVesselGallery dials={false}`), and the paper
+finish's watchdog is not started there. `?focus=<id>` (default the piano),
+`?carried=1` skips the dive; `?finish=full` pins the finish.
+
 ## One memory fewer (2026-11-03)
 
 "Met someone through a screen" (id 12) is gone — its event, transcript,

@@ -7,6 +7,7 @@
 import { GlassPane } from "./GlassPane";
 import { PaneOption, PaneOptions } from "./PaneOption";
 import { useLandingReturn } from "../lib/landingReturn";
+import { INK } from "../lib/colors";
 import { NOTE_SIZE, SANS, SERIF, SERIF_EXPOSURE, TITLE, META } from "../lib/theme";
 
 interface ProfilePanelProps {
@@ -79,9 +80,9 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
           style={{
             ...TITLE,
             fontFamily: SANS,
-            fontWeight: 600,
-            letterSpacing: "-0.01em",
-            color: "rgba(123, 123, 135, 0.7)",
+            fontWeight: 500,
+            letterSpacing: "-0.005em",
+            color: INK.action,
             textTransform: "lowercase",
             margin: 0,
             textAlign: "center",

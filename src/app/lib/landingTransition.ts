@@ -20,6 +20,15 @@ export const INK_ENTRY = {
 
 export const INK_POINTER_SIZE = 12;
 
+/** The memory Enter lands on: 07, "First Sense of Beauty" (the piano, 2025). */
+export const LANDING_FOCUS_ID = "7";
+
+/** Where Enter lands in the gallery's items: LANDING_FOCUS_ID when it is there, else a random seat. */
+export function landingGalleryIndex(ids: string[]): number {
+  const i = ids.indexOf(LANDING_FOCUS_ID);
+  return i >= 0 ? i : pickLandingGalleryIndex(ids.length);
+}
+
 /** Leave room for the longer, receding tail and two foreground memories. */
 export function pickLandingGalleryIndex(count: number): number {
   if (count < 8) return Math.max(0, count - 3);

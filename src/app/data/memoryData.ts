@@ -42,6 +42,7 @@ const HIGHLIGHTS: Record<string, string[]> = {
   "13": ["separate lives", "a poem", "white space", "same rhythm"],
   "14": ["notice things", "they stopped", "both hands", "out loud"],
   "15": ["whole sky", "your tea", "his hair", "sits still"],
+  "16": ["ずっと憧れていた", "東京の街", "忘れられない一日", "自然にアイデア", "一緒に何かを作る"],
 };
 
 // Where each curated memory's speaker would have touched the colour field
@@ -63,6 +64,7 @@ const FEELINGS: Record<string, { u: number; v: number }> = {
   "13": { u: 0.53, v: 0.5 }, // white space after a stanza — teal
   "14": { u: 0.056, v: 0.35 }, // light on a wall, a cup in both hands — peach
   "15": { u: 0.97, v: 0.55 }, // tea, a haircut in the kitchen — rose
+  "16": { u: 0.72, v: 0.4 }, // a pale Tokyo street, a day made with someone — soft blue
 };
 
 const withTranscripts = (events: Omit<MemoryEvent, "transcript" | "highlightedWords">[]): MemoryEvent[] =>
@@ -92,5 +94,6 @@ export const LIFE_EVENTS: MemoryEvent[] = withTranscripts([
   { id: "13", year: "2025", event: "Finding the thread between\npoetry, film, and design", color: 3 },
   { id: "14", year: "2025", event: "Found my muse", color: 4 },
   { id: "15", year: "2026", event: "Still figuring out what love means", color: 5 },
+  { id: "16", year: "2026", event: "東京で創った日", color: 6 },
 ]);
 

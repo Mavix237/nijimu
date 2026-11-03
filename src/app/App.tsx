@@ -4,6 +4,7 @@ import { CHROME_GRAY } from "./lib/colors";
 import { LandingPage } from "./components/LandingPage";
 import {
   CAROUSEL_PATH,
+  GALLERY_ONLY_PATH,
   MEMORY_FIELD_PATH,
   MEMORY_POND_PATH,
   DESCENT_PATH,
@@ -21,6 +22,7 @@ import {
 } from "./lib/landingReturn";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./components/HeaderIconLabel";
 import { ProfilePanel } from "./components/ProfilePanel";
+import { SerifPreviewToggle } from "./components/SerifPreviewToggle";
 import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHeaderMenu } from "./components/HeaderMenu";
 import { useCompact } from "./hooks/useCompact";
 import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
@@ -35,8 +37,10 @@ const routerBasename =
 function RootLayout() {
   const navigate = useNavigate();
   // steps the paper finish down if this device cannot keep up (lib/paperFinish.ts)
-  useEffect(() => { startFinishWatchdog(); }, []);
   const { pathname } = useLocation();
+  // …except on /gallery, kept for screen recording: a recorder slows the frames, and
+  // the finish stepping down mid-take would change the look (force it with ?finish=)
+  useEffect(() => { if (pathname !== GALLERY_ONLY_PATH) startFinishWatchdog(); }, []);
   const [phase, setPhase] = useState<LandingReturnPhase>("idle");
   const [profileOpen, setProfileOpen] = useState(false);
   // on a phone the header's corner icons fold into one menu (HeaderMenu.tsx)
@@ -85,6 +89,8 @@ function RootLayout() {
     <HeaderMenuContext.Provider value={headerMenu}>
       <GlobalControls profileOpen={profileOpen} onProfileOpenChange={setProfileOpen}
         menu={compact ? { open: menuOpen, onOpenChange: setMenuOpen, listRef: setMenuList } : null} />
+      {/* the T key: every serif Rowan ⇄ EB Garamond (serifPreview.ts) */}
+      <SerifPreviewToggle />
       <div
         aria-hidden
         style={{
@@ -145,6 +151,7 @@ const router = createBrowserRouter([
          not wait for three.js, the labs or the revisit editors. A navigation
          keeps the current page until the next one's code has arrived. */
       { path: MEMORY_FIELD_PATH, lazy: () => import("./components/HomePage").then((m) => ({ Component: m.HomePage })) },
+      { path: GALLERY_ONLY_PATH, lazy: () => import("./components/GalleryOnlyPage").then((m) => ({ Component: m.GalleryOnlyPage })) },
       { path: "/lab/gallery", lazy: () => import("./lab/VesselGalleryPreview").then((m) => ({ Component: m.VesselGalleryPreview })) },
       { path: "/lab/meaning", lazy: () => import("./lab/MemoryMeaningLab").then((m) => ({ Component: m.MemoryMeaningLab })) },
       { path: "/lab/shapes", lazy: () => import("./lab/ShapeLibraryLab").then((m) => ({ Component: m.ShapeLibraryLab })) },

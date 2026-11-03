@@ -10,7 +10,7 @@ import { PageHeader } from "./PageHeader";
 import { BackButton } from "./BackButton";
 import { GalleryIntroLines } from "./GalleryOnboarding";
 import { useLandingReturn } from "../lib/landingReturn";
-import { INK_ENTRY, pickLandingGalleryIndex, type InkArrival } from "../lib/landingTransition";
+import { INK_ENTRY, landingGalleryIndex, type InkArrival } from "../lib/landingTransition";
 import { clearInkSeats } from "../lib/inkCutouts";
 import { buildArchive } from "../lib/archive";
 import { useGalleryPush } from "../lib/labPush";
@@ -197,7 +197,7 @@ export function LandingPage() {
     // the last entry's seats are not this one's
     clearInkSeats();
     const archive = buildArchive();
-    const slot = pickLandingGalleryIndex(archive.length);
+    const slot = landingGalleryIndex(archive.map((a) => a.id));
     setEntryFocus({ id: archive[slot]?.id ?? "", slot });
     setIntro(!reducedMotion);
     setArrival({ elapsed: 0, reducedMotion });

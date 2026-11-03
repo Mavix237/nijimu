@@ -4,6 +4,9 @@ export const MEMORY_FIELD_PATH = "/ripple";
 /** 3D memory carousel — the screen Enter opens from the landing. */
 export const CAROUSEL_PATH = "/memory";
 
+/** The gallery alone, for screen recording: no landing behind it, no pond past its ends, no dials. */
+export const GALLERY_ONLY_PATH = "/gallery";
+
 /** Perspective water and reflection prompts, reached beyond either carousel end. */
 export const MEMORY_POND_PATH = "/memory/pond";
 

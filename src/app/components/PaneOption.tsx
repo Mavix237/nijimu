@@ -7,16 +7,16 @@
  */
 
 import type { CSSProperties, ReactNode } from "react";
-import { BUTTON_SIZE_SM, GALLERY_TRANSCRIPT, PANE_ACTION, SANS, SERIF, TITLE } from "../lib/theme";
+import { GALLERY_TRANSCRIPT, PANE_ACTION, SANS, SANS_TYPE, SERIF, TITLE } from "../lib/theme";
 import { PANE_INK } from "../lib/colors";
 
 export const PANE_TITLE: CSSProperties = {
   ...TITLE,
   fontFamily: SANS,
-  fontSize: 20,
-  fontWeight: 600,
-  letterSpacing: "-0.01em",
-  color: PANE_INK.body,
+  ...SANS_TYPE.title,
+  // 500, not 600: a bold grey title read as a system alert over the light serif
+  fontWeight: 500,
+  color: PANE_INK.title,
   margin: 0,
   textAlign: "left",
   textWrap: "balance",
@@ -78,7 +78,8 @@ export function PaneOption({
   ring?: boolean;
   ariaLabel?: string;
 }) {
-  const color = PANE_INK.primary;
+  // the hoped-for option leads in the action ink; a way out stays in the body ink
+  const color = primary ? PANE_INK.primary : PANE_INK.body;
   const iconRing = ring && !primary && mark !== "dot";
   return (
     <button
@@ -205,7 +206,7 @@ const PANE_OPTION_CSS = `
   border-radius: 0;
   background: transparent;
   font-family: ${SANS};
-  font-size: ${BUTTON_SIZE_SM};
+  font-size: ${SANS_TYPE.option.fontSize}px;
   font-weight: 400;
   line-height: 1.5;
   letter-spacing: 0;

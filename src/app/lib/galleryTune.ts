@@ -91,7 +91,7 @@ const GALLERY_TONES: Record<string, MemoryTone> = {
   "4": { stain: "#b18881", foot: "#9f879c" }, // 2017 · Read a book that changed my life (stain was #6e6085; /studio 2026-11-02)
   "5": { stain: "#8da2a5", foot: "#7e959e" }, // 2020 · The year everything slowed down
   "6": { stain: "#c39a97", foot: "#99676a" }, // 2021 · Started designing seriously
-  "7": { stain: "#97b4b4", foot: "#6a8e96" }, // 2021 · Heard the music, not the practice
+  "7": { stain: "#97b4b4", foot: "#6a8e96" }, // 2025 · First Sense of Beauty (2021 until 2026-11-03)
   "8": { stain: "#8da6b4", foot: "#97af9b" }, // 2022 · Left a place I thought I'd stay longer (stain was #abc1af; /studio 2026-11-03)
   "9": { stain: "#656c6f", foot: "#727a7f", ownFoot: true }, // 2023 · Started learning to trust my own eye (was #8ca4c2 / #7892b2, foot drawn from the stain; /studio 2026-11-03)
   "10": { stain: "#a9bcbe", foot: "#6593a9" }, // 2024 · A friendship that quietly ended (stain was #7ba5b9; /studio 2026-11-03)

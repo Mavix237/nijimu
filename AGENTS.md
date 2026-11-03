@@ -77,8 +77,10 @@ memories remain; ids are not renumbered (13–15 keep theirs). `LIBRARY_SIZE`
 is `LIFE_EVENTS.length`, a still is found by the memory's id (`13.jpg` is id
 13, `memoryPhoto`), and the E-NN shapes are named by id, so nothing after the
 gap shifts. A library kept in /lab/shapes with sixteen rows no longer loads
-(the built-in one is used). Memory 07 is now "Heard the music, not the
-practice" (the piano), in place of "Wrote something true for the first time".
+(the built-in one is used). Memory 07 is now "First Sense of Beauty" (the piano, 2025), in place of
+"Wrote something true for the first time" (2021). The gallery orders by year
+(a stable sort), so it sits first among the 2025 memories; library rows stay
+in `LIFE_EVENTS` order.
 
 ## DialKit panels start folded (2026-11-02)
 

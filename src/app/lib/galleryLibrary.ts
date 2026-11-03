@@ -166,8 +166,8 @@ const TUNED: Tuned[] = [
   // 2021 · tuned in /studio 2026-11-02: a new urchin, morph .42 → .21 (strip kept at the size it had: 1 of the old fit)
   { key: "Y-17", morph: 0.21, size: 1.2, photoHeight: 1, photoAround: 0, photoSize: 1.112, photo: 0, view: { around: -9, pitch: 4 },
     form: { category: "urchin", top: { m: 8.1, n1: 0.497, n2: 0.497, n3: 0.497, a: 1, b: 1 }, side: { m: 11, n1: 0.537, n2: 0.537, n3: 0.537, a: 1, b: 1 } } },
-  // 2021 · tuned in /studio 2026-11-03: top m 0 → 7.45 (strip kept at the size it had: 1.15 of the old fit)
-  { key: "Y-20", morph: 0.35, size: 1.22, photoHeight: 0.85, photoAround: -48, photoSize: 1.314, photo: 4, view: { around: -3, pitch: -35 },
+  // 07 · First Sense of Beauty (2025) · tuned in /studio 2026-11-03: top m 0 → 7.45 (strip kept at the size it had: 1.15 of the old fit)
+  { key: "Y-20", morph: 0.35, size: 1.22, photoHeight: 0.85, photoAround: -48, photoSize: 1.314, photo: 4, view: { around: -27, pitch: -33.5 }, // view turned 2026-11-03 (45° / −35° → 21° / −33.5° from the picture)
     form: { category: "flower", top: { m: 7.45, n1: 0.567, n2: 1.766, n3: 1.046, a: 1.1, b: 1 }, side: { m: 0, n1: 1.013, n2: 1.847, n3: 1.847, a: 1, b: 1 } } },
   // 2022 · tuned in /studio 2026-11-03: top m 8 → 11.2, n1 15.08 → 19.05, b .55 → .5, vertical 1.12, strip 1.72
   { key: "Y-06", morph: 0.56, size: 1.29, photoHeight: 1, photoAround: 47, photoSize: 0.829, photo: 5, view: { around: 6, pitch: 1 },

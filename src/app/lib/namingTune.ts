@@ -53,7 +53,7 @@ export const NAMING_TUNE_DEFAULT: NamingTune = {
   layout: { artifactLift: 6, artifactScale: 1.25, textLift: 6, fieldGap: 28, passageGap: 28 },
   room: { above: "#f3f3ee", below: "#e6e6e6" },
   light: { envAbove: 1.09, envBelow: 1.09, thickDark: 0.06, rim: 0.67, highlight: 1, keyIntensity: 1.41 },
-  lightFar: { envAbove: 0.9, envBelow: 1.09, thickDark: 0.06, rim: 0.6, highlight: 1, keyIntensity: 0 },
+  lightFar: { envAbove: 0.9, envBelow: 1.09, thickDark: 0.83, rim: 0.6, highlight: 1, keyIntensity: 0 },
 };
 
 let current: NamingTune = NAMING_TUNE_DEFAULT;

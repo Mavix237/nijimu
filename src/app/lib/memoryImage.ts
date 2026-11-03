@@ -1,7 +1,7 @@
 import { CHROME_GRAY } from "./colors";
 import { SERIF, SERIF_CJK } from "./theme";
 import { oklabToSrgb, type Oklch } from "./oklch";
-import { GrainStudy, grainSettingsOf, type GrainSettings } from "./filmGrain";
+import { GrainStudy, type GrainSettings } from "./filmGrain";
 
 /**
  * The downloaded image's ground: a seamless studio sweep photographed in
@@ -59,24 +59,44 @@ const SURFACE = {
   seed: 0x6e696a6d,
 } as const;
 
+/** The wall's strengths, each a multiple of `SURFACE` (1 is that wall). */
+interface SurfaceSettings {
+  /** The broad density's strength, and its size (larger is broader). */
+  density: number;
+  densitySize: number;
+  /** The tooth's strength and the size of its grains; the fine grain's strength. */
+  tooth: number;
+  toothSize: number;
+  grain: number;
+}
+
 /** Tonal contrast: 0 nearly flat, 1 the intended depth, 2 deeper still. */
-export const TONAL_CONTRAST = { min: 0, max: 2, standard: 1 } as const;
-const TONAL_KEY = "nijimu.memoryImage.tonalContrast";
+const TONAL_CONTRAST = { min: 0, max: 2, standard: 1 } as const;
 
-/** The tonal contrast last set on the image preview, which the download uses too. */
-export function readTonalContrast(): number {
-  try {
-    const kept = Number(localStorage.getItem(TONAL_KEY));
-    if (localStorage.getItem(TONAL_KEY) !== null && Number.isFinite(kept)) {
-      return Math.min(TONAL_CONTRAST.max, Math.max(TONAL_CONTRAST.min, kept));
-    }
-  } catch { /* storage unavailable */ }
-  return TONAL_CONTRAST.standard;
-}
-
-export function keepTonalContrast(value: number) {
-  try { localStorage.setItem(TONAL_KEY, String(value)); } catch { /* storage unavailable */ }
-}
+/**
+ * The card as it is printed: the values the preview was approved on. Tonal
+ * contrast at its standard; no broad density and no tooth, only the fine grain;
+ * film grain B · tonal, faint and small. The download reads this and nothing else.
+ */
+export const IMAGE_CARD_PRESET: {
+  tonalContrast: number;
+  wall: SurfaceSettings;
+  filmGrain: GrainSettings;
+} = {
+  tonalContrast: TONAL_CONTRAST.standard,
+  wall: {
+    density: 0,
+    densitySize: .5,
+    tooth: 0,
+    toothSize: .6,
+    grain: 1,
+  },
+  filmGrain: {
+    kind: "tonal",
+    intensity: .2,
+    size: .5,
+  },
+};
 
 /** How the contrast scales each kind of field. The light stays where it is;
  *  depth deepens in proportion; the grounding only a little past the standard. */
@@ -162,9 +182,9 @@ function valueNoise(x: number, y: number, seed: number): number {
   return (a + (b - a) * sx) + ((c + (d - c) * sx) - (a + (b - a) * sx)) * sy;
 }
 
-/** The wall's broad density at (x, y) in page widths: about −1…1, mostly within ±.5. */
-function surfaceDensity(x: number, y: number, seed: number): number {
-  const [s0, s1, s2] = SURFACE.scales;
+/** The wall's broad density at (x, y) in page widths: about −1…1, mostly within ±.5. `size` scales its octaves. */
+function surfaceDensity(x: number, y: number, seed: number, size = 1): number {
+  const s0 = SURFACE.scales[0] * size, s1 = SURFACE.scales[1] * size, s2 = SURFACE.scales[2] * size;
   const wx = x + SURFACE.warp * (valueNoise(x / s0 + 3.1, y / s0, seed + 11) - .5);
   const wy = y + SURFACE.warp * (valueNoise(x / s0, y / s0 + 5.7, seed + 13) - .5);
   return (valueNoise(wx / s0, wy / s0, seed + 17) - .5) * 1.5
@@ -175,18 +195,24 @@ function surfaceDensity(x: number, y: number, seed: number): number {
 /* ---- the wall's tooth ---- */
 
 const toothCache = new Map<string, Float32Array>();
+const grainCache = new Map<string, Float32Array>();
+
+function remember(cache: Map<string, Float32Array>, key: string, field: Float32Array) {
+  if (cache.size >= 2) cache.delete(cache.keys().next().value as string);
+  cache.set(key, field);
+}
 
 /**
- * The tooth and grain for a page of `w`×`h` px: a zero-mean multiplier offset per
- * pixel. Static (one seed for every card) and kept per size.
+ * The tooth for a page of `w`×`h` px, its grains `size` times the usual: zero mean,
+ * unit σ per pixel. Static (one seed for every card) and kept per size.
  */
-export function surfaceTooth(w: number, h: number): Float32Array {
-  const key = `${w}x${h}`;
+export function surfaceTooth(w: number, h: number, size = 1): Float32Array {
+  const key = `${w}x${h}@${size}`;
   const hit = toothCache.get(key);
   if (hit) return hit;
   const n = w * h;
   const tooth = new Float32Array(n);
-  const [p0, p1, p2] = SURFACE.toothPx;
+  const p0 = SURFACE.toothPx[0] * size, p1 = SURFACE.toothPx[1] * size, p2 = SURFACE.toothPx[2] * size;
   const [w0, w1, w2] = SURFACE.toothWeights;
   const seed = SURFACE.seed;
   let sum = 0, sq = 0;
@@ -202,26 +228,37 @@ export function surfaceTooth(w: number, h: number): Float32Array {
     }
   }
   const mean = sum / n;
-  const toothScale = SURFACE.tooth / Math.max(1e-6, Math.sqrt(Math.max(0, sq / n - mean * mean)));
-  // the grain: a triangular draw per pixel (two uniforms), σ of one uniform pair is 1/√6
-  const grainScale = SURFACE.grain * Math.sqrt(6);
-  for (let k = 0; k < n; k++) {
-    const g = lattice(k, 1, seed + 5) + lattice(k, 2, seed + 5) - 1;
-    tooth[k] = (tooth[k] - mean) * toothScale + g * grainScale;
-  }
-  if (toothCache.size >= 2) toothCache.delete(toothCache.keys().next().value as string);
-  toothCache.set(key, tooth);
+  const scale = 1 / Math.max(1e-6, Math.sqrt(Math.max(0, sq / n - mean * mean)));
+  for (let k = 0; k < n; k++) tooth[k] = (tooth[k] - mean) * scale;
+  remember(toothCache, key, tooth);
   return tooth;
 }
 
-/** Lays the tooth over what is on `ctx` now (the ground alone), in place. */
-function wearTooth(ctx: CanvasRenderingContext2D, w: number, h: number, contrast: number) {
+/** The fine grain for a page of `w`×`h` px: a triangular draw per pixel, zero mean, unit σ. */
+export function surfaceGrain(w: number, h: number): Float32Array {
+  const key = `${w}x${h}`;
+  const hit = grainCache.get(key);
+  if (hit) return hit;
+  const n = w * h;
+  const grain = new Float32Array(n);
+  // two uniforms: σ of their sum is 1/√6
+  const scale = Math.sqrt(6);
+  for (let k = 0; k < n; k++) grain[k] = (lattice(k, 1, SURFACE.seed + 5) + lattice(k, 2, SURFACE.seed + 5) - 1) * scale;
+  remember(grainCache, key, grain);
+  return grain;
+}
+
+/** Lays the tooth and grain over what is on `ctx` now (the ground alone), in place. */
+function wearTooth(ctx: CanvasRenderingContext2D, w: number, h: number, contrast: number, surface: SurfaceSettings) {
+  const k = .9 + .1 * contrast;
+  const t = SURFACE.tooth * surface.tooth * k, g = SURFACE.grain * surface.grain * k;
+  if (t <= 0 && g <= 0) return;
   const img = ctx.getImageData(0, 0, w, h);
   const px = img.data;
-  const tooth = surfaceTooth(w, h);
-  const k = .9 + .1 * contrast;
-  for (let i = 0, p = 0; i < tooth.length; i++, p += 4) {
-    const f = 1 + tooth[i] * k;
+  const tooth = t > 0 ? surfaceTooth(w, h, surface.toothSize) : null;
+  const grain = g > 0 ? surfaceGrain(w, h) : null;
+  for (let i = 0, p = 0; i < w * h; i++, p += 4) {
+    const f = 1 + (tooth ? tooth[i] * t : 0) + (grain ? grain[i] * g : 0);
     px[p] = px[p] * f; px[p + 1] = px[p + 1] * f; px[p + 2] = px[p + 2] * f;
   }
   ctx.putImageData(img, 0, 0);
@@ -230,7 +267,8 @@ function wearTooth(ctx: CanvasRenderingContext2D, w: number, h: number, contrast
 /* ---- the light ---- */
 
 /** The background, lit at `LIGHT.lightScale` of the page; it is drawn up to size with smoothing. */
-function lightCanvas(w: number, h: number, place: Placement, tone: Oklch | undefined, seed: number, contrast: number): HTMLCanvasElement {
+function lightCanvas(w: number, h: number, place: Placement, tone: Oklch | undefined, seed: number, contrast: number,
+  surface: SurfaceSettings): HTMLCanvasElement {
   const lw = Math.max(2, Math.round(w * LIGHT.lightScale));
   const lh = Math.max(2, Math.round(h * LIGHT.lightScale));
   const canvas = document.createElement("canvas");
@@ -267,7 +305,7 @@ function lightCanvas(w: number, h: number, place: Placement, tone: Oklch | undef
         if (f.role !== "light") dark -= Math.min(0, f.amount) * g;
       }
       // the wall's density: denser is a shade deeper, more so inside the deep fields
-      const dense = surfaceDensity(x, y, seed);
+      const dense = surface.density > 0 ? surfaceDensity(x, y, seed, surface.densitySize) * surface.density : 0;
       L -= dense * (SURFACE.light + SURFACE.density * Math.min(1, dark / SURFACE.densityAt));
       if (L > LIGHT.shoulder) {
         const room = LIGHT.ceiling - LIGHT.shoulder;
@@ -276,7 +314,7 @@ function lightCanvas(w: number, h: number, place: Placement, tone: Oklch | undef
       // past the standard contrast the deep fields hold their colour as they darken
       const keep = richer * Math.min(1, dark / DEEP_COLOR.fullAt);
       // a denser place holds a breath more of the colour it already has; no hue of its own
-      const fuller = 1 + SURFACE.chroma * dense;
+      const fuller = Math.max(0, 1 + SURFACE.chroma * dense);
       const share = (Math.min(LIGHT.tintMost, Math.max(0, tint)) * paler + DEEP_COLOR.share * keep) * fuller;
       const cool = (1 - Math.min(1, clear)) * (1 + DEEP_COLOR.cool * keep) * fuller;
       const { r, g, b } = oklabToSrgb(L, LIGHT.cool[0] * cool + ta * share, LIGHT.cool[1] * cool + tb * share);
@@ -358,32 +396,11 @@ export function copyArtifactFrame(source: HTMLCanvasElement): HTMLCanvasElement 
   return copy;
 }
 
-const GRAIN_KEY = "nijimu.memoryImage.grain";
-
-/** The grain the image is printed with — the preview's choice, kept so the download matches it. */
-export function readGrainSettings(): GrainSettings {
-  try {
-    const kept = localStorage.getItem(GRAIN_KEY);
-    return grainSettingsOf(kept ? JSON.parse(kept) : null);
-  } catch {
-    return grainSettingsOf(null);
-  }
-}
-
-export function keepGrainSettings(settings: GrainSettings) {
-  try { localStorage.setItem(GRAIN_KEY, JSON.stringify(settings)); } catch { /* storage unavailable */ }
-}
-
-export interface MemoryImageOptions {
-  tonalContrast?: number;
-  grain?: GrainSettings;
-}
-
 /** The downloaded image: the card, its grain applied at full size, as a PNG. */
-export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch,
-  { tonalContrast, grain }: MemoryImageOptions = {}): Promise<Blob> {
-  const canvas = await memoryCard(artifact, title, year, transcript, tone, tonalContrast);
-  if (grain && grain.kind !== "off") {
+export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<Blob> {
+  const canvas = await memoryCard(artifact, title, year, transcript, tone);
+  const grain = IMAGE_CARD_PRESET.filmGrain;
+  if (grain.kind !== "off") {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Image canvas unavailable");
     const source = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -399,8 +416,7 @@ export function pngOf(canvas: HTMLCanvasElement): Promise<Blob> {
 }
 
 /** The card before any grain: the room, the vessel and the words, at full size. */
-export async function memoryCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch,
-  tonalContrast: number = TONAL_CONTRAST.standard): Promise<HTMLCanvasElement> {
+export async function memoryCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<HTMLCanvasElement> {
   await Promise.all([
     document.fonts.load(`28px ${SERIF}`),
     document.fonts.load(`32px ${SERIF_CJK}`, "滲む nijimu"),
@@ -440,11 +456,12 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  const contrast = Math.min(TONAL_CONTRAST.max, Math.max(TONAL_CONTRAST.min, tonalContrast));
-  ctx.drawImage(lightCanvas(w, h, place, tone, seed, contrast), 0, 0, w, h);
+  const contrast = IMAGE_CARD_PRESET.tonalContrast;
+  const wall = IMAGE_CARD_PRESET.wall;
+  ctx.drawImage(lightCanvas(w, h, place, tone, seed, contrast, wall), 0, 0, w, h);
   ctx.restore();
   // the tooth is the wall's, so it goes on before the vessel and the words
-  wearTooth(ctx, w, h, contrast);
+  wearTooth(ctx, w, h, contrast, wall);
   ctx.drawImage(artifact, artifactX, artifactY, artifactSize, artifactSize);
 
   ctx.fillStyle = CHROME_GRAY;

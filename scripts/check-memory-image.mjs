@@ -8,21 +8,30 @@ const code = ts.transpileModule(readFileSync(new URL('../src/app/lib/memoryImage
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText;
 runInNewContext(code, { module, exports: module.exports, require: () => ({}) });
-const { imageTextLines, surfaceTooth } = module.exports;
+const { imageTextLines, surfaceTooth, surfaceGrain, IMAGE_CARD_PRESET } = module.exports;
 
-// the wall's tooth: static, zero-mean, faint
+// the wall's tooth and grain: static, zero mean, unit σ (the strengths are applied when worn)
 {
   const w = 400, h = 520;
-  const tooth = surfaceTooth(w, h);
-  assert.equal(tooth.length, w * h);
-  assert.equal(surfaceTooth(w, h), tooth, 'kept per size');
-  let sum = 0, sq = 0, max = 0;
-  for (const v of tooth) { sum += v; sq += v * v; max = Math.max(max, Math.abs(v)); }
-  const mean = sum / tooth.length, sd = Math.sqrt(sq / tooth.length - mean * mean);
-  assert.ok(Math.abs(mean) < 1e-4, `zero mean (${mean})`);
-  assert.ok(sd > .003 && sd < .006, `faint: σ ${sd.toFixed(4)} of lightness`);
-  assert.ok(max < .03, `no pixel moved more than 3% (${max.toFixed(4)})`);
-  console.log(`Wall tooth: σ ${(sd * 100).toFixed(2)}% (≈${(sd * 230).toFixed(2)} levels on the ground), max ${(max * 100).toFixed(2)}%.`);
+  const stats = (field) => {
+    let sum = 0, sq = 0, max = 0;
+    for (const v of field) { sum += v; sq += v * v; max = Math.max(max, Math.abs(v)); }
+    const mean = sum / field.length;
+    return { mean, sd: Math.sqrt(sq / field.length - mean * mean), max };
+  };
+  for (const size of [1, 2.5]) {
+    const tooth = surfaceTooth(w, h, size);
+    assert.equal(tooth.length, w * h);
+    assert.equal(surfaceTooth(w, h, size), tooth, 'kept per size');
+    const s = stats(tooth);
+    assert.ok(Math.abs(s.mean) < 1e-4 && Math.abs(s.sd - 1) < 1e-3, `tooth at size ${size}: zero mean, unit σ`);
+  }
+  const g = stats(surfaceGrain(w, h));
+  assert.ok(Math.abs(g.mean) < .01 && Math.abs(g.sd - 1) < .01 && g.max <= Math.sqrt(6) + 1e-6, 'grain: zero mean, unit σ, bounded');
+  assert.deepEqual({ ...IMAGE_CARD_PRESET.wall }, { density: 0, densitySize: .5, tooth: 0, toothSize: .6, grain: 1 });
+  assert.equal(IMAGE_CARD_PRESET.tonalContrast, 1);
+  assert.deepEqual({ ...IMAGE_CARD_PRESET.filmGrain }, { kind: 'tonal', intensity: .2, size: .5 });
+  console.log('Wall tooth and grain checks passed: static, zero mean, unit σ; the card preset is fixed.');
 }
 const measure = text => Array.from(text).length;
 for (const text of [

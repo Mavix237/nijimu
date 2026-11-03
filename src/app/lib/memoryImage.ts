@@ -530,9 +530,9 @@ const CARD_WIDTH = 1200;
 /** Safari's largest canvas; a card long enough to pass it prints a little coarser instead. */
 const CARD_MAX_PIXELS = 16_777_216;
 
-/** The downloaded image: the card, its grain applied at full size, as a PNG. */
+/** The downloaded image: the card, its grain applied at full size, the words printed clean over it, as a PNG. */
 export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<Blob> {
-  const canvas = await memoryCard(artifact, title, year, transcript, tone);
+  const { canvas, writeWords } = await memoryCard(artifact, title, year, transcript, tone);
   const grain = IMAGE_CARD_PRESET.filmGrain;
   if (grain.kind !== "off") {
     const ctx = canvas.getContext("2d");
@@ -543,6 +543,7 @@ export async function memoryImage(artifact: HTMLCanvasElement, title: string, ye
     new GrainStudy(source).render(grain, out, canvas.width / CARD_WIDTH);
     ctx.putImageData(out, 0, 0);
   }
+  writeWords();
   return pngOf(canvas);
 }
 
@@ -550,8 +551,12 @@ export function pngOf(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Image export failed")), "image/png"));
 }
 
-/** The card before any grain: the room, the vessel and the words, at full size. */
-export async function memoryCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<HTMLCanvasElement> {
+/**
+ * The card before any grain: the room and the vessel at full size, and `writeWords`,
+ * which prints the logo, title, year and transcript over whatever is on it then —
+ * the words are the top layer and wear no grain.
+ */
+export async function memoryCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<{ canvas: HTMLCanvasElement; writeWords: () => void }> {
   await Promise.all([
     document.fonts.load(`28px ${SERIF}`),
     document.fonts.load(`32px ${SERIF_CJK}`, "滲む nijimu"),
@@ -615,22 +620,24 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
   }
   ctx.drawImage(artifact, artifactX, artifactY, artifactSize, artifactSize);
 
-  ctx.fillStyle = CHROME_GRAY;
-  ctx.textBaseline = "top";
-  ctx.font = `32px ${SERIF_CJK}`;
-  const jp = ctx.measureText("滲む").width, en = ctx.measureText("nijimu").width, gap = 32;
-  ctx.textAlign = "left";
-  const logoX = (w - jp - en - gap) / 2;
-  ctx.fillText("滲む", logoX, headerY);
-  ctx.fillText("nijimu", logoX + jp + gap, headerY);
-  ctx.textAlign = "center";
-  ctx.font = `36px ${SERIF}`;
-  titles.forEach((line, i) => ctx.fillText(line, 600, titleY + i * 48));
-  ctx.font = `24px ${SERIF}`;
-  ctx.fillText(year, 600, yearY);
-  ctx.font = `28px ${SERIF}`;
-  lines.forEach((line, i) => ctx.fillText(line, 600, textY + i * transcriptLineHeight));
-  return canvas;
+  const writeWords = () => {
+    ctx.fillStyle = CHROME_GRAY;
+    ctx.textBaseline = "top";
+    ctx.font = `32px ${SERIF_CJK}`;
+    const jp = ctx.measureText("滲む").width, en = ctx.measureText("nijimu").width, gap = 32;
+    ctx.textAlign = "left";
+    const logoX = (w - jp - en - gap) / 2;
+    ctx.fillText("滲む", logoX, headerY);
+    ctx.fillText("nijimu", logoX + jp + gap, headerY);
+    ctx.textAlign = "center";
+    ctx.font = `36px ${SERIF}`;
+    titles.forEach((line, i) => ctx.fillText(line, 600, titleY + i * 48));
+    ctx.font = `24px ${SERIF}`;
+    ctx.fillText(year, 600, yearY);
+    ctx.font = `28px ${SERIF}`;
+    lines.forEach((line, i) => ctx.fillText(line, 600, textY + i * transcriptLineHeight));
+  };
+  return { canvas, writeWords };
 }
 
 export function downloadMemoryImage(blob: Blob, title: string) {

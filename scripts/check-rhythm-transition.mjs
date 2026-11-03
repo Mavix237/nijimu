@@ -18,8 +18,9 @@ const at = m => geometry.getArtifactMesh({ ...base, side: { ...base.side, m } },
 const low = at(0), high = at(16), middle = at(7.25);
 // Normal flow may reach Rhythm without ever manipulating Shape (growth=0).
 // Its entry value must expose the formula, including for an old saved draft.
-for (const growth of [0, .01, .25, .5]) assert.equal(rhythmMorph(growth), .6);
-for (const growth of [.6, .8, 1]) assert.equal(rhythmMorph(growth), growth);
+for (const growth of [0, .01, .049]) assert.equal(rhythmMorph(growth), .6);
+// Growth the hands chose in Shape carries into Rhythm unchanged.
+for (const growth of [.05, .25, .5, .6, .8, 1]) assert.equal(rhythmMorph(growth), growth);
 const revealedLow = low.positions.slice(), revealedHigh = high.positions.slice();
 advanceArtifactPose(revealedLow, low, rhythmMorph(0), 0, true);
 advanceArtifactPose(revealedHigh, high, rhythmMorph(0), 0, true);

@@ -80,6 +80,15 @@ gap shifts. A library kept in /lab/shapes with sixteen rows no longer loads
 (the built-in one is used). Memory 07 is now "Heard the music, not the
 practice" (the piano), in place of "Wrote something true for the first time".
 
+## Shape carries into Rhythm (2026-11-03)
+
+Entering Rhythm no longer lifts growth to .6 whatever Shape chose: only a
+Shape step left untouched (growth under `RHYTHM_UNSHAPED` .05) is revealed to
+.6; any growth the hands set is kept (`rhythmMorph`). The thumb–index pinch is
+read relative to the hand as it is first seen (`createRhythmPinch`'s offset,
+`live()` for the hold): whatever gap it arrives with stands for the current
+m2, so a hand still spread from Shape no longer drives m2 to 16.
+
 ## DialKit panels start folded (2026-11-02)
 
 Every DialKit panel (landing, gallery, pond, naming, film, studio) opens

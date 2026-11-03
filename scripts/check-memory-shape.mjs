@@ -88,7 +88,14 @@ const invalidHand = pinchHand(open); invalidHand[4].x = NaN;
 assert.equal(rhythm.rhythmFromPinch(invalidHand), null);
 const pinch = rhythm.createRhythmPinch();
 let currentM = 8, now = 0, previousEditAt = -Infinity;
+// A hand that arrives open (still spread from Shape) stands for the current form.
 assert.equal(pinch.update(pinchHand(open + .1), 1, now, currentM), null, 'acquisition eases from the current form');
+for (let frame = 1; frame <= 150; frame++) {
+  assert.equal(pinch.update(pinchHand(open + .1), 1, now += 16, currentM), null,
+    'an aperture held as it arrived never carries the form to an extreme');
+}
+pinch.reset();
+assert.equal(pinch.update(pinchHand(middleGap), 1, now += 16, currentM), null);
 for (let frame = 1; frame <= 150; frame++) {
   now += 16;
   const next = pinch.update(pinchHand(open + .1), 1, now, currentM);
@@ -102,7 +109,7 @@ for (let frame = 1; frame <= 150; frame++) {
 }
 assert.equal(currentM, 16, 'wide aperture reaches maximum');
 assert.equal(pinch.update([], 1, now + 16, currentM), null, 'tracking loss holds the current form');
-assert.equal(pinch.update(pinchHand(0), 1, now += 32, currentM), null, 'reacquisition starts from the held value');
+assert.equal(pinch.update(pinchHand(open + .1), 1, now += 32, currentM), null, 'reacquisition starts from the held value');
 for (let frame = 1; frame <= 150; frame++) {
   const next = pinch.update(pinchHand(0), 1, now += 16, currentM);
   if (next !== null) { assert.ok(next <= currentM && currentM - next <= rhythm.RHYTHM_PINCH.maxStep); currentM = next; }

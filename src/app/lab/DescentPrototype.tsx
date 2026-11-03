@@ -10,7 +10,7 @@ import { DistanceConstellation } from "./DistanceConstellation";
 import { FIELD_FOCAL, memoryDepth, type FieldTextBounds } from "./vesselField";
 import { SAMPLE_TRANSCRIPT, sampleAssignment } from "../data/sampleMemory";
 import { getTranscription } from "../lib/transcribe";
-import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch, rhythmFromPinch } from "../lib/memoryRhythm";
+import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch } from "../lib/memoryRhythm";
 import { createDistancePush } from "../lib/memoryDistanceGesture";
 import { createGestureHold } from "../lib/gestureHold";
 import { advanceArtifactPose } from "../lib/artifactPose";
@@ -2704,7 +2704,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         const video = videoRef.current;
         const aspect = video?.videoHeight ? video.videoWidth / video.videoHeight : 1;
         const next = rhythmPinch.current.update(hand, aspect, performance.now(), m2Ref.current);
-        const live = rhythmFromPinch(hand, aspect);
+        const live = rhythmPinch.current.live(hand, aspect);
         // While held, the filter returns null on most frames (deadband). Feed
         // the live aperture so a real pinch change can reopen the hold.
         takeGesture(gestureHold.current.engaged && live !== null

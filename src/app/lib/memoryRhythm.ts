@@ -3,10 +3,16 @@ import type { ArtifactForm } from "./superformula";
 export const RHYTHM_MAX = 16;
 export const rhythmValue = (m: number) => Math.round(Math.max(0, Math.min(RHYTHM_MAX, Number.isFinite(m) ? m : 0)) * 4) / 4;
 
+/** Below this growth the Shape step was left untouched (or an old draft never had one). */
+export const RHYTHM_UNSHAPED = .05;
 /** Growth=0 masks the formula entirely, so m2 could change while the glass
- * remained a sphere. Reveal its contours on entering Rhythm; retain any
- * stronger shaping. This is saved with the draft, not a preview-only override. */
-export const rhythmMorph = (morph: number) => Math.max(.6, Math.min(1, Number.isFinite(morph) ? morph : 0));
+ * remained a sphere. A Shape step that was skipped is revealed to .6 on entering
+ * Rhythm; any growth the hands chose is kept as it was. This is saved with the
+ * draft, not a preview-only override. */
+export const rhythmMorph = (morph: number) => {
+  const m = Math.min(1, Math.max(0, Number.isFinite(morph) ? morph : 0));
+  return m < RHYTHM_UNSHAPED ? .6 : m;
+};
 
 /** The manual edit touches only m in parameter set 2 (the latitude profile). */
 export function withRhythm(form: ArtifactForm, m: number): ArtifactForm {
@@ -34,9 +40,13 @@ export function rhythmFromPinch(hand: PinchPoint[], aspect = 1): number | null {
 
 /** Confirm movement for 200ms before editing, with a longer delay on reversal.
  * Confirm direction rather than an exact value so a continuous sweep still
- * updates, at most five times/sec. Missing landmarks discard pending edits. */
+ * updates, at most five times/sec. Missing landmarks discard pending edits.
+ * The aperture is read relative to the hand as it was first seen: whatever gap
+ * it arrives with stands for the current m2, so a hand still open from Shape
+ * does not carry the form to an extreme; only a change of the gap edits it. */
 export function createRhythmPinch() {
   let filtered: number | null = null;
+  let offset = 0;
   let lastFrame = 0;
   let lastEdit = 0;
   let pendingDirection = 0;
@@ -44,19 +54,28 @@ export function createRhythmPinch() {
   let lastDirection = 0;
   const reset = () => {
     filtered = null;
+    offset = 0;
     pendingDirection = 0;
     lastDirection = 0;
   };
+  const read = (hand: PinchPoint[], aspect: number) => {
+    const raw = rhythmFromPinch(hand, aspect);
+    return raw === null ? null : Math.max(0, Math.min(RHYTHM_MAX, raw + offset));
+  };
   return {
     reset,
+    /** The relative reading of this frame, or null before the hand is acquired. */
+    live: (hand: PinchPoint[], aspect: number) => filtered === null ? null : read(hand, aspect),
     update(hand: PinchPoint[], aspect: number, now: number, current: number): number | null {
-      const target = rhythmFromPinch(hand, aspect);
-      if (target === null || !Number.isFinite(now)) { reset(); return null; }
+      const raw = rhythmFromPinch(hand, aspect);
+      if (raw === null || !Number.isFinite(now)) { reset(); return null; }
       if (filtered === null) {
         filtered = rhythmValue(current);
+        offset = filtered - raw;
         lastFrame = lastEdit = now;
         return null;
       }
+      const target = Math.max(0, Math.min(RHYTHM_MAX, raw + offset));
       const dt = Math.max(0, Math.min(100, now - lastFrame));
       lastFrame = now;
       filtered += (target - filtered) * (1 - Math.exp(-dt / RHYTHM_PINCH.smoothMs));

@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { LANDING_TONES, landingTone } from "./homePaletteField";
 import { oklchToHex, type Oklch } from "./oklch";
 import { POND_DROP_SLOTS } from "./voicePeaks";
+import { POND_TUNE_UNIFORMS, pondTune } from "./pondTune";
 
 /*
  * The pond's pigment. Each prompt's ripple is made by a drop of the landing's
@@ -35,7 +36,7 @@ export const POND_INK_HANG_NEAR = 14;
 const HANG_GROW = 1.3, HANG_MAX = 1.8;
 /** The hang for a plume this far (across the water) from the eye. */
 export const inkHang = (distance: number) =>
-  POND_INK_HANG * Math.min(HANG_MAX, Math.max(1, Math.pow(distance / POND_INK_HANG_NEAR, HANG_GROW)));
+  pondTune().ink.hang * Math.min(HANG_MAX, Math.max(1, Math.pow(distance / POND_INK_HANG_NEAR, HANG_GROW)));
 /** The ink's head under the surface (model units) and how wide it has
  * opened, by seconds since the drop went in: the drop plunges on its own way
  * at first and is checked within a breath, then the ink sinks on its weight;
@@ -107,7 +108,17 @@ export const pigmentDeepFor = (cycle: number, offset: number) => POND_PIGMENT_DE
  * than the paint the drop carried. */
 export const POND_PIGMENT_LIGHTS: THREE.Vector3[] = DEEP_TONES
   .map(ok => display({ ...ok, l: Math.min(.95, ok.l + .2), c: ok.c * .7 }));
-export const pigmentLightFor = (cycle: number, offset: number) => POND_PIGMENT_LIGHTS[pigmentIndex(cycle, offset)];
+/** The ink's tones as the pond tune has them (lighter / quieter knobs). */
+let lightsKey = "", lights = POND_PIGMENT_LIGHTS;
+export const pigmentLightFor = (cycle: number, offset: number) => {
+  const { lighter, quieter } = pondTune().ink;
+  const key = `${lighter}|${quieter}`;
+  if (key !== lightsKey) {
+    lightsKey = key;
+    lights = DEEP_TONES.map(ok => display({ ...ok, l: Math.min(.95, ok.l + lighter), c: ok.c * quieter }));
+  }
+  return lights[pigmentIndex(cycle, offset)];
+};
 
 /** How far (screen px) a drop still has to travel `untilImpact` seconds from
  * landing, given how far off it enters. It keeps one speed all the way. */
@@ -125,7 +136,8 @@ export const POND_TONE_CROSSFADE_S = 3;
  * time since that drop landed. The tint holds until the next one has landed
  * and spread, so one colour gives way to the next and they never pile up. */
 export function pondToneCrossfade(age: number) {
-  const t = Math.max(0, Math.min(1, (age - POND_TONE_DELAY_S) / POND_TONE_CROSSFADE_S));
+  const { delayS, crossS } = pondTune().tone;
+  const t = Math.max(0, Math.min(1, (age - delayS) / Math.max(.05, crossS)));
   return t * t * (3 - 2 * t);
 }
 
@@ -150,6 +162,8 @@ export const createPondPigmentUniforms = (): PondPigmentUniforms => ({
   uPondToneDeep: { value: new THREE.Vector4(1, 1, 1, 1) },
   // the held sphere's wave source (POND_WAVES_GLSL's holdWave); still until held
   uHold: { value: new THREE.Vector4(0, 0, 0, 0) },
+  // the dev panel's knobs (lib/pondTune.ts), shared by reference
+  ...POND_TUNE_UNIFORMS,
 });
 
 /** Needs POND_WAVES_GLSL (hash, noise, breath, uDrops, uTime) above it. */
@@ -243,7 +257,7 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
   // The ink's colour as a multiply layer: deeper, more water lies over it
   // and it pales toward clear.
   vec3 inkDepthTone(vec3 tint, float depth) {
-    return mix(tint, vec3(1.0), (1.0 - exp(-depth * .5)) * .4);
+    return mix(tint, vec3(1.0), (1.0 - exp(-depth * .5)) * T_INK_PALE);
   }
   vec3 pondInk(vec2 p, vec3 n, vec3 eye, vec3 color) {
     if (uPondLife < .001) return color;
@@ -255,10 +269,12 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
     // the water is let be clearer than its own shading over the ink, so the
     // trace can be followed down into it.
     float fresnel = pow(1.0 - max(0.0, dot(n, eye)), 3.0);
-    float clear = 1.0 - fresnel * .22;
+    float clear = 1.0 - fresnel * T_INK_CLEAR;
     // The surface's slope also bends what is under it, more the deeper it lies.
-    vec2 bend = n.xz * 2.2;
-    const float SCALE = ${POND_INK_SCALE.toFixed(2)};
+    vec2 bend = n.xz * T_INK_BEND;
+    float SCALE = max(.1, T_INK_SCALE);
+    float LIFE = max(1.0, T_INK_LIFE);
+    float FADE0 = T_INK_FADE_FROM, FADE1 = T_INK_FADE_TO;
     // Seen this low over the water a true depth all but vanishes; the ink is
     // let hang deeper on screen than it would, so it reads falling, and the
     // farther plumes longer (inkHang); it thins away by POND_INK_FADE, so
@@ -267,29 +283,29 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
     // The paper's tooth, as the landing's washes have it (WatercolorField's
     // look): value noise laid in screen pixels at ${POND_INK_GRAIN_PX} px, three
     // octaves turned against each other, lifting and thinning the paint's cover.
-    vec2 gp = gl_FragCoord.xy / ${POND_INK_GRAIN_PX.toFixed(2)};
+    vec2 gp = gl_FragCoord.xy / T_INK_GRAIN_PX;
     float tooth = noise(gp) * .45 + noise(mat2(.8, -.6, .6, .8) * gp * .43 + 7.7) * .35
       + noise(mat2(.28, -.96, .96, .28) * gp * .16 + 3.1) * .2;
-    float grain = 1.0 + .28 * ${POND_INK_GRAIN.toFixed(2)} * (tooth - .5);
+    float grain = 1.0 + .28 * T_INK_GRAIN * (tooth - .5);
     for (int i = 0; i < ${POND_INK_SLOTS}; i++) {
-      float strength = uInk[i].w;
+      float strength = uInk[i].w * T_INK_STRENGTH;
       float age = uTime - uInk[i].z;
-      if (strength < .001 || age < 0.0 || age > ${POND_INK_LIFE_S.toFixed(1)}) continue;
+      if (strength < .001 || age < 0.0 || age > LIFE) continue;
       float spread = inkSpread(age);
       float stretch = clamp(pow(length(cameraPosition.xz - uInk[i].xy) / ${POND_INK_HANG_NEAR.toFixed(1)}, ${HANG_GROW}), 1.0, ${HANG_MAX});
-      float HANG = ${POND_INK_HANG.toFixed(2)} * stretch;
+      float HANG = T_INK_HANG * stretch;
       vec2 o = (p - uInk[i].xy) / SCALE;
       // (generous: the flow's curls and the late blur's widening reach well
       // past the plume's spread, and a bound any nearer cut its edges straight)
-      if (abs(o.x) > spread * 3.8 + 1.0 || o.y < -.9 || o.y > ${POND_INK_FADE[1].toFixed(2)} * -away * HANG + 1.0) continue;
+      if (abs(o.x) > spread * 3.8 + 1.0 || o.y < -.9 || o.y > FADE1 * -away * HANG + 1.0) continue;
       // it comes up round the drop as the drop dissolves into it
-      float life = smoothstep(.05, ${(POND_DROP_SINK_S * .75).toFixed(2)}, age) * (1.0 - smoothstep(${(POND_INK_LIFE_S * .45).toFixed(1)}, ${POND_INK_LIFE_S.toFixed(1)}, age))
+      float life = smoothstep(.05, ${(POND_DROP_SINK_S * .75).toFixed(2)}, age) * (1.0 - smoothstep(LIFE * .45, LIFE, age))
         / (1.0 + age * .07);
       vec3 tint = uInkTint[i].rgb;
       float seed = uInkTint[i].w;
       // only late in its life, as it fades, does it blur into the water
-      float fading = smoothstep(${(POND_INK_LIFE_S * .5).toFixed(1)}, ${(POND_INK_LIFE_S * .92).toFixed(1)}, age);
-      float late = smoothstep(${(POND_INK_LIFE_S * .4).toFixed(1)}, ${(POND_INK_LIFE_S * .65).toFixed(1)}, age);
+      float fading = smoothstep(LIFE * .5, LIFE * .92, age);
+      float late = smoothstep(LIFE * .4, LIFE * .65, age);
       // the pigment that stays on the surface and opens there
       vec2 fw = o * 2.4 + seed + bend * .15;
       vec2 fo = o + (vec2(noise(fw), noise(fw + 4.1)) - .5) * (spread + .2) * .8;
@@ -302,18 +318,18 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
         float run = o.y - across;
         if (run < 0.0) continue;
         float depth = run / (-away * HANG);
-        if (depth > ${POND_INK_FADE[1].toFixed(2)} + .1) continue;
+        if (depth > FADE1 + .1) continue;
         vec2 q = vec2(o.x + lateral.x * run / -away, depth) + bend * (.25 + depth) / SCALE;
         // past a certain depth it has thinned into the water
-        float reach = 1.0 - smoothstep(${POND_INK_FADE[0].toFixed(2)}, ${POND_INK_FADE[1].toFixed(2)}, depth);
+        float reach = 1.0 - smoothstep(FADE0, FADE1, depth);
         // and, by then, where it has gone down to where it thins away
-        float soften = max(fading, smoothstep(${(POND_INK_FADE[0] - .15).toFixed(2)}, ${POND_INK_FADE[1].toFixed(2)}, depth) * late);
+        float soften = max(fading, smoothstep(FADE0 - .15, FADE1, depth) * late);
         vec2 a = 1.0 - exp(-inkSlice(q, across, age, seed, soften, stretch) * life * strength * reach * 2.6);
         a = clamp(a * grain, 0.0, 1.0);
         vec3 tone = inkDepthTone(tint, depth);
         layer *= mix(vec3(1.0), tone, a.x) * mix(vec3(1.0), tone, a.y);
       }
-      float a = clamp((1.0 - exp(-film * life * strength * .9)) * grain, 0.0, 1.0);
+      float a = clamp((1.0 - exp(-film * life * strength * .9 * T_INK_FILM)) * grain, 0.0, 1.0);
       layer *= mix(vec3(1.0), tint, a);
       color *= mix(vec3(1.0), layer, clear);
     }
@@ -332,7 +348,7 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
       float soft = uDrops[i].w < 0.0 ? 1.0 : 0.0;
       if (strength < .001 || uTime < uDrops[i].z) continue;
       // on the same clock as the train itself (rippleField)
-      float age = (uTime - uDrops[i].z) * mix(1.0, ${POND_SLOW_PACE}, slow);
+      float age = (uTime - uDrops[i].z) * mix(1.0, T_SLOW_PACE, slow);
       if (age > 7.0) continue;
       vec2 delta = p - uDrops[i].xy;
       float rd = length(delta);
@@ -360,7 +376,7 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
       float bloom = exp(-d * d / .09) * exp(-age * 2.6);
       float life = smoothstep(0.0, mix(.03, .6, soft), age) * exp(-age * .55) / (1.0 + d * .7);
       float weight = life * strength * mix(1.0, .45, soft);
-      light.x += (crest * gate * (.45 + .6 * glints) + bloom * .5) * weight;
+      light.x += (crest * gate * (.45 + T_GLINTS * glints) + bloom * T_BLOOM) * weight;
       light.y += trough * gate * weight;
     }
     // the held sphere's train, lit the same way
@@ -381,17 +397,20 @@ export const POND_PIGMENT_GLSL = /* glsl */ `
       const float GROUND = .87;
       float up = clamp(gl_FragCoord.y / max(1.0, uPondToneDeep.w), 0.0, 1.0);
       // one gradient, no edge in it: full at the foot, gone by 55% of the height
-      float rise = 1.0 - smoothstep(0.0, .55, up);
+      float rise = 1.0 - smoothstep(0.0, T_TONE_REACH, up);
       // the deeper tone low down, giving way to the tone itself as it rises
-      vec3 tone = mix(uPondTone.rgb, uPondToneDeep.rgb, (1.0 - smoothstep(0.0, .4, up)) * .8);
+      vec3 tone = mix(uPondTone.rgb, uPondToneDeep.rgb, (1.0 - smoothstep(0.0, T_TONE_DEEP_UNTIL, up)) * T_TONE_DEEP);
       float k = uPondTone.w * uPondLife;
-      color *= mix(vec3(1.0), min(tone / GROUND, vec3(1.1)), rise * ${POND_TONE_STAIN.toFixed(2)} * k);
+      color *= mix(vec3(1.0), min(tone / GROUND, vec3(1.1)), rise * T_TONE_STAIN * k);
     }
     color = pondInk(p, n, eye, color);
     vec2 light = rippleLight(p);
-    color *= 1.0 - (1.0 - exp(-light.y * 2.0)) * .16 * uPondLife;
+    color *= 1.0 - (1.0 - exp(-light.y * 2.0)) * T_RING_SHADE * uPondLife;
     float glow = 1.0 - exp(-light.x * 3.2);
-    return mix(color, vec3(1.0), glow * .9 * uPondLife);
+    // the rings' light a little warm, as the sun's is (T_WARM, its luma kept under white)
+    vec3 warm = T_WARM / max(T_WARM.r, max(T_WARM.g, T_WARM.b));
+    vec3 white = mix(vec3(1.0), warm, T_RING_WARM);
+    return mix(color, white, clamp(glow * T_RING_GLOW, 0.0, 1.0) * uPondLife);
   }
 `;
 

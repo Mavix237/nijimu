@@ -30,6 +30,45 @@ export interface WashTune {
   saturation: number;
   /** Field pixels per screen pixel; 1 is the screen's own density. */
   sharpness: number;
+  /** How unevenly the ink settles inside a wash (the slow blooms), 0 even. */
+  bloom: number;
+  /** How quickly those blooms drift, × the settled pace. */
+  bloomDrift: number;
+  /** A wash's thin interior before its density builds, 0…1. */
+  interior: number;
+  /** How much the drying edge darkens the pigment. */
+  edgeDark: number;
+  /** How deeply the paper's tooth cuts the cover (with grain). */
+  tooth: number;
+  /** How far a free wash is carried along in streaks. */
+  streak: number;
+  /** How much each wash breathes (stretches) as it changes shape. */
+  stretch: number;
+  /** How quickly each wash turns as it changes shape. */
+  turn: number;
+  /** How far a cutout's outline wanders in the ink entry. */
+  cutWobble: number;
+  /** 0 leaves the free washes smoky and streaked; 1 gives them a round wash's whole body, edge still soft. */
+  whole: number;
+
+  /** Open water: how much paper the slow drifting gaps open through the paint, 0 none. */
+  gaps: number;
+  /** The gaps' size, × 320 px. */
+  gapScale: number;
+  /** How quickly the gaps drift and change, × a slow liquid pace. */
+  gapDrift: number;
+  /** After a stroke, how much some places (at random) heal slowly, leaving paper open a while. */
+  hold: number;
+  /** The size of those slow places, × 260 px. */
+  holdScale: number;
+  /** The paint's own slow current once stirred, px/s at most. */
+  drift: number;
+  /** How much a dark wash's edge bleeds into the paint around it, 0 not at all. */
+  bleed: number;
+  /** How far that bleed reaches, × its halo. */
+  bleedReach: number;
+  /** A wash counts as dark below this luma (0–1); higher lets mid tones bleed too. */
+  bleedTone: number;
 
   brushPx: number;
   grip: number;
@@ -48,30 +87,50 @@ export interface WashTune {
 }
 
 export const WASH_TUNE_DEFAULT: WashTune = {
-  fieldOpacity: 0.85,
-  reach: 1.12,
-  threshold: 0.18,
-  join: 3.3,
+  fieldOpacity: 0.78, // was .85: lighter
+  reach: 1.34,
+  threshold: 0.2,
+  join: 4.9, // was 3.3: washes join only where both are wet
   warp: 1,
-  morph: 1.75,
-  fringe: 0.21,
-  edge: 0.56,
-  edgeShown: 1.5,
-  softness: 1,
-  grain: 2.2,
-  grainPx: 0.8,
+  morph: 2.4, // was 1.75: shapes keep changing
+  fringe: 0.15, // was .21: a finer, livelier pigment edge
+  edge: 0.2,
+  edgeShown: 0.73,
+  softness: 0.64, // was 1: a crisper edge
+  grain: 0.77,
+  grainPx: 0.7,
   deepTone: 1,
   saturation: 1.38,
-  sharpness: 0.7,
+  sharpness: 0.9, // was .7: the field painted closer to the screen's density
+  bloom: 0.49,
+  bloomDrift: 2.55,
+  interior: 0.22, // was .3: thinner inside, more transparent
+  edgeDark: 0.04,
+  tooth: 0.28,
+  streak: 1.3,
+  stretch: 1,
+  turn: 0.5,
+  cutWobble: 0.06,
+  whole: 0.65,
 
-  brushPx: 46,
-  grip: 0.1,
+  gaps: 0.4,
+  gapScale: 0.8,
+  gapDrift: 1,
+  hold: 0.65,
+  holdScale: 1,
+  drift: 6,
+  bleed: 0.6,
+  bleedReach: 1,
+  bleedTone: 0.62,
+
+  brushPx: 32,
+  grip: 0.16, // was .1
   wipe: 0.45,
-  curl: 0,
-  velFadeS: 0.7,
-  relaxS: 1.6,
+  curl: 4.5, // was 0: eddies after a stroke
+  velFadeS: 1.2, // was .7: the flow carries on, as water does
+  relaxS: 2.55, // was 1.6: stirred paint returns slowly
   pressureIters: 16,
-  simLong: 120,
+  simLong: 104,
   dyeLong: 272,
 
   dotSize: 5.2,
@@ -106,6 +165,45 @@ export const WASH_KNOBS: { group: string; knobs: WashKnob[] }[] = [
       { key: "deepTone", label: "deep tone", min: 0, max: 1, step: 0.01 },
       { key: "saturation", label: "saturation", min: 0, max: 2.5, step: 0.01 },
       { key: "sharpness", label: "sharpness", min: 0.3, max: 1, step: 0.05 },
+    ],
+  },
+  {
+    group: "texture",
+    knobs: [
+      { key: "bloom", label: "ink blooms", min: 0, max: 1.5, step: 0.01 },
+      { key: "interior", label: "thin interior", min: 0, max: 1, step: 0.01 },
+      { key: "edgeDark", label: "edge darkening", min: 0, max: 0.6, step: 0.01 },
+      { key: "tooth", label: "paper tooth depth", min: 0, max: 1, step: 0.01 },
+      { key: "streak", label: "streaks (free washes)", min: 0, max: 4, step: 0.05 },
+      { key: "cutWobble", label: "cutout edge wander", min: 0, max: 0.2, step: 0.005 },
+      { key: "whole", label: "free washes whole", min: 0, max: 1, step: 0.01 },
+    ],
+  },
+  {
+    group: "open water",
+    knobs: [
+      { key: "gaps", label: "drifting gaps", min: 0, max: 1, step: 0.01 },
+      { key: "gapScale", label: "gap size", min: 0.3, max: 3, step: 0.05 },
+      { key: "gapDrift", label: "gap pace", min: 0, max: 4, step: 0.05 },
+      { key: "hold", label: "slow-healing places", min: 0, max: 1, step: 0.01 },
+      { key: "holdScale", label: "slow place size", min: 0.3, max: 3, step: 0.05 },
+      { key: "drift", label: "liquid drift (px/s)", min: 0, max: 30, step: 0.5 },
+    ],
+  },
+  {
+    group: "dark bleed",
+    knobs: [
+      { key: "bleed", label: "dark washes bleed", min: 0, max: 1, step: 0.01 },
+      { key: "bleedReach", label: "bleed reach", min: 0.3, max: 3, step: 0.05 },
+      { key: "bleedTone", label: "counts as dark below", min: 0.3, max: 0.9, step: 0.01 },
+    ],
+  },
+  {
+    group: "motion",
+    knobs: [
+      { key: "bloomDrift", label: "bloom drift speed", min: 0, max: 6, step: 0.05 },
+      { key: "stretch", label: "breathing", min: 0, max: 3, step: 0.01 },
+      { key: "turn", label: "turning", min: 0, max: 3, step: 0.01 },
     ],
   },
   {

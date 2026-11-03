@@ -31,7 +31,7 @@ const FAINT = "rgba(123, 123, 135, 0.14)";
 
 type Placements = Record<string, ShapePlacement>;
 
-const SLIDERS: { key: Exclude<keyof ShapePlacement, "view" | "photo">; label: string; min: number; max: number; step: number; unit?: string }[] = [
+const SLIDERS: { key: Exclude<keyof ShapePlacement, "view" | "photo" | "tune">; label: string; min: number; max: number; step: number; unit?: string }[] = [
   { key: "size", label: "size", min: 0.5, max: 1.6, step: 0.01 },
   { key: "photoHeight", label: "picture height", min: 0.3, max: 1, step: 0.01 },
   { key: "photoAround", label: "picture around", min: -180, max: 180, step: 1, unit: "°" },

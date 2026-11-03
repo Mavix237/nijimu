@@ -1,5 +1,6 @@
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { GalleryOverrideContext } from "../lib/galleryOverride";
+import { galleryFilterCss, galleryTune, subscribeGalleryTune, useGalleryTuneVersion } from "../lib/galleryTune";
 // import NewMomoryIdle from "../../imports/NewMomoryIdle"; // button hidden — cursor hint replaces it
 import { LIFE_EVENTS, MemoryEvent } from "../data/memoryData";
 import { loadMemories, toMemoryEvent, SavedMemory } from "../lib/memoryStore";
@@ -18,6 +19,8 @@ import { INK_ENTRY, inkGrowth } from "../lib/landingTransition";
 import { DiveGalleryHost, draftAsSaved, type NamingSession } from "./NamingRim";
 import { NameMemoryPage } from "../archive/shape-flow/NameMemoryPage";
 import { buildArchive } from "../lib/archive";
+import { PaperFinish } from "./PaperFinish";
+import { finishMode, finishScale, subscribeFinishMode, useFinishUnder } from "../lib/paperFinish";
 
 /*
  * PuddleScene — WebGL2 homescreen field variants.
@@ -70,6 +73,20 @@ const HOLD_RING_BLOOM_MS = 480;
 const CREATE_DIVE_MS = RECORD_DIVE.diveMs;
 /** The page ground the puddle is painted on. */
 const PAGE_BG = "#ededee";
+
+/* The gallery panel's ground (galleryTune.backdrop) written into the puddle's
+   tuning, read by its shaders every frame. The defaults are the puddle's own. */
+function applyBackdrop() {
+  const b = galleryTune().backdrop;
+  const n = parseInt(b.color.slice(1, 7), 16);
+  PUDDLE_TUNING.baseColor = Number.isFinite(n) ? [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255] : undefined;
+  // the fine grain follows the paper finish: fainter on a phone, none when it is off
+  PUDDLE_TUNING.grainAmount = finishMode() === "off" ? 0 : b.grain * finishScale().grain;
+  PUDDLE_TUNING.grainSize = b.grainSize;
+  PUDDLE_TUNING.paperTexture = b.paperTexture;
+  PUDDLE_TUNING.vignette = b.vignette;
+}
+
 /** The hint label's offset from the cursor, and the vertical center of its line box. */
 const HINT_OFFSET_X = 14;
 const HINT_OFFSET_Y = 16;
@@ -438,6 +455,8 @@ export function PuddleScene({
      `anchors` (a saved memory is appended, and the draft was appended last),
      so the surface captions and the intro order can read from here. */
   const override = useContext(GalleryOverrideContext);
+  useGalleryTuneVersion();
+  const finishUnder = useFinishUnder();
   const liveSaved = useMemo(
     () => (naming ? savedMemories : loadMemories()),
     [naming, savedMemories],
@@ -1142,7 +1161,20 @@ export function PuddleScene({
     };
     window.addEventListener("resize", onResize);
 
+    // the gallery panel's ground: written into the tuning, and a parked frame redrawn with it
+    applyBackdrop();
+    const offTune = subscribeGalleryTune(() => {
+      applyBackdrop();
+      if (!running) sim.render(performance.now() / 1000);
+    });
+    const offFinish = subscribeFinishMode(() => {
+      applyBackdrop();
+      if (!running) sim.render(performance.now() / 1000);
+    });
+
     return () => {
+      offTune();
+      offFinish();
       cancelAnimationFrame(raf);
       running = false;
       endPress();
@@ -1216,10 +1248,12 @@ export function PuddleScene({
     descending || divePhase === "diving" || divePhase === "surfacing"
     || (!!inkArrival && inkArrival.elapsed < (inkArrival.reducedMotion ? INK_ENTRY.reducedEnd : INK_ENTRY.end));
 
+  const ground = galleryTune();
+  const groundFilter = galleryFilterCss(ground.filter);
   return (
     <div
       className="relative w-full h-dvh overflow-hidden select-none"
-      style={{ background: PAGE_BG }}
+      style={{ background: ground.backdrop.color || PAGE_BG, filter: groundFilter }}
     >
       {/* The water. Under the naming step it is there but unseen — at depth,
           held — and arrives when the memory is saved: it fades in and focuses,
@@ -1235,6 +1269,9 @@ export function PuddleScene({
           transition: `opacity ${WATER_ARRIVE_MS}ms ease, filter ${WATER_ARRIVE_MS}ms ease`,
         }}
       />
+      {/* "under vessels" (gallery ground panel): the finish over the water alone —
+          z 0 in tree order, so everything after it paints over it */}
+      {finishUnder && <PaperFinish zIndex={0} />}
 
       {/* ═══ MEMORY CAPTIONS — live with their ripple: focus in from particles,
              hold, dissolve as the water stills ═══ */}
@@ -1526,6 +1563,9 @@ export function PuddleScene({
           }}
         />
       )}
+
+      {/* The paper finish (the gallery panel's tint and tooth) over everything; the pond stage wears the same. */}
+      {!finishUnder && <PaperFinish zIndex={61} />}
     </div>
   );
 }

@@ -14,9 +14,11 @@ import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch, rh
 import { createDistancePush } from "../lib/memoryDistanceGesture";
 import { createGestureHold } from "../lib/gestureHold";
 import { advanceArtifactPose } from "../lib/artifactPose";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
+/** The film look's dev panel (DialKit), development only. */
+const FilmDials = import.meta.env.DEV ? lazy(() => import("../components/FilmDials")) : null;
 import * as THREE from "three";
 import { CHROME_GRAY } from "../lib/colors";
 import { CAROUSEL_PATH, DESCENT_PATH as DESCENT_ROUTE, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
@@ -41,7 +43,8 @@ import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE, UNDER
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
-import { PondWater, type PondProps, POND_BACKDROP, POND_WAVES_GLSL, POND_SURFACE_GLSL } from "../components/PerspectivePond";
+import { PondWater, type PondProps, POND_WAVES_GLSL, POND_SURFACE_GLSL } from "../components/PerspectivePond";
+import { pondBackdropCss, usePondTune } from "../lib/pondTune";
 import { POND_PIGMENT_GLSL, createPondPigmentUniforms } from "../lib/pondPigment";
 import { PAGE_HEADER_MARK, PageHeader } from "../components/PageHeader";
 import { TextButton } from "../components/TextButton";
@@ -73,6 +76,7 @@ import photoB from "../../assets/memory-photo-02.jpg";
 import { PortraitFit, viewHalfTan } from "../lib/portraitView";
 import { readPhoto } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
+import { SINK_WASH_GLSL, UNDERWATER, UNDERWATER_GLSL } from "../lib/atmosphere";
 
 /*
  * Lab: the whole shot from the photo to the named memory, in one canvas.
@@ -354,7 +358,7 @@ const VOLUME_GLSL = /* glsl */ `
       washNoise(dir.yz * 2.6 - uClock * .045 + 4.7) - .5,
       0.0);
     dir = normalize(dir + (d * .16 + drift * .10) * lens * uShapePush);
-    vec3 sky = vec3(.888, .902, .897);
+    vec3 sky = ${UNDERWATER_GLSL};
     vec3 pond = sky * vec3(.90, .93, .93);
     vec3 high = mix(pond, sky, .35);
     vec3 mid = pond * .97;
@@ -428,7 +432,7 @@ const CEILING_GLSL = /* glsl */ `
   // same colour must sit behind the plane wherever it fades or clips away.
   vec3 underwaterBodyColor(vec3 dir) {
     vec3 color = volumeColor(dir);
-    vec3 sky = vec3(.888, .902, .897);
+    vec3 sky = ${UNDERWATER_GLSL};
     vec3 surfaceTone = mix(sky * vec3(.76, .80, .80), sky, .9);
     float nearSurface = 1.0 - smoothstep(.25, 3.5, max(0.0, -cameraPosition.y));
     float skyGradient = smoothstep(-.38, .28, dir.y);
@@ -476,10 +480,10 @@ const waterFragment = /* glsl */ `
     vec2 flow;
     vec3 n = pondSurfaceNormal(p, flow);
     vec3 eye = normalize(cameraPosition - vWorld);
-    vec3 sky = vec3(.888, .902, .897);
+    vec3 sky = ${UNDERWATER_GLSL};
     vec3 above = pondAboveColor(p, pondSurfaceColor(p, flow, n, eye), n, eye);
     above = pondPigment(p, n, eye, above);
-    above += (hash(gl_FragCoord.xy) - .5) * .017;
+    above += (hash(gl_FragCoord.xy) - .5) * T_GRAIN;
     float aboveAlpha = 1.0 - smoothstep(140.0, 400.0, -p.y);
     // Above the crossing the frame is the pond, and nothing else.
     if (cameraPosition.y > .12) {
@@ -509,7 +513,6 @@ const waterFragment = /* glsl */ `
     float horizonBlend = mix(1.0, smoothstep(0.0, .38, up.y), ceilingOn);
     float surfaceVisibility = exp(-dist * hazeRate) * horizonBlend;
     below = mix(underwaterBodyColor(up), below, surfaceVisibility);
-    below += (hash(gl_FragCoord.xy) - .5) * .017;
     // Still the pond as the eye meets the surface; the quieter body only once it is under.
     // The ascent ends below the surface. Keep the underwater treatment until
     // the white handoff; mixing the above-water colour here created a slab.
@@ -547,7 +550,6 @@ const volumeFragment = /* glsl */ `
     vec4 v = uInvProjection * vec4(vNdc, 1.0, 1.0);
     vec3 dir = normalize((uCameraWorld * vec4(v.xyz / v.w, 0.0)).xyz);
     vec3 color = underwaterBodyColor(dir);
-    color += (hash(gl_FragCoord.xy) - .5) * .017;
     gl_FragColor = vec4(color, uUnder);
   }
 `;
@@ -688,7 +690,7 @@ const motesFragment = /* glsl */ `
    angle and fades toward at a distance. Under the water the body's high and
    mid tones; while the form is handled, the paper the water washes to; in the
    air above, the sky. The colour pick reaches them as the water's tint does. */
-const ROOM_SKY = new THREE.Color(0.888, 0.902, 0.897);
+const ROOM_SKY = new THREE.Color(...UNDERWATER);
 const POND_DEEP = ROOM_SKY.clone().multiply(new THREE.Color(0.90, 0.93, 0.93));
 /** The body's high and mid, the same water the volume darkens — the pond's hue, not a stronger teal. */
 const ROOM_WATER_ABOVE = POND_DEEP.clone().lerp(ROOM_SKY, 0.35);
@@ -792,14 +794,14 @@ const touchFragment = /* glsl */ `
     if (uAscentBloom > .001) {
       vec3 glow = finite4(texture2D(tAscentBloom, vUv + shift)).rgb;
       vec3 spill = vec3(1.0) - exp(-glow * (.3 + .5 * uAscentBloom));
-      c.rgb = mix(c.rgb, vec3(.888, .902, .897), spill);
+      c.rgb = mix(c.rgb, ${UNDERWATER_GLSL}, spill);
     }
     // The atmospheric wash begins with the artifact's light, in the water's
-    // grey-green palette. Keep it translucent so the contour survives;
+    // own (cool grey) palette. Keep it translucent so the contour survives;
     // only the last surface handoff takes the scene to full exposure.
     float wash = .32 * (1.0 - exp(-4.0 * pow(uAscentExposure, 2.0)));
     float exposure = mix(wash, 1.0 - exp(-9.0), uAscentHandoff);
-    vec3 atmosphericColor = mix(vec3(.888, .902, .897), white, uAscentHandoff);
+    vec3 atmosphericColor = mix(${UNDERWATER_GLSL}, white, uAscentHandoff);
     c.rgb = mix(c.rgb, atmosphericColor, exposure);
     c.a = mix(c.a, 1.0, exposure);
     gl_FragColor = c;
@@ -814,11 +816,11 @@ function surfaceShader(fragment: string, interior = false) {
       float light = ascentIllumination(vWorld, normalize(vNormalW)) * uAscentRadiance;
       // Transmitted light tints the face toward the surrounding water. Bounded
       // mixing preserves the glass contour instead of clipping it to white.
-      vec3 waterLight = vec3(.888, .902, .897);
+      vec3 waterLight = ${UNDERWATER_GLSL};
       gl_FragColor.rgb = mix(gl_FragColor.rgb, waterLight, 1.0 - exp(-light * .32));
       gl_FragColor.rgb += waterLight * light * .045;
-      ${interior ? "gl_FragColor.rgb += vec3(.888, .902, .897) * ascentInterior(vWorld, normalize(vNormalW));" : ""}
-      gl_FragColor.rgb = mix(gl_FragColor.rgb, vec3(0.890196, 0.917647, 0.913725), uSurfaceLight);
+      ${interior ? `gl_FragColor.rgb += ${UNDERWATER_GLSL} * ascentInterior(vWorld, normalize(vNormalW));` : ""}
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, ${SINK_WASH_GLSL}, uSurfaceLight);
       gl_FragColor.a *= 1.0 - uSurfaceLight;
     }`;
 }
@@ -2385,6 +2387,7 @@ interface PondEntryProps { arrival?: number; active?: boolean; onReady?: () => v
 
 function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport>; pondEntry?: PondEntryProps }) {
   const compact = useCompact();
+  const pondSky = usePondTune().sky;
   // a phone's slider spans the side margins its wrapper keeps
   const sliderFill = compact ? { width: "100%" } : undefined;
   const navigate = useNavigate();
@@ -2967,7 +2970,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   return (
     <main ref={hostRef} style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
       pointerEvents: leaving ? "none" : undefined,
-      background: resume ? SINK_WASH : POND_BACKDROP }}
+      background: resume ? SINK_WASH : pondBackdropCss(pondSky) }}
       onPointerMove={pointerAsHand}
       onPointerLeave={pointerOut}>
       <MemoryPondPage {...pondEntry} active={invitation && (pondEntry?.active ?? true)}
@@ -3299,6 +3302,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             transition: "color 600ms ease" }} />
       )}
       </>}
+      {/* the photo's film look on the vessel (dev): leak, warmth, halation, crossover, bloom */}
+      {FilmDials && !prelude && <Suspense fallback={null}><FilmDials /></Suspense>}
     </main>
   );
 }

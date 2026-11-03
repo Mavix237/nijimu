@@ -3,3 +3,7 @@
 @import './theme.css';
 @import './motion.css';
 @import './responsive.css';
+
+/* DEMO-HIDE-DIALKIT (temporary, for recording a demo): hides every DialKit
+   panel but the studio's (/studio, main[data-studio]). Delete this block to bring them back. */
+body:not(:has([data-studio])) .dialkit-root { display: none !important; }

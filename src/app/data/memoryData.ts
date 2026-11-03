@@ -34,12 +34,11 @@ const HIGHLIGHTS: Record<string, string[]> = {
   "4": ["inside me", "my hand", "was gone", "losing it"],
   "5": ["having edges", "the rectangle", "paying attention", "whole thing"],
   "6": ["three weeks", "wasn't tired", "bothered me", "it started"],
-  "7": ["performing", "long strip", "says sorry", "hide behind", "was true"],
+  "7": ["counting", "held back", "a breath", "feel it pull", "not practice"],
   "8": ["was mine", "forgotten me", "dried flower", "up there"],
   "9": ["an average", "decide alone", "right one", "quiet voice"],
   "10": ["nothing did", "only birthdays", "whole language", "the key"],
-  "11": ["too quiet", "shaking", "standing still", "whoever stops"],
-  "12": ["just voices", "very late", "laughed", "breathing somewhere"],
+  "11": ["too quiet", "shaking", "same breath", "went still", "stays inside"],
   "13": ["separate lives", "a poem", "white space", "same rhythm"],
   "14": ["notice things", "they stopped", "both hands", "out loud"],
   "15": ["whole sky", "your tea", "his hair", "sits still"],
@@ -56,12 +55,11 @@ const FEELINGS: Record<string, { u: number; v: number }> = {
   "4": { u: 0.81, v: 0.55 }, // a door inside — violet
   "5": { u: 0.24, v: 0.3 }, // the window's four o'clock light — pale yellow
   "6": { u: 0.04, v: 0.6 }, // a poster at three in the morning — brick red
-  "7": { u: 0.33, v: 0.55 }, // an apple peeled in one strip — apple green
+  "7": { u: 0.33, v: 0.55 }, // a slow phrase held back at the piano — apple green
   "8": { u: 0.39, v: 0.35 }, // one wall painted pale green — green
   "9": { u: 0.68, v: 0.65 }, // the dark photograph, a quiet voice — slate blue
   "10": { u: 0.61, v: 0.7 }, // a room without the key — grey blue
-  "11": { u: 0.14, v: 0.4 }, // hands, someone standing still — sand
-  "12": { u: 0.75, v: 0.6 }, // late calls across time zones — indigo
+  "11": { u: 0.14, v: 0.4 }, // the lights down, a room gone still — sand
   "13": { u: 0.53, v: 0.5 }, // white space after a stanza — teal
   "14": { u: 0.056, v: 0.35 }, // light on a wall, a cup in both hands — peach
   "15": { u: 0.97, v: 0.55 }, // tea, a haircut in the kitchen — rose
@@ -86,12 +84,11 @@ export const LIFE_EVENTS: MemoryEvent[] = withTranscripts([
   { id: "4", year: "2017", event: "Read a book that changed my life", color: 4 },
   { id: "5", year: "2020", event: "The year everything slowed down", color: 5 },
   { id: "6", year: "2021", event: "Started designing seriously", color: 6 },
-  { id: "7", year: "2021", event: "Wrote something true for the first time", color: 7 },
+  { id: "7", year: "2021", event: "Heard the music, not the practice", color: 7 },
   { id: "8", year: "2022", event: "Left a place I thought I'd stay longer", color: 8 },
   { id: "9", year: "2023", event: "Started learning to trust my own eye", color: 9 },
   { id: "10", year: "2024", event: "A friendship that quietly ended", color: 0 },
-  { id: "11", year: "2024", event: "Showed work I wasn't sure about", color: 1 },
-  { id: "12", year: "2024", event: "Met someone through a screen", color: 2 },
+  { id: "11", year: "2024", event: "My first audiovisual performance", color: 1 },
   { id: "13", year: "2025", event: "Finding the thread between\npoetry, film, and design", color: 3 },
   { id: "14", year: "2025", event: "Found my muse", color: 4 },
   { id: "15", year: "2026", event: "Still figuring out what love means", color: 5 },

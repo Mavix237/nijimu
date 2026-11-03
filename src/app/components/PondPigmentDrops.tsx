@@ -2,21 +2,20 @@ import { useEffect, useMemo, useRef, type RefObject } from "react";
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { POND_PROMPT_PERIOD, POND_THOUGHTS, type PondPromptCue } from "../lib/pondPrompts";
-import { POND_DROP_ANGLE_DEG, POND_DROP_FALL_S, POND_DROP_RADIUS, POND_DROP_FRAGMENT, POND_DROP_SINK_S, POND_DROP_VERTEX,
-  POND_INK_SCALE, POND_INK_SLOTS, inkHang, inkHead,
+import { POND_DROP_FALL_S, POND_DROP_FRAGMENT, POND_DROP_VERTEX,
+  POND_INK_SLOTS, inkHang, inkHead,
   POND_PIGMENTS, dropSpeed, dropTravel, pigmentDeepFor, pigmentFor, pigmentLightFor, pondToneCrossfade,
   type PondPigmentUniforms } from "../lib/pondPigment";
+import { pondTune } from "../lib/pondTune";
 
-/** The way back along the fall, toward where the drops come from, in screen
+/* The way back along the fall, toward where the drops come from, in screen
  * px (y down): the top of the screen turned clockwise by the drop angle
- * (anticlockwise when it is negative). */
-const ANGLE = POND_DROP_ANGLE_DEG * Math.PI / 180;
-const SOURCE = new THREE.Vector2(Math.sin(ANGLE), -Math.cos(ANGLE));
-/** The teardrop's length behind its foot, in outline units, at rest and at most. */
-const LENGTH = 2.6, LENGTH_MAX = 3.2;
-/** How long the eye's "shutter" is open: the drop smears back along its way
- * as far as it travels in this time. Seconds. */
-const SHUTTER_S = .025;
+ * (anticlockwise when it is negative; POND_DROP_ANGLE_DEG, −18). The
+ * teardrop's length behind its foot, in outline units, at rest (2.6) and at
+ * most (that + .6). How long the eye's "shutter" is open (.025 s): the drop
+ * smears back along its way as far as it travels in this time. All read from
+ * pondTune().drops each frame. */
+const SOURCE = new THREE.Vector2(0, -1);
 /** The longest smear, in outline units. */
 const BLUR_MAX = 9;
 
@@ -50,7 +49,7 @@ export function PondPigmentDrops({ waves, cueRef, active, narrow }: {
     uViewport: { value: new THREE.Vector2(1, 1) },
     uDir: { value: SOURCE.clone() },
     uSize: { value: 6 },
-    uLength: { value: LENGTH },
+    uLength: { value: 2.6 },
     uBlur: { value: 0 },
     uSoft: { value: 2 },
     uSeed: { value: 0 },
@@ -73,6 +72,12 @@ export function PondPigmentDrops({ waves, cueRef, active, narrow }: {
   useFrame((_, delta) => {
     const time = waves.uTime.value;
     const cue = cueRef.current;
+    const tune = pondTune();
+    const { opacity, shutter: SHUTTER_S, sinkS: POND_DROP_SINK_S } = tune.drops;
+    const LENGTH = tune.drops.length, LENGTH_MAX = LENGTH + .6;
+    const POND_INK_SCALE = tune.ink.scale;
+    const angle = tune.drops.angle * Math.PI / 180;
+    SOURCE.set(Math.sin(angle), -Math.cos(angle));
     const dt = Math.min(delta, .05);
     waves.uPondLife.value = Math.min(1, waves.uPondLife.value + dt / .6);
     const impact = time - cue.age;
@@ -114,17 +119,17 @@ export function PondPigmentDrops({ waves, cueRef, active, narrow }: {
       const drop = drops.current[k];
       if (!drop) continue;
       const untilImpact = impact + k * POND_PROMPT_PERIOD - time;
-      const falling = active && untilImpact > 0 && untilImpact < POND_DROP_FALL_S;
+      const falling = active && tune.drops.show && untilImpact > 0 && untilImpact < POND_DROP_FALL_S;
       // Once in, the drop is still seen going down to where the ink's head is
       // and coming apart into it.
-      const sinking = active && k === 0 && untilImpact <= 0 && -untilImpact < POND_DROP_SINK_S;
+      const sinking = active && tune.drops.show && k === 0 && untilImpact <= 0 && -untilImpact < POND_DROP_SINK_S;
       drop.visible = falling || sinking;
       if (!falling && !sinking) continue;
       const cycle = cue.cycle + k;
       const { x, z } = placeOf(cycle);
       // Where it lands, on screen, and how large a drop is seen there.
       probe.set(x, 0, z).project(camera);
-      lift.set(x, POND_DROP_RADIUS, z).project(camera);
+      lift.set(x, tune.drops.radius, z).project(camera);
       const ix = (probe.x * .5 + .5) * size.width, iy = (-probe.y * .5 + .5) * size.height;
       const radius = Math.max(3.5, Math.hypot(lift.x - probe.x, lift.y - probe.y) * .5 * size.height * 1.15);
       // Far enough back along the slant that the whole drop starts off screen.
@@ -134,6 +139,7 @@ export function PondPigmentDrops({ waves, cueRef, active, narrow }: {
       const speed = dropSpeed(entry);
       const m = materials[k];
       m.uViewport.value.set(size.width, size.height);
+      m.uDir.value.copy(SOURCE);
       // the drop carries the paint at its deepest, as the vessels' foot band does
       m.uTint.value.copy(pigmentDeepFor(cycle, offset));
       // a little out of focus, a touch more the farther it still has to fall
@@ -146,7 +152,7 @@ export function PondPigmentDrops({ waves, cueRef, active, narrow }: {
         m.uLength.value = Math.min(LENGTH_MAX, LENGTH + speed / Math.max(1, size.height) * .3);
         m.uBlur.value = Math.min(BLUR_MAX, speed * SHUTTER_S / radius);
         m.uSoft.value = soft;
-        m.uOpacity.value = .94;
+        m.uOpacity.value = opacity;
       } else {
         // Seen through the surface where the ink's head is: the same place the
         // shader draws it, down the refracted ray from above it, let hang.
@@ -166,7 +172,7 @@ export function PondPigmentDrops({ waves, cueRef, active, narrow }: {
         m.uLength.value = LENGTH + (.75 - LENGTH) * check;
         m.uBlur.value = Math.min(BLUR_MAX, speed * SHUTTER_S / radius) * Math.exp(-age / .06);
         m.uSoft.value = soft * (1 + 2.5 * s);
-        m.uOpacity.value = .94 * Math.pow(1 - s, 1.6);
+        m.uOpacity.value = opacity * Math.pow(1 - s, 1.6);
       }
       m.uSeed.value = (cycle * 2.7) % 6.28;
     }

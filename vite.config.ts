@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite'
 import path from 'path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
+import basicSsl from '@vitejs/plugin-basic-ssl'
 import { polishApiPlugin } from './server/vite-plugin-polish.mjs'
 import { assessmentApiPlugin } from './server/vite-plugin-assessment.mjs'
 import { transcribeApiPlugin } from './server/vite-plugin-transcribe.mjs'
@@ -11,6 +12,9 @@ import { transcribeApiPlugin } from './server/vite-plugin-transcribe.mjs'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
   const base = (env.VITE_BASE_PATH || '/').trim() || '/'
+  // `pnpm dev:phone`: HTTPS with a self-signed certificate, so a phone on the
+  // same network gets a secure context (crypto.randomUUID, microphone, camera).
+  const phone = process.env.NIJIMU_PHONE === '1'
 
   return {
     base,
@@ -23,6 +27,7 @@ export default defineConfig(({ mode }) => {
       polishApiPlugin({ apiKey: env.ANTHROPIC_API_KEY, model: env.POLISH_MODEL }),
       transcribeApiPlugin({ apiKey: env.OPENAI_API_KEY, model: env.TRANSCRIBE_MODEL }),
       assessmentApiPlugin({ apiKey: env.OPENAI_API_KEY, model: env.ASSESS_MODEL || undefined }),
+      ...(phone ? [basicSsl()] : []),
     ],
     resolve: {
       alias: {
@@ -35,7 +40,7 @@ export default defineConfig(({ mode }) => {
     assetsInclude: ['**/*.svg', '**/*.csv'],
 
     server: {
-      port: 5180,
+      port: phone ? 5181 : 5180,
       strictPort: true,
       // Listen on IPv4 as well as IPv6. Node 17+ otherwise binds [::1] only,
       // so http://127.0.0.1:5180 fails while http://localhost:5180 works.

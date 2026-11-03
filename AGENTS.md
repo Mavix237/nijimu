@@ -4,6 +4,267 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## One paper finish past Enter (2026-11-01)
+
+Everything but the landing wears the gallery's grain and tooth
+(`lib/paperFinish.ts`, `components/PaperFinish.tsx`). The fine grain is
+white noise, one grain per device pixel, ±`PAPER_GRAIN`/2 (.035): the
+gallery's puddle shader adds it (the reference); the pond stage in
+`LandingPage` (pond, recording, transcript, descent, naming) lays it as two
+DOM tiles (white in `plus-lighter`, black over, `FINE_MATCH` .9 measured
+against the gallery: σ ≈ 2.5 levels on both), so the pond's and the
+descent's shaders no longer add their own (pond `grain` 0, which now adds on
+top). The tooth is the gallery panel's `texture` (140 px, soft-light .12),
+read live, so that panel tunes every screen past Enter. Glass panes and the
+phone menu wear both off the landing (`onLanding()`); on the landing they keep
+the landing's grain. Materials (film, ink, washes, glass) keep their own.
+One place to tune it all: the "gallery ground" panel (backdrop grain = the
+fine grain everywhere past Enter, texture = the tooth); the constants are
+in `paperFinish.ts`. Phones (`LIGHT_TIER`) draw it finer and fainter
+(`PHONE`: grain ×.55 at one grain per device pixel to 3×, tooth ×.5 at .7
+of its size; σ ≈ 1.4 on a 3× phone). A way out if it costs too much:
+`?finish=full|lite|off` (kept per device in localStorage `nijimu.finish`,
+`?finish=auto` forgets) — lite is the darker half of the fine grain alone in
+normal blending (one layer, no blend modes, no tooth), off removes the
+finish and the landing's grain too. Unforced, `startFinishWatchdog` (in
+`RootLayout`) steps full → lite → off after three 2 s windows whose median
+frame is over 40 ms, logging it in the console. Headless/software-rendered
+browsers trip it: force `?finish=full` when checking by screenshot.
+To compare by eye (dev), the "gallery ground" panel's `finish` folder sets
+the mode for the visit (`previewFinishMode`; "as is" restores it, and the
+watchdog waits meanwhile) and, in the gallery only, `underVessels` lays the
+finish over the water alone instead of over vessels and words (the descent
+draws its vessel in the water's canvas, so there it stays over all). The fine
+tile now follows the screen's real DPR (no 2× cap, which resampled it on a
+zoomed page), and `PerspectivePond` (naming's pond) renders at `MAX_DPR`, not 1.5.
+The apex vessel's canvas renders denser by its on-screen stretch
+(`VesselArtifact` `pixelScale` = canvas room × library size × the apex swell
+1.08 × focusBoost, up to 1.75 × `MAX_DPR`, 1.4 × on a phone): the seat is
+measured unscaled (offsetSize), so a spiky, large form was drawn at its box's
+size and stretched ~2× by its CSS scale — the jagged edges. Neighbours keep
+`[1, MAX_DPR]`.
+Every seat but the apex fades with its distance along the curve, either
+side (`seats.fadeNear` .1 at the next seat, easing to `seats.fadeFar` .2 by
+the third; `adjustCurveSeat`, on top of `carouselSeat`'s own opacity), tuned
+in the "gallery" panel's seats folder.
+
+## One ramp of grounds (2026-11-01)
+
+`lib/atmosphere.ts` holds every scene's ground in journey order — paper
+(#f4f5f5 → #ecebeb), the gallery's ground (#edecec), the pond, under the
+water (`UNDERWATER`, ≈ #e2e6e5, printed into the shaders as
+`UNDERWATER_GLSL`), the sink wash, the surface light / naming (#f4f6f5).
+The temperature shift is deliberate (warm paper → grey-green water), each
+step small. `landingLook`, `galleryTune`, `pondTune`, `pondCamera`,
+`landingReturn`, `LandingPage`, `PerspectivePond` and the descent read it;
+change a ground there, not in a literal. The pond, which had gone steel-blue
+(near water #b6c3c7), now leans grey-green: sky #eeefef → #e4e8e6 →
+#c6cccb, water #e6e8e8 (was #e7e8e5), natural #d2d9dd (was #e3eae8, now a deeper, cooler foot), shade #d5dadd, warm light #eee8e6; clarity .55, sharpness .92, haze from 36, clouds .132 (near water ≈
+#bac2be). The transcript's foot fades by a mask on the words, not a
+coloured block over the water.
+Under the water leans cooler with it (2026-11-01): `UNDERWATER` [.884,
+.901, .911] ≈ #e1e6e8 (was [.888, .902, .897], grey-green) at the same luma,
+so the pond above, which keeps only its lightness, is unchanged; `SINK_WASH`
+#e4e9ec (was #e3eae9), now also the ascent's last handoff on the glass
+(`SINK_WASH_GLSL`, was a literal). With the sample memory, "record again"
+waits for continue and shows with it; a recording's shows with the words.
+
+## One memory fewer (2026-11-03)
+
+"Met someone through a screen" (id 12) is gone — its event, transcript,
+highlights, feeling, tone, still (12.jpg) and library row. Fifteen curated
+memories remain; ids are not renumbered (13–15 keep theirs). `LIBRARY_SIZE`
+is `LIFE_EVENTS.length`, a still is found by the memory's id (`13.jpg` is id
+13, `memoryPhoto`), and the E-NN shapes are named by id, so nothing after the
+gap shifts. A library kept in /lab/shapes with sixteen rows no longer loads
+(the built-in one is used). Memory 07 is now "Heard the music, not the
+practice" (the piano), in place of "Wrote something true for the first time".
+
+## DialKit panels start folded (2026-11-02)
+
+Every DialKit panel (landing, gallery, pond, naming, film, studio) opens
+folded; a tap on its header opens it. `DIALS_OPEN` in `lib/dialsOpen.ts` is
+the one switch: `?dials=open` opens them expanded, `?dials=closed` folds
+them, kept per device in localStorage `nijimu.dials`; `?dials=auto` forgets.
+The studio is the exception: its two panels open expanded unless
+`?dials=closed` was chosen (`STUDIO_DIALS_OPEN`).
+
+## Vessel studio (2026-11-02)
+
+`/studio` (`src/app/studio/VesselStudio.tsx`, `studioSettings.ts`) is the
+vessel alone, apart from the experience (outside `RootLayout`: no header,
+music or gallery; nothing set there reaches another screen), to tune its 3D
+look and export it. It draws with the gallery's own `VesselArtifact`
+(refraction, draped strip, film look, reflection, sheen, stain), opening on
+`VESSEL_GALLERY_TUNE` and the gallery's room/reflection/sheen. Two DialKit
+panels (`productionEnabled`, persisted as `nijimu-studio*`; DialKit's version
+menu keeps presets): "studio" top left — a gallery memory to load
+(`galleryStateFor`), the form (category, "draw", morph, both superformula
+sets, proportion), photo (stills or upload), glass/sheet/face modes, view,
+frame (aspect, size, offset), backdrop, export — and "vessel" top right, every
+`KNOBS` group from `VesselPreview` (now exported, with `TEXTURES` and
+`FORM_SLIDERS`) plus room, film (`setFilmTune`), colour, reflection, sheen.
+Export: a PNG of the frame at a chosen long side, with the backdrop or
+transparent — the vessel's canvas is re-rendered at that density
+(`VesselArtifact` `dpr`, and `capture`, which copies the next complete frame
+with its reflection) and composed onto the frame; settings as .json
+("import settings…" reads it back); "copy tune diff" puts the keys moved off
+`VESSEL_GALLERY_TUNE` on the clipboard. The studio raises the seat photo
+size (`setSeatPhotoMax` 2400, was fixed at `SEAT_PHOTO_MAX`).
+Two sheet knobs came with it (every vessel; built values as defaults):
+`tornDepth` (× the torn ends' 1.4 mm, `uTorn`/`uTornOn` in `stripTornOutline` —
+a material without them keeps the built tear) and `edgeFade` (the photo's
+window thinning into the stock, mm; was the fixed `SHEET_DEFAULT.edgeFade` 2.5).
+The teeth seen at a fitted strip's sides on a round form were not the tear:
+the cloth settle held every cell at its length against squeezing too, so
+where the strip follows a narrowing wall it buckled into accordion pleats,
+seen edge-on at the silhouette. `gather` (drape; `Drape.gather`, in the build
+key) lets squeezed cells give way instead (still resisting stretch): 1 is
+smooth, .5 still shows faint teeth. 0 as built everywhere but the studio (1).
+Kept vessels: the "studio" panel's "saved" folder (name, save, pick, load,
+delete) keeps every setting with its photo in IndexedDB (`nijimu-studio` /
+`vessels`, `studio/savedVessels.ts`) — the photo as a Blob, fetched from
+whatever it was shown from, back as a data URL — so a kept vessel survives a
+reload and a rebuild. Saving under a name already kept replaces it. The
+downloaded settings .json now carries its photo as data too.
+Tuning a gallery vessel in the studio (2026-11-02): load a memory, tune it,
+"copy for gallery" (source folder) puts that memory's library row on the
+clipboard — form, morph, picture place/size, view, the look keys moved since
+loading (`tune`, a new optional `ShapePlacement` field laid over
+`VESSEL_GALLERY_TUNE` for that vessel alone, in `entrySignature`), its foot
+colour (`tone` → `GALLERY_TUNE_DEFAULT.tones[id]`; a tone's own `ownFoot`
+lets one memory keep its own foot tone) and any change to the stain's shape
+(`footShape`, one for every vessel). It is written into `TUNED` in
+`lib/galleryLibrary.ts`; a library kept in /lab/shapes still wins over it.
+The "gallery colours" panel persists, so its key now carries a hash of
+the code's tones and foot (`COLOR_KEY` in `GalleryDials`): a tone changed in
+code is no longer covered by colours the panel kept before.
+The studio's backdrop now opens on `gallery`: the gallery ground's colour,
+its vignette and the paper finish over the whole page, read live.
+
+## Vessel film panel (2026-11-01)
+
+The warm yellow above and below a vessel's photo is the film look: the light
+leak (`dyeLeak` .72, an orange-cream lobe from one side and a hot spot — on
+the upright strip, above or below the picture), the crossover's cream
+highlights (`split`), the cream bloom and the orange halation. A "vessel
+film" DialKit panel (dev, `components/FilmDials.tsx`; the descent while a
+vessel is in hand, bottom right; naming, bottom left) tunes them for every
+vessel through `lookFor` (`lib/filmTune.ts`): `leak` (× dyeLeak), `cool`
+(how much of the warmth goes — `uFilmCool` in `FILM_LOOK_GLSL`, 0 as built),
+`halation`, `split`, `bloom`. Defaults are the look as built.
+
+## Naming panel (2026-11-01)
+
+Naming has its own DialKit panel (dev only, `components/NamingDials.tsx`,
+mounted lazily by `PondNamingOverlay`), "naming" bottom right: layout (the
+vessel's lift in vh and scale, the words' lift, the field and passage gaps),
+the room the glass reflects, and its light near & clear / far & faded.
+`lib/namingTune.ts` holds `NAMING_TUNE_DEFAULT` (the overlay's former
+constants). The vessel now sits 6vh up (was 3vh), so its crown stands over
+the horizon.
+Naming's water is the recording's: it already shares `POND_TUNE_UNIFORMS`
+(through `createPondPigmentUniforms`), lens and settled camera; since
+2026-11-01 it also dissolves into the sky at 140–400 units as the descent's
+`waterFragment` does (was 600–1400), and the white radial light that
+`MemoryPondPage` laid over naming alone (#fff9 at 48% 24%) is gone.
+The vessel is mirrored on the lake (2026-11-01): the gallery's planar mirror
+(`VesselReflection`, the plane `gap` under the foot) with `water` set, which
+adds one full-canvas pass (`waterReflectFragment` in `VesselArtifact`) over
+the blurred mirror (`smear`: longer down than across). Each pixel finds the
+water under it through naming's pond camera, takes that pond's own wave
+normal (`pondSurfaceNormal`, its uniform objects shared by reference — same
+clock, rings, touches, knobs), bends the reflection by twice the slope
+(`ripple` 1 is physical, `stretch` foreshortens it down the screen) and
+weighs it by the water's Fresnel (`fresnel`: strong toward the horizon, clear
+near the eye); nothing is drawn above the pond's horizon. The pond lends its
+surface while mounted (`lendPondSurface` in `lib/namingWater.ts`); without it
+there is no reflection. The gallery passes no `water` and is unchanged. The
+naming row of actions sits over the taller canvas (zIndex 2).
+Where it lands it falls clear, as the still mirror did: within `contact`
+(share of the canvas) under the waterline the pass blends the sharp mirror
+(kept beside the blurred one) over the soft, unbent (`contactSharp`) and at
+least `contactStrength` whatever the Fresnel. The vessel reports that landing
+point on the screen (`onContact`), and the lake centres on it: a spot in the
+foot's own tone (the glass's foot band, l −.1, chroma ×1.25; the water's
+shade with no colour), laid in as a dye and moved by the waves (`spot*`),
+with the memory's hue spreading round it.
+The memory's colour reaches the lake round the reflection
+(`lib/namingWater.ts`: `NAMING_WATER_UNIFORMS` spread into naming's pond
+material, `namingLake` in its shader): a filter evened to its own luma, so it
+turns the water's hue and leaves its lightness, strongest in an ellipse at
+the seat's foot and thinning out, with a faint `wash` beyond; a grey pick or
+one within `guard` degrees of the water's own hue (`POND_NATURAL`'s) gives
+nothing. PondNamingOverlay writes its place each frame and eases it with the
+vessel's appearance and lift; it is cleared on unmount. Both are folders of
+the "naming" panel ("reflection", "lake"; `NAMING_TUNE_DEFAULT`).
+
+## Pond panel and its light (2026-11-01)
+
+The pond has its own DialKit panels (dev only, `components/PondDials.tsx`,
+mounted by `MemoryPondPage` while the pond is in front): "pond" bottom right
+(sun, surface, waves, rings, sphere, light, sky) and "pond ink" bottom left
+(drops, ink, tone). `lib/pondTune.ts` holds `POND_TUNE_DEFAULT`; its shader
+knobs are shared uniform objects (`POND_TUNE_UNIFORMS`, spread into every
+pond wave uniform set and the cursor sphere's), read in GLSL through
+`TUNE(built, knob)` macros declared at the head of `POND_WAVES_GLSL`, so a
+material without them (uTuneOn 0) keeps its built values. The settled look:
+a softer, wider sun path (sun .7, glow 1.63, sharpness 147, path 8 × 28.5);
+highlights ease toward .975 (`shoulder` .85) instead of clipping; warm light
+(#eee9e8) and cool shade (#d7e0e8) laid back over the grey; the rings' light
+.76 and a little warm; a cooler grey (paper #e4e8e9, natural #e2eced, sky
+#ebeeee → #e1e5e6 → #bfc6c8, `pondBackdropCss`) with a soft glow over the
+horizon where the sun's path begins, so the light in the water has a source.
+The pigment drops, their ink and the water's stain are off by default
+(`drops.show`, `ink.show`, `tone.show`); the prompts' ripples still come.
+The floating questions' words are off by default too (2026-11-02, the
+"pond" panel's `prompts` folder: `words`, `ripples` — ripples kept on).
+
+## Landing opening and look panels (2026-11-01)
+
+Two DialKit panels share a shell at the landing's top left (dev only,
+`LandingDials`). "landing opening" holds the washes' arrival, moved out of
+the "landing" panel's timing (its old "washes arrive" folder is gone):
+order (`LANDING_MOTION.opening.order`: random, light/dark first, centre
+out, edges in, left to right, top to bottom; `scatter` loosens it,
+`inViewFirst` puts what is on screen first), rhythm (`firsts`, `second`,
+`restFrom`, `lastStart`, `pace`, `jitter`), growth (`ease`: smooth, bleed,
+soak, linear; grow/fade times; the free washes' reach) and the shape a
+wash opens with (`roundFrom`; `openWarp`, a wandering edge while it opens,
+`uOpen`/`uOpenWarp` in the wash shader; `openDrift`, opening off-centre and
+flowing over; `wetDeep`, deeper while wet). "replay" runs the opening
+again. "landing look" is `lib/landingLook.ts`: a CSS filter on the
+landing's root, a tint and a pool of light (plus a flat veil) in blend
+modes, eased to neutral with the paper through Enter; it also holds the
+paper under the washes (its own layer: a gradient #f4f5f5 → #ecebeb, was a
+flat #e4e4e6; the gallery's ground is a step under it, #edecec, was #eae9e9,
+and the grounds between — the shared layout's #edecec, the return veil
+`LANDING_PAPER` #efeeee — sit between the two, so Enter and the return cross
+a little rather than jump), the grain (overlay .48), the vignette (#c4b8b5 at .105, was
+black .2). The three ambient lights that drifted under the washes
+(teal, pale cyan, peach) are removed (2026-11-02), landing and Enter alike. Brightness is 1.01; the rest of the
+filter, the tint and the light are neutral; the opening is as built.
+
+## Gallery reflection and sheen (2026-11-01)
+
+Each gallery vessel has a soft mirror image under its foot and a studio sheen
+on its glass. Both are tuned in the "gallery" DialKit shell (folders
+"reflection" and "sheen"; `GalleryTune.reflection`/`.sheen` in
+`lib/galleryTune.ts`) and passed to `VesselArtifact` as `reflection` /
+`sheen`. Naming, export and the labs pass neither, so they are unchanged.
+The reflection repeats the glass and strip, mirrored at `glass.lo - gap` on
+their own layers (3 sheet, 4 glass). It is rendered into its own target,
+blurred (`soft`, CSS px), and laid into the refraction frame before the
+vessel's strip, so the facing glass refracts it too. It fades by
+`uReflectFall` (new in `REFLECT_GLSL`; the lab keeps 1.3). The canvas is
+`1 + room` times taller than its seat and the lens keeps the seat's framing
+(`setViewOffset`). Presses in that extra room are ignored. The first frame
+(the landing's ink outline, `captureInkMask`) is drawn without the reflection
+and cropped to the seat (`data-seat-share`). The sheen is `studioSheen` in
+`GLASS_COMMON_GLSL`, refraction look only: a lobe fixed to the eye (x/y on
+screen, size, softness, rim, tilt), its core colour easing to an edge colour,
+drifting by speed/wander and breathing. With amount 0 it is neutral.
+
 ## Pigment drops on the pond (2026-10-31)
 
 The pond's prompt ripples are no longer spontaneous: each is made by a drop
@@ -177,12 +438,22 @@ scale. Naming and other consumers retain their existing framing. Run
 `node scripts/check-vessel-framing.mjs` for projection checks across shapes,
 aspect ratios, library sizes and orbit angles.
 
-The capped gallery's centre is enlarged 3%, easing out before adjacent seats.
-The first right seat is now about 4% larger than the centre; the second is
-reduced a further 5% (`adjustCurveSeat` in
-`VesselGalleryPreview.tsx`). The two right seats move
-inward by 3% and 5% of screen width; smooth offset weights preserve scrolling
-and the phone's additional clearance. The view toggle imports the root
+The capped gallery's centre is enlarged 6%, easing out before adjacent seats.
+The first newer seat is 13% smaller and the second 45% (`adjustCurveSeat` in
+`VesselGalleryPreview.tsx`), stepped out by 2% / back in by 2.5% of the width
+and down by 4.5% / 5% of the height; smooth offset weights preserve scrolling and the
+phone's additional clearance. These, the vessels' foot stain (gallery strength
+.21, foot .47, flash .85, one fixed tone per curated memory), the room
+(#eae7e6 / white) and the gallery's timings live in `lib/galleryTune.ts`; in
+development `GalleryDials` tunes them live, in three separate DialKit shells
+while the gallery is in front (`DialRoot`'s `panels` filter is our pnpm patch,
+`patches/dialkit@2.0.2.patch`): "gallery" bottom right, "gallery colours"
+bottom left, "gallery ground" top left — the water's still colour, grain (and
+its cell size), paper fibre and vignette (optional `PUDDLE_TUNING` fields read
+by the puddle's render and dive passes; absent = as built), a noise texture and
+tint laid over the whole gallery in a blend mode, and a CSS filter on
+`PuddleScene`'s root (none while neutral). The landing → gallery ink takes each
+vessel's tuned stain and foot (`galleryVesselTones`). The view toggle imports the root
 `constellation icon.svg` and `timeline icon.svg` directly, fitting each within
 14.2px (the create icon's visible extent) while preserving the SVG proportions.
 Its hover labels use two centered lines: "constellation / view" and "timeline / view".
@@ -1740,7 +2011,7 @@ nijimu/
 │   │   ├── archive/                # unused former record-loop pages
 │   │   ├── hooks/                  # reusable behavior (see §7)
 │   │   ├── lib/                    # pure/shared modules (see §6)
-│   │   └── data/memoryData.ts      # the 16 curated demo memories + color indices
+│   │   └── data/memoryData.ts      # the 15 curated demo memories + color indices
 │   ├── styles/                     # global CSS, fonts, tokens
 │   ├── assets/fonts/               # self-hosted Exposure Trial .otf files
 │   └── imports/                    # Figma-export raw SVG/asset files (9 kept, still referenced)
@@ -1910,7 +2181,7 @@ environment variables for production.
 3. **Guest-session persistence.** User-made memories use tab-scoped sessionStorage
    (`lib/memoryStore.ts`) and survive refreshes during this visit. Store the complete
    artifact and photo; do not claim success when browser storage fails. There is no
-   permanent or public archive. The 16 curated memories in `data/memoryData.ts`
+   permanent or public archive. The 15 curated memories in `data/memoryData.ts`
    remain available alongside the guest’s saved memories.
 
 4. **The soundtrack is one player outside React** (`lib/soundtrack.ts`):

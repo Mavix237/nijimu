@@ -7,6 +7,7 @@
   "scripts": {
     "build": "vite build && node scripts/copy-404.mjs",
     "dev": "vite",
+    "dev:phone": "NIJIMU_PHONE=1 vite",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -25,6 +26,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@types/three": "0.183.1",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "4.7.0",
     "dialkit": "2.0.2",
     "motion": "14.3.0",

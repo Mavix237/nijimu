@@ -1,3 +1,4 @@
+import { filmTune } from "../lib/filmTune";
 import { oklchToHex } from "../lib/oklch";
 import { MEMORY_STAIN } from "../lib/vesselTint";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
@@ -106,10 +107,14 @@ export interface VesselTune {
   // sheet
   inset: number; arc: number; band: number; lift: number; foldScale: number; stock: number;
   stockThick: number; stockThin: number; wear: number; backFace: number; holeRim: number;
+  /** The photo's window fading into the stock, mm (2.5 as built), and the torn ends' depth (× 1.4 mm). */
+  edgeFade: number; tornDepth: number;
   holeSize: number; holeWidth: number; holeFade: number;
   // drape (the second sheet: its own cloth, hung from the wall)
   sheetSize: number; anchorAngle: number; anchorHeight: number; tilt: number; contact: number;
   sag: number; peel: number; curl: number; twist: number; gap: number; soft: number;
+  /** The cloth gathers where the wall pushes it in rather than buckling (Drape.gather; 0 as built). */
+  gather: number;
   // feel (the draped sheet's material: gauze or soaked paper rather than film)
   sheer: number; softRim: number; sheen: number; gloss: number; grain: number;
   // dye
@@ -130,6 +135,14 @@ export interface VesselTune {
      (strength, crispness). The naming page and its card turn them on; a tune that
      leaves them at 0 keeps the glass as it was. */
   tintFill: number; tintFillSoft: number; tintFillChroma: number; whiteLight: number; whiteSharp: number;
+  /* Optional (the gallery's dev panel): the stain's shape up the glass — the deep
+     foot band's top and blend, and where the tone thins away (0–1 of the height,
+     .03 / .16 / .5 when absent) — and the foot's tone: below the pick by DeepL in
+     lightness, its chroma × DeepC (.06 / 1.1), unless the foot's own tone is given. */
+  memoryTintFootTop?: number; memoryTintFootBlend?: number; memoryTintReach?: number;
+  memoryTintDeepL?: number; memoryTintDeepC?: number;
+  /** The foot's own tone (OKLCH), in place of the one drawn from the pick, when its lightness is given. */
+  memoryTintFootLight?: number; memoryTintFootChroma?: number; memoryTintFootHue?: number;
   // light
   keyAzimuth: number; keyElevation: number; keyIntensity: number;
   // two catches of the room, sliding slowly over the glass
@@ -177,9 +190,10 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   frostPatches: 2, frostSize: 1.25, frostStrength: unitParam("frost", GLASS_MODE === "refract" ? 0.15 : 0.4), rim: 0.38, thickness: 0.3,
   inset: 0.92, arc: 211, band: 1.2, lift: 0.048, foldScale: 1.7, stock: 0,
   stockThick: 0.6, stockThin: 0.4, wear: 1.16, backFace: 0.44, holeRim: 0.55,
+  edgeFade: 2.5, tornDepth: 1,
   holeSize: 1, holeWidth: 1, holeFade: 0,
   sheetSize: 2.26, anchorAngle: 180, anchorHeight: 1.0, tilt: 2, contact: 30.5,
-  sag: 21, peel: 69, curl: 0.35, twist: 15, gap: 0.03, soft: 0.7,
+  sag: 21, peel: 69, curl: 0.35, twist: 15, gap: 0.03, soft: 0.7, gather: 0,
   sheer: 0.92, softRim: 0.2, sheen: 0.31, gloss: 0.43, grain: 0.04,
   dyeLift: 0.06, dyeContrast: 0.96, dyeShoulder: 0.5, dyeSaturation: 0.9, dyeGrain: 0.03,
   dyeSoft: 0.45, dyeExposure: 0.01, dyeLeak: 0.72, photoOpacity: 0.83, bleed: 0.53,
@@ -322,12 +336,15 @@ export const airFor = (t: VesselTune, mode: GlassMode, room: Room) => airOf(back
     photo blur, the tone fades with the wash. */
 export function lookFor(t: VesselTune): FilmLook {
   const blur = Math.min(1, (t.haze * t.hazePhoto) / 2), fade = t.haze * t.hazeTone;
+  // the "vessel film" panel's settling (lib/filmTune.ts); as built until it is moved
+  const film = filmTune();
   return {
     ...FILM_LOOK_DEFAULT,
-    bloom: 0.3 + t.haze * 0.3, halation: 0.1, mottle: 0.25, vignette: 0.1,
+    bloom: (0.3 + t.haze * 0.3) * film.bloom, halation: film.halation, mottle: 0.25, vignette: 0.1,
+    split: film.split, cool: film.cool,
     lift: t.dyeLift + fade * 0.1, contrast: t.dyeContrast * (1 - fade * 0.35), shoulder: t.dyeShoulder,
     saturation: t.dyeSaturation * (1 - fade * 0.4),
-    grain: t.dyeGrain, soft: t.dyeSoft + (1 - t.dyeSoft) * blur, exposure: t.dyeExposure, leak: t.dyeLeak,
+    grain: t.dyeGrain, soft: t.dyeSoft + (1 - t.dyeSoft) * blur, exposure: t.dyeExposure, leak: t.dyeLeak * film.leak,
   };
 }
 
@@ -512,6 +529,10 @@ const v3turn = (v: V3, axis: V3, angle: number): V3 => {
 export interface Drape {
   sheetSize: number; anchorAngle: number; anchorHeight: number; tilt: number; contact: number;
   sag: number; peel: number; curl: number; twist: number; gap: number; soft: number;
+  /** How far the cloth may gather (shorten) where the wall pushes it in, rather than keep its length
+      and buckle — the accordion pleats a strip fitted to a round form shows edge-on at its sides as
+      teeth. 0 as built. */
+  gather?: number;
 }
 
 /**
@@ -693,12 +714,14 @@ export function buildDrapedSheet(glass: Glass, inset: number, d: Drape): Sheet {
   const soft = Math.min(1, Math.max(0, d.soft));
   const lambda = 0.6 * soft, mu = -(lambda + 0.03 * soft);
   const spread = 1 + Math.round(soft * 3);
+  // squeezed cells give way by this much instead of pushing back (they still resist stretching)
+  const give = 1 - Math.min(1, Math.max(0, d.gather ?? 0));
   hold(1, spread);
   for (let it = 0; it < 24; it++) {
     for (const [p, q, rest] of edges) {
       const dx = pos[q * 3] - pos[p * 3], dy = pos[q * 3 + 1] - pos[p * 3 + 1], dz = pos[q * 3 + 2] - pos[p * 3 + 2];
       const len = Math.hypot(dx, dy, dz) || 1e-6;
-      const c = ((len - rest) / len) * 0.4 * 0.5;
+      const c = ((len - rest) / len) * 0.4 * 0.5 * (len < rest ? give : 1);
       pos[p * 3] += dx * c; pos[p * 3 + 1] += dy * c; pos[p * 3 + 2] += dz * c;
       pos[q * 3] -= dx * c; pos[q * 3 + 1] -= dy * c; pos[q * 3 + 2] -= dz * c;
     }
@@ -742,13 +765,15 @@ export function buildDrapedSheet(glass: Glass, inset: number, d: Drape): Sheet {
    depth below the table (uReflect is its strength, which may be 0 once the eye
    has gone under the table; the thing itself carries −1). uReveal is how much
    of the vessel is there at all — 1 here and in the gallery; the descent brings
-   it up out of the water. */
+   it up out of the water. uReflectFall is the depth it is gone by (1.3 in the
+   lab; the gallery's reflection tunes it). */
 const REFLECT_GLSL = /* glsl */ `
   uniform float uReflect;
   uniform float uGroundY;
   uniform float uReveal;
+  uniform float uReflectFall;
   float reflectFade(vec3 world) {
-    return (uReflect >= 0.0 ? uReflect * (1.0 - smoothstep(0.0, 1.3, uGroundY - world.y)) : 1.0) * uReveal;
+    return (uReflect >= 0.0 ? uReflect * (1.0 - smoothstep(0.0, uReflectFall, uGroundY - world.y)) : 1.0) * uReveal;
   }
 `;
 
@@ -913,6 +938,40 @@ export const glassVertex = /* glsl */ `
    three soft patches (breath on a cold window, placed by the seed). */
 const GLASS_COMMON_GLSL = /* glsl */ `
   ${REFLECT_GLSL}
+  /* A studio sheen on the facing wall (the gallery's knob; 0 everywhere else):
+     a soft lobe of light fixed to the eye, not the form, so the vessel turns
+     under it. uSheenAt: x/y on the screen (−1…1) where it sits; uSheenShape:
+     x size (radians), y softness (share of the size the gradient spans), z how
+     much it gathers toward the silhouette, w how far it wanders; uSheenMotion:
+     x speed, y breath (brightness swelling), z the shape's tilt (radians). The
+     core is uSheenColor, easing to uSheenEdge at its rim. */
+  uniform float uSheen0;
+  uniform vec3 uSheenColor;
+  uniform vec3 uSheenEdge;
+  uniform vec2 uSheenAt;
+  uniform vec4 uSheenShape;
+  uniform vec3 uSheenMotion;
+  uniform float uSheenTime;
+  vec4 studioSheen(vec3 nWorld, float facing) {
+    if (uSheen0 <= 0.0) return vec4(0.0);
+    vec3 nv = normalize((viewMatrix * vec4(nWorld, 0.0)).xyz);
+    float t = uSheenTime * uSheenMotion.x;
+    vec2 at = uSheenAt + uSheenShape.w * vec2(sin(t * .71) + .4 * sin(t * 1.93 + 1.3), cos(t * .53) * .8 + .3 * sin(t * 1.37));
+    // the lobe on the screen: where the normal points, against where the light sits, stretched by the tilt
+    vec2 d = nv.xy - clamp(at, -1.5, 1.5) * .85;
+    float c = cos(uSheenMotion.z), s = sin(uSheenMotion.z);
+    d = vec2(c * d.x + s * d.y, -s * d.x + c * d.y);
+    d.y *= 1.6;
+    float r = length(d);
+    float size = max(.02, uSheenShape.x);
+    float soft = clamp(uSheenShape.y, .01, 1.0);
+    float lobe = 1.0 - smoothstep(size * (1.0 - soft), size * (1.0 + soft * .6), r);
+    lobe *= mix(1.0, smoothstep(.0, .9, 1.0 - facing), uSheenShape.z);
+    float breath = 1.0 + uSheenMotion.y * .5 * sin(uSheenTime * 1.1 + 0.7);
+    float k = clamp(lobe * uSheen0 * breath, 0.0, 1.5);
+    vec3 tone = mix(uSheenEdge, uSheenColor, smoothstep(0.0, 1.0, lobe));
+    return vec4(tone, k);
+  }
   uniform vec3 uKey;
   uniform float uKeyIntensity;
   uniform float uRim;
@@ -927,6 +986,9 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform vec2 uTintSpan;
   uniform vec3 uMemoryTintDeep;
   uniform float uMemoryTintDepth;
+  // the stain's shape up the glass: x where the deep foot band holds to, y where it
+  // has blended into the tone, z where the tone has thinned to nothing (0–1 of the height)
+  uniform vec3 uTintBand;
   uniform vec3 uPatch[3];
   /* distance (each already scaled by the haze): the view through the glass smeared
      further, the rim lines and the gathering of alpha at the silhouette letting go,
@@ -1233,11 +1295,11 @@ const GLASS_COMMON_GLSL = /* glsl */ `
     return clamp((vModel.y - uTintSpan.x) / max(1e-3, uTintSpan.y - uTintSpan.x), 0.0, 1.0);
   }
   float tintRise() {
-    return clamp((.5 - tintUp()) / .47, 0.0, 1.0);
+    return clamp((uTintBand.z - tintUp()) / max(1e-3, uTintBand.z - uTintBand.x), 0.0, 1.0);
   }
   float tintFoot() {
     if (uMemoryTintAmount <= 0.0) return 0.0;
-    return (1.0 - smoothstep(.03, .16, tintUp())) * uMemoryTintDepth;
+    return (1.0 - smoothstep(uTintBand.x, max(uTintBand.x + 1e-3, uTintBand.y), tintUp())) * uMemoryTintDepth;
   }
   float tintAssert() {
     if (uMemoryTintAmount <= 0.0) return 0.0;
@@ -1498,6 +1560,10 @@ export const glassRefractFragment = /* glsl */ `
     float glow = glowAt(1.0 - g, n, 0.0) * (1.0 - back);
     color = mix(color, glowColor(), clamp(glow * .6, 0.0, 1.0));
     alpha += glow * .4;
+    // the studio sheen, on the facing wall only: laid on as light, and it asserts the glass under it
+    vec4 sheen = studioSheen(n, facing) * (1.0 - back);
+    color = mix(color, sheen.rgb, clamp(sheen.a, 0.0, 1.0));
+    alpha += sheen.a * .7;
     gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0) * reflectFade(vWorld));
   }
 `;
@@ -1742,6 +1808,8 @@ export function createSheetUniformSet(edgePrint: THREE.Texture) {
     uArc: { value: 1 },
     uYScale: { value: 1 },
     uWear: { value: 1 },
+    uTorn: { value: 1 },
+    uTornOn: { value: 1 },
     uBackFace: { value: 1 },
     uBleed: { value: 0 },
     uMmAttr: { value: 0 },
@@ -1756,6 +1824,7 @@ export function createSheetUniformSet(edgePrint: THREE.Texture) {
     uReflect: { value: 0 },
     uGroundY: { value: 0 },
     uReveal: { value: 1 },
+    uReflectFall: { value: 1.3 },
     uDevelop: { value: 1.45 },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
@@ -1794,11 +1863,20 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uReflect: { value: 0 },
     uGroundY: { value: 0 },
     uReveal: { value: 1 },
+    uReflectFall: { value: 1.3 },
+    uSheen0: { value: 0 },
+    uSheenColor: { value: new THREE.Color(1, 1, 1) },
+    uSheenEdge: { value: new THREE.Color(1, 1, 1) },
+    uSheenAt: { value: new THREE.Vector2(-.5, .5) },
+    uSheenShape: { value: new THREE.Vector4(.5, .5, 0, 0) },
+    uSheenMotion: { value: new THREE.Vector3(0, 0, 0) },
+    uSheenTime: { value: 0 },
     uMemoryTint: { value: new THREE.Color("#ffffff") },
     uMemoryTintAmount: { value: 0 },
     uTintSpan: { value: new THREE.Vector2(-1, 1) },
     uMemoryTintDeep: { value: new THREE.Color("#ffffff") },
     uMemoryTintDepth: { value: 0 },
+    uTintBand: { value: new THREE.Vector3(.03, .16, .5) },
     uHazePhoto: { value: 0 },
     uHazeEdge: { value: 0 },
     uHazeWash: { value: 0 },
@@ -1881,6 +1959,8 @@ export function writeSheetUniforms(u: SheetUniformSet, w: SheetWrite) {
   u.uArc.value = sheet.arc;
   u.uYScale.value = sheet.yScale;
   u.uWear.value = tune.wear / 1.6;
+  u.uTorn.value = tune.tornDepth ?? 1;
+  u.uEdgeFade.value = tune.edgeFade ?? 2.5;
   u.uBackFace.value = tune.backFace;
   u.uBleed.value = tune.bleed;
   u.uMmAttr.value = sheet.mmAttr ? 1 : 0;
@@ -1957,11 +2037,15 @@ export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   u.uWhiteSharp.value = tune.whiteSharp ?? VESSEL_TUNE_DEFAULT.whiteSharp;
   u.uTintSpan.value.set(w.span.lo, w.span.hi);
   u.uMemoryTintDepth.value = tune.memoryTintDepth ?? 0;
+  u.uTintBand.value.set(tune.memoryTintFootTop ?? .03, tune.memoryTintFootBlend ?? .16, tune.memoryTintReach ?? .5);
   // the picked tone, and the same tone a little deeper for the band at the foot —
   // about as deep as a landing wash's own deep edge, not past it
   const tone = { l: tune.memoryTintLight ?? .66, c: tune.memoryTintChroma ?? 0, h: tune.memoryTintHue ?? 0 };
   u.uMemoryTint.value.set(oklchToHex(tone));
-  u.uMemoryTintDeep.value.set(oklchToHex({ l: Math.max(.2, tone.l - .06), c: Math.min(.2, tone.c * 1.1), h: tone.h }));
+  const deep = tune.memoryTintFootLight !== undefined
+    ? oklchToHex({ l: tune.memoryTintFootLight, c: tune.memoryTintFootChroma ?? 0, h: tune.memoryTintFootHue ?? 0 })
+    : oklchToHex({ l: Math.max(.2, tone.l - (tune.memoryTintDeepL ?? .06)), c: Math.min(.2, tone.c * (tune.memoryTintDeepC ?? 1.1)), h: tone.h });
+  u.uMemoryTintDeep.value.set(deep);
   u.uHazePhoto.value = tune.haze * tune.hazePhoto;
   u.uHazeEdge.value = tune.haze * tune.hazeEdge;
   u.uHazeWash.value = tune.haze * tune.hazeWash;
@@ -2211,11 +2295,11 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
   const glass = useMemo(() => buildGlass(form, morph), [form, morph]);
   useEffect(() => () => glass.geometry.dispose(), [glass]);
   const { inset, arc, band, lift, foldScale } = tune;
-  const { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft } = tune;
+  const { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather } = tune;
   const sheet = useMemo(() => sheetMode === "draped"
-    ? buildDrapedSheet(glass, inset, { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft })
+    ? buildDrapedSheet(glass, inset, { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather })
     : buildSheet(glass, inset, arc, band, lift, foldScale, seed),
-  [glass, sheetMode, inset, arc, band, lift, foldScale, seed, sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft]);
+  [glass, sheetMode, inset, arc, band, lift, foldScale, seed, sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather]);
   useEffect(() => () => sheet.geometry.dispose(), [sheet]);
   const groundY = glass.lo - 0.02;
   const radius = (glass.hi - glass.lo) * 0.5;
@@ -2328,11 +2412,11 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
 
 /* ───────── the panel ───────── */
 
-interface Knob { key: keyof VesselTune; label: string; min: number; max: number; step: number; only?: SheetMode }
+export interface Knob { key: keyof VesselTune; label: string; min: number; max: number; step: number; only?: SheetMode }
 /** The glass's surface textures, by `texKind` — the order `texHeight` reads them in. */
-const TEXTURES = ["clear", "satin", "sandblast", "brushed", "ripple", "hammered"] as const;
+export const TEXTURES = ["clear", "satin", "sandblast", "brushed", "ripple", "hammered"] as const;
 
-const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
+export const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
   // the form itself, as the shape step has it: a category, a deviation inside it, and how far it has grown from its sphere
   { group: "form", knobs: [
     { key: "morph", label: "grown from the sphere  (the shape step's morph)", min: 0, max: 1, step: 0.01 },
@@ -2404,6 +2488,8 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "stockThick", label: "stock alpha  thick", min: 0.2, max: 1, step: 0.01 },
     { key: "stockThin", label: "stock alpha  thin", min: 0.1, max: 0.95, step: 0.01 },
     { key: "wear", label: "edge wear  mm", min: 0.05, max: 1.6, step: 0.01 },
+    { key: "tornDepth", label: "torn ends  (× 1.4 mm; 0 is a clean cut)", min: 0, max: 4, step: 0.01 },
+    { key: "edgeFade", label: "photo edge fade  mm  (the picture thins into the stock)", min: 0, max: 10, step: 0.1 },
     { key: "holeSize", label: "perforations  size  (0 is none)", min: 0, max: 1, step: 0.01 },
     { key: "holeWidth", label: "perforations  width", min: 0, max: 1, step: 0.01 },
     { key: "holeFade", label: "perforations  fade  (1 is a mark, not a cut)", min: 0, max: 1, step: 0.01 },
@@ -2423,6 +2509,7 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "twist", label: "twist °", min: -90, max: 90, step: 1 },
     { key: "gap", label: "air from the wall", min: 0, max: 0.15, step: 0.002 },
     { key: "soft", label: "softness  (0 is crisp)", min: 0, max: 1, step: 0.01 },
+    { key: "gather", label: "gathers, not pleats  (0 buckles where the wall narrows)", min: 0, max: 1, step: 0.01 },
   ] },
   { group: "feel", only: "draped", knobs: [
     { key: "sheer", label: "sheer  (how much shows through)", min: 0.3, max: 1, step: 0.01 },
@@ -2494,7 +2581,7 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
 ];
 
 /** m is linear; the exponents span orders of magnitude, so they ride a log slider. */
-const FORM_SLIDERS: { key: keyof SuperParams; label: string; min: number; max: number; step?: number; log?: boolean }[] = [
+export const FORM_SLIDERS: { key: keyof SuperParams; label: string; min: number; max: number; step?: number; log?: boolean }[] = [
   { key: "m", label: "m  symmetry", min: 0, max: 24, step: 0.05 },
   { key: "n1", label: "n1  pinch", min: 0.1, max: 60, log: true },
   { key: "n2", label: "n2  one half", min: 0.1, max: 60, log: true },

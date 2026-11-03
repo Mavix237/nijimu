@@ -13,7 +13,8 @@ import { transcriptCharacters, transcriptTypingDelay, transcriptTypingPace } fro
 import type { VoiceRippleSpot } from "../lib/voicePeaks";
 
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
-const POND_FADE = "rgba(226, 230, 226, 0.88)";
+/** The foot of a long transcript, thinned to nothing over the last 72–120px (20% of it already clear). */
+const TRANSCRIPT_FADE_MASK = "linear-gradient(to bottom, #000 calc(100% - clamp(72px, 12vh, 120px)), rgba(0,0,0,.12) calc(100% - clamp(72px, 12vh, 120px) * .2), transparent)";
 const TRANSCRIBING_SPOT = { x: .5, y: .81, strength: .7, soft: true };
 
 interface PuddleTranscriptState {
@@ -307,6 +308,9 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                 textAlign: "center",
                 position: "relative",
                 zIndex: 0,
+                /* The words thin out at the foot themselves, over whatever
+                   water is behind them (no colour laid over it to match). */
+                ...(showBottomFade ? { maskImage: TRANSCRIPT_FADE_MASK, WebkitMaskImage: TRANSCRIPT_FADE_MASK } : {}),
               }}
             >
               {isTyping && <span className="sr-only">{transcript}</span>}
@@ -332,33 +336,11 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                   </span>
                 );
               })}
-
-              {showBottomFade && (
-                <div
-                  style={{
-                    position: "sticky",
-                    bottom: 0,
-                    height: 0,
-                    zIndex: 2,
-                    pointerEvents: "none",
-                  }}
-                >
-                  <div
-                    style={{
-                      position: "absolute",
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: "clamp(72px, 12vh, 120px)",
-                      background: `linear-gradient(to top, ${POND_FADE} 20%, rgba(226, 230, 226, 0) 100%)`,
-                    }}
-                  />
-                </div>
-              )}
             </div>
           </div>
         </div>
-        {/* "record again" is there as soon as the words are; continue waits for the printout (a click skips it) */}
+        {/* "record again" is there as soon as a recording's words are; continue waits for the printout (a click skips it).
+            The sample (no recording behind it) shows the two together, once the printout is nearly through. */}
         {(!awaitingTranscript || transcribeError) && (
           <div
             style={{
@@ -382,7 +364,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                 <TextButton
                   label="record again"
                   onClick={goToRecord}
-                  style={{ width: "9em", justifyContent: "center" }}
+                  style={{ width: "9em", justifyContent: "center", visibility: transcriptionId || pairReady ? "visible" : "hidden" }}
                 />
                 <PillButton
                   label="continue"

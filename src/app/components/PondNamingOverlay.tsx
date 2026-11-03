@@ -1,10 +1,13 @@
-import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type RefObject } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type RefObject } from "react";
 import { useNavigate } from "react-router";
 import { carouselFrame } from "../lib/carouselLayout";
 import { surfaceReturnBlurAt } from "../lib/ascentLight";
 import { POND_SINK, SINK_WASH, SURFACE_LIGHT, SURFACE_LIGHT_OUT_MS, pondSinkWash } from "../lib/pondCamera";
 import { DESCENT_STEP_PATHS } from "../lib/routes";
-import { VesselArtifact, vesselCanvasScale } from "../lab/VesselArtifact";
+import { VesselArtifact, vesselCanvasScale, type VesselReflection } from "../lab/VesselArtifact";
+import { pondTune } from "../lib/pondTune";
+import { clearLake, fadeLake, onPondSurface, pondSurfaceShare, writeLakeColor, writeLakePlace } from "../lib/namingWater";
+import type { Oklch } from "../lib/oklch";
 import { DISTANCE_FAR } from "../lab/VesselPreview";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { draftArtifactOf, resumeColorState } from "../lib/namingDraft";
@@ -17,6 +20,7 @@ import { useCompact } from "../hooks/useCompact";
 import { useNamingTune, withNamingLights, type NamingLightTune } from "../lib/namingTune";
 
 const NamingDials = import.meta.env.DEV ? lazy(() => import("./NamingDials")) : null;
+const FilmDials = import.meta.env.DEV ? lazy(() => import("./FilmDials")) : null;
 import {
   useNamingRim,
   type NameFlowState,
@@ -137,6 +141,28 @@ export function PondNamingOverlay({
   const namingLight = useMemo(() => namingLightAt(vessel.tune.haze, tune.light, tune.lightFar), [vessel, tune.light, tune.lightFar]);
   const room = tune.room;
   const lit = useMemo(() => withNamingLights({ ...vessel.tune, ...namingLight }), [vessel, namingLight]);
+  /** The vessel mirrored on the lake: the gallery's mirror, laid on moving water in the pond's own colour. */
+  // the pond under it lends its surface (lib/namingWater.ts); until it has, there is no reflection
+  const surface = useSyncExternalStore(onPondSurface, pondSurfaceShare, pondSurfaceShare);
+  const reflection = useMemo<VesselReflection | undefined>(() => {
+    if (!surface) return undefined;
+    const r = tune.reflection;
+    return {
+      strength: r.strength, fall: r.fall, gap: r.gap, soft: r.soft, room: r.room,
+      water: {
+        smear: r.smear, ripple: r.ripple, stretch: r.stretch, fresnel: r.fresnel,
+        tint: r.tint, darken: r.darken, color: pondTune().surface.paper, surface,
+        contact: r.contact, contactSharp: r.contactSharp, contactStrength: r.contactStrength,
+        onContact: (x, y) => { contactRef.current = { x, y }; },
+      },
+    };
+  }, [tune.reflection, surface]);
+  /** Where the reflection lands on the screen, as the vessel reports it. */
+  const contactRef = useRef<{ x: number; y: number } | null>(null);
+  /** The memory's colour, if it was given one: it reaches the lake round the reflection (lib/namingWater.ts). */
+  const pick = useMemo<Oklch | null>(() => vessel.tune.memoryTintAmount > 0
+    ? { l: vessel.tune.memoryTintLight, c: vessel.tune.memoryTintChroma, h: vessel.tune.memoryTintHue } : null, [vessel]);
+  const seatRef = useRef<HTMLDivElement>(null);
   /** Where the memory is (1 = below its seat, in the water; 0 = in its seat) and how far it has appeared. */
   const liftRef = useRef(0);
   const appearRef = useRef(rising ? 0 : 1);
@@ -170,6 +196,23 @@ export function PondNamingOverlay({
     el.style.backdropFilter = filter;
     el.style.setProperty("-webkit-backdrop-filter", filter);
   };
+
+  // The lake round the reflection: its colour, and where the seat is on the
+  // screen each frame (it lifts and settles), easing in with the vessel and
+  // out as it goes back under; gone with the step.
+  useEffect(() => {
+    const lake = tune.lake;
+    let frame = 0;
+    const tick = () => {
+      const seat = seatRef.current;
+      writeLakeColor(pick, lake);
+      fadeLake(clamp01(appearRef.current) * (1 - clamp01(liftRef.current)));
+      if (seat) writeLakePlace(seat.getBoundingClientRect(), contactRef.current, window.innerWidth, window.innerHeight, lake);
+      frame = requestAnimationFrame(tick);
+    };
+    tick();
+    return () => { cancelAnimationFrame(frame); clearLake(); };
+  }, [pick, tune.lake]);
 
   // The heading row stays put. Its fields stop short of the transcript
   // and vessel stack, so editing never shifts the scene.
@@ -283,6 +326,7 @@ export function PondNamingOverlay({
   return (
     <div className="absolute inset-0 select-none" style={{ zIndex: 30, pointerEvents: "none" }}>
       {NamingDials && <div style={{ pointerEvents: "auto" }}><Suspense fallback={null}><NamingDials /></Suspense></div>}
+      {FilmDials && <div style={{ pointerEvents: "auto" }}><Suspense fallback={null}><FilmDials position="bottom-left" /></Suspense></div>}
       {/* The light the ascent ended in; the step opens out of it. */}
       {rising && <div ref={lightRef} aria-hidden
         style={{ position: "fixed", inset: 0, zIndex: 2, pointerEvents: "none", background: SURFACE_LIGHT, opacity: 1 }} />}
@@ -339,7 +383,7 @@ export function PondNamingOverlay({
           zIndex: 1,
         }}
       >
-        <div style={{ position: "absolute", inset: `${(1 - canvasRoom) * 50}%` }}>
+        <div ref={seatRef} style={{ position: "absolute", inset: `${(1 - canvasRoom) * 50}%` }}>
           <VesselArtifact
             cacheKey={`${session.draftId}|naming|${formKey(vessel.form)}|${vessel.tune.morph}`}
             form={vessel.form} morph={vessel.tune.morph}
@@ -349,6 +393,7 @@ export function PondNamingOverlay({
             sheetSize={vessel.tune.sheetSize}
             onReady={() => { vesselReady.current = true; }}
             focused still={false} frameloop="always"
+            reflection={reflection}
             onPick={openWords}
           />
         </div>
@@ -357,7 +402,8 @@ export function PondNamingOverlay({
         </div>}
         actions={rim.actions}
         // raised to the surface's action row; the scene keeps its rows, so the vessel stays put
-        actionsStyle={{ transform: `translateY(-${FLOW_PAGE.surfaceActionLift})` }}
+        // over the vessel's canvas, whose room for the reflection reaches down past its seat
+        actionsStyle={{ transform: `translateY(-${FLOW_PAGE.surfaceActionLift})`, position: "relative", zIndex: 2 }}
         headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
           transform: `translateY(calc(${fieldDrop}px - ${TEXT_LIFT}))`,
           ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}

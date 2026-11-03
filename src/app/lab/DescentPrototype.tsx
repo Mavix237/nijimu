@@ -2884,6 +2884,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       rise: true,
       look: { ...(lifted ? { photoUrl: lifted } : {}), oklch, vividness: 1 - stage.current.frost },
       shape: { form, fluidity: 0, evolve: stage.current.morph, bumpAmount: 0 },
+      ...(typeof location.state?.suggestedTitle === "string" ? { suggestedTitle: location.state.suggestedTitle } : {}),
+      ...(typeof location.state?.suggestedYear === "string" ? { suggestedYear: location.state.suggestedYear } : {}),
     };
   };
   const ascended = () => {

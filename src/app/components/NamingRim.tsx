@@ -68,6 +68,9 @@ export interface NameFlowState {
     evolve?: number;
     bumpAmount?: number;
   };
+  /** A title and year carried in with a prepared memory. The fields stay editable. */
+  suggestedTitle?: string;
+  suggestedYear?: string;
   /** Set by the shape scene: the eye is still under the water and comes up to this step. */
   rise?: boolean;
 }
@@ -255,8 +258,13 @@ export function useNamingRim(
   handlersRef.current = handlers;
   const state = session?.state ?? null;
   const draftId = session?.draftId ?? "";
-  const [memoryName, setMemoryName] = useState("");
-  const [year, setYear] = useState("");
+  const [memoryName, setMemoryName] = useState(state?.suggestedTitle ?? "");
+  const [year, setYear] = useState(state?.suggestedYear ?? "");
+  const suggestedTitle = state?.suggestedTitle, suggestedYear = state?.suggestedYear;
+  useEffect(() => {
+    if (suggestedTitle) setMemoryName((name) => name || suggestedTitle);
+    if (suggestedYear) setYear((y) => y || suggestedYear);
+  }, [draftId, suggestedTitle, suggestedYear]);
   const [yearHint, setYearHint] = useState<string | null>(null);
   const [focusedField, setFocusedField] = useState<"name" | "year" | null>(null);
   const [fieldsVisible, setFieldsVisible] = useState(false);

@@ -7,6 +7,7 @@ import { CHROME_GRAY } from "../lib/colors";
 import { FLOW_PAGE, SERIF, NOTE_SIZE, INSTRUCTION_SIZE, TRANSCRIPT, TRANSCRIPT_WIDTH, UNDERWATER_PHONE } from "../lib/theme";
 import { PAGE_HEADER_MARK } from "./PageHeader";
 import { beginTranscription } from "../lib/transcribe";
+import { DEMO_MEMORIES, type DemoMemory } from "../data/demoMemories";
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
@@ -145,7 +146,7 @@ export function PondRecordingOverlay({
     finally { setOpeningMicrophone(false); }
   };
 
-  const goToSampleTranscript = () => {
+  const goToSampleTranscript = (memory?: DemoMemory) => {
     if (leaving) return;
     setSkipping(true);
     setLeaving(true);
@@ -154,6 +155,11 @@ export function PondRecordingOverlay({
         state: {
           shape: { form },
           ...(focus ? { focus } : {}),
+          ...(memory ? {
+            transcript: memory.transcript,
+            suggestedTitle: memory.title,
+            ...(memory.year ? { suggestedYear: memory.year } : {}),
+          } : {}),
         },
       });
     }, CHROME_OUT_MS);
@@ -176,7 +182,7 @@ export function PondRecordingOverlay({
     style={{ opacity: leaving ? 0 : 1, transition: `opacity ${CHROME_OUT_MS}ms ease`, pointerEvents: leaving ? "none" : undefined }}>
     <RecordingInstructionsDialog
     busy={openingMicrophone} error={troubleMessage} onStart={startRecording}
-    onSkip={goToSampleTranscript} onClose={() => navigate(MEMORY_POND_PATH, { state: arrival })} />
+    onSkip={() => goToSampleTranscript()} onMemory={(i) => goToSampleTranscript(DEMO_MEMORIES[i])} onClose={() => navigate(MEMORY_POND_PATH, { state: arrival })} />
   </div>;
 
   return (
@@ -242,7 +248,7 @@ export function PondRecordingOverlay({
             <span aria-hidden style={{ width: 1, height: "1em", background: "rgba(123, 123, 135, 0.45)", flexShrink: 0 }} />
             <TextButton
               label="sample story"
-              onClick={goToSampleTranscript}
+              onClick={() => goToSampleTranscript()}
               style={{ width: "9em", justifyContent: "center" }}
             />
           </div>

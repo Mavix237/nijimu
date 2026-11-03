@@ -25,6 +25,7 @@ import {
 import { SERIF } from "../lib/theme";
 import { TextButton } from "./TextButton";
 import { SaveMemoryDialog } from "./SaveMemoryDialog";
+import { MemoryImagePreview } from "./MemoryImagePreview";
 import {
   CAPTION_TITLE_GAP,
   CAPTION_TITLE_STYLE,
@@ -262,6 +263,7 @@ export function useNamingRim(
   const [fieldsVisible, setFieldsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveDialog, setSaveDialog] = useState(false);
+  const [imageOpen, setImageOpen] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const nameInputRef = useRef<HTMLInputElement>(null);
   const yearInputRef = useRef<HTMLInputElement>(null);
@@ -425,23 +427,27 @@ export function useNamingRim(
   /* Same DOM shape as StaticCaption — a column, the title in a block with the
      shared gap below it, then the year — so when the fields become words
      nothing shifts. */
-  const actions = fieldsVisible && memoryName.trim() !== "" && yearSettled && (
-        <><TextButton
-          label="save memory"
-          onClick={() => setSaveDialog(true)}
-          disabled={saving}
-          style={{
-            /* out of flow, so its coming and going never moves the words */
-            ...(handlers.actionsInGrid ? {} : { position: "absolute" as const, top: "100%", marginTop: 56 }),
-            opacity: saving ? 0 : 1,
-            filter: saving ? "blur(4px)" : "none",
-            transition: reducedMotion
-              ? "none"
-              : `opacity ${SAVE_FADE_MS}ms ease, filter ${SAVE_FADE_MS}ms ease`,
-          }}
-        />
-        {saveDialog && <SaveMemoryDialog session={session} title={memoryName.trim()} year={year}
-          storageError={storageError} onClose={() => setSaveDialog(false)} onContinue={persistAndOpenGallery} />}</>
+  const canSave = memoryName.trim() !== "" && yearSettled;
+  const actions = fieldsVisible && (
+        <div style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 28,
+          /* out of flow, so its coming and going never moves the words */
+          ...(handlers.actionsInGrid ? {} : { position: "absolute" as const, top: "100%", marginTop: 56 }),
+          opacity: saving ? 0 : 1,
+          filter: saving ? "blur(4px)" : "none",
+          transition: reducedMotion
+            ? "none"
+            : `opacity ${SAVE_FADE_MS}ms ease, filter ${SAVE_FADE_MS}ms ease`,
+        }}>
+          <TextButton label="preview image" onClick={() => setImageOpen(true)} disabled={saving} />
+          {canSave && <TextButton label="save memory" onClick={() => setSaveDialog(true)} disabled={saving} />}
+          {saveDialog && canSave && <SaveMemoryDialog session={session} title={memoryName.trim()} year={year}
+            storageError={storageError} onClose={() => setSaveDialog(false)} onContinue={persistAndOpenGallery} />}
+          {imageOpen && <MemoryImagePreview session={session} title={memoryName.trim() || "untitled"} year={year}
+            onClose={() => setImageOpen(false)} />}
+        </div>
       );
 
   const caption = (

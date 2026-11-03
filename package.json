@@ -26,6 +26,8 @@
     "@types/react-dom": "^19.0.0",
     "@types/three": "0.183.1",
     "@vitejs/plugin-react": "4.7.0",
+    "dialkit": "2.0.2",
+    "motion": "14.3.0",
     "tailwindcss": "4.1.12",
     "typescript": "^5.9.3",
     "vite": "6.3.5"
@@ -50,6 +52,9 @@
     "overrides": {
       "vite": "6.3.5",
       "rollup": "npm:@rollup/wasm-node@4.59.0"
+    },
+    "patchedDependencies": {
+      "dialkit@2.0.2": "patches/dialkit@2.0.2.patch"
     }
   }
 }

@@ -128,6 +128,7 @@ const LAB_ON_SCREEN = 1 / (9 * Math.tan((FOV / 2) * Math.PI / 180));
    distance step, `frostStrength` is pinned so the descent's own ?frost= does not reach it. */
 const VESSEL_TUNE: VesselTune = {
   ...VESSEL_TUNE_DEFAULT,
+  tintFill: 0, whiteLight: 0,
   morph: 0, frostStrength: 0.15,
   holeSize: 0.6, holeWidth: 0.75, holeFade: 0.75, holeRim: 0.25,
   mono: 0, negative: 0,

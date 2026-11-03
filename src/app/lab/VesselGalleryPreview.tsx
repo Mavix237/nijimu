@@ -94,6 +94,8 @@ const SEATS: { event: number }[] = [
  */
 export const VESSEL_GALLERY_TUNE: VesselTune = {
   ...VESSEL_TUNE_DEFAULT,
+  // the tint fill and white key belong to the naming page and its card
+  tintFill: 0, whiteLight: 0,
   ...DISTANCE_FADE,
   morph: 0.6,
   holeSize: 0.6, holeWidth: 0.75, holeFade: 0.75, holeRim: 0.25,

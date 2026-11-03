@@ -7,7 +7,8 @@ import type { NamingSession } from "./NamingRim";
 import { draftArtifactOf } from "../lib/namingDraft";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { VesselArtifact } from "../lab/VesselArtifact";
-import { copyArtifactFrame, downloadMemoryImage, memoryImage } from "../lib/memoryImage";
+import { withNamingLights } from "../lib/namingTune";
+import { copyArtifactFrame, downloadMemoryImage, memoryImage, readGrainSettings, readSurfaceSettings, readTonalContrast } from "../lib/memoryImage";
 
 export function SaveMemoryDialog({ session, title, year, onClose, onContinue, storageError }: {
   session: NamingSession; title: string; year: string;
@@ -18,7 +19,10 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
   const [error, setError] = useState<string | null>(null);
   const attempt = useRef(0);
   const captured = useRef(false);
-  const vessel = useMemo(() => galleryStateFor(draftArtifactOf(session)), [session]);
+  const vessel = useMemo(() => {
+    const state = galleryStateFor(draftArtifactOf(session));
+    return { ...state, tune: withNamingLights(state.tune) };
+  }, [session]);
   useEffect(() => () => { attempt.current++; }, []);
   useEffect(() => {
     // Escape belongs to this dialog, not the pond's underlying Back shortcut.
@@ -47,7 +51,11 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
     const current = attempt.current;
     try {
       const frame = copyArtifactFrame(canvas);
-      const blob = await memoryImage(frame, title, year, session.state.transcript ?? "");
+      // The room takes the tone the glass wears, read from the same tune.
+      const tone = vessel.tune.memoryTintAmount > 0
+        ? { l: vessel.tune.memoryTintLight, c: vessel.tune.memoryTintChroma, h: vessel.tune.memoryTintHue }
+        : undefined;
+      const blob = await memoryImage(frame, title, year, session.state.transcript ?? "", tone, { tonalContrast: readTonalContrast(), surface: readSurfaceSettings(), grain: readGrainSettings() });
       if (attempt.current !== current) return;
       downloadMemoryImage(blob, title);
       setBusy(false);

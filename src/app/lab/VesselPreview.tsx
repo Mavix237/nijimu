@@ -1,4 +1,5 @@
 import { oklchToHex } from "../lib/oklch";
+import { MEMORY_STAIN } from "../lib/vesselTint";
 import { useEffect, useMemo, useRef, useState, type DragEvent, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
@@ -124,6 +125,11 @@ export interface VesselTune {
   /* …and its highlights carry that colour (memoryFlash 1, set with the memory's
      colour; 0 leaves them the flow's own), swelling into it every so often */
   memoryFlash: number; flashEvery: number; flashGain: number;
+  /* two lights set round the memory's colour: a tint fill above in a pale tone of its hue
+     (strength, breadth 0…1, share of the pick's chroma), and a neutral white key
+     (strength, crispness). The naming page and its card turn them on; a tune that
+     leaves them at 0 keeps the glass as it was. */
+  tintFill: number; tintFillSoft: number; tintFillChroma: number; whiteLight: number; whiteSharp: number;
   // light
   keyAzimuth: number; keyElevation: number; keyIntensity: number;
   // two catches of the room, sliding slowly over the glass
@@ -182,6 +188,7 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   bend: 0.75, glassSoft: 0.64, bodyAlpha: 0.85, thickDark: 0.21, highlight: 0.34,
   memoryTintHue: 0, memoryTintChroma: 0, memoryTintLight: .66, memoryTintAmount: 0, memoryTintDepth: 0,
   memoryFlash: 0, flashEvery: 4.5, flashGain: 1.1,
+  tintFill: 0.5, tintFillSoft: 0.7, tintFillChroma: 0.2, whiteLight: 0.7, whiteSharp: 0.6,
   keyAzimuth: -32, keyElevation: 64, keyIntensity: 1.08,
   flowGain: 1.21, flowSpeed: 0.8, flowSoft: 0.3, flowLift: 0.49, flowRise: 0.35, flowApart: 2.15,
   flowFeather: 0.75, flowSheer: 0.3, flowStock: 1, flowTint: 0.25,
@@ -977,6 +984,15 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform vec3 uFlashColor;
   uniform float uFlashEvery;
   uniform float uFlashGain;
+  /* two lights set round the memory's colour (both 0 without one): a tint fill —
+     broad, soft, above, in a pale tone of the memory's hue — its strength, its
+     breadth and its colour; and a neutral white key that shows the glass for
+     what it is — its strength and how crisp it is */
+  uniform float uFillLight;
+  uniform float uFillSoft;
+  uniform vec3 uFillColor;
+  uniform float uWhiteLight;
+  uniform float uWhiteSharp;
   /* the surface's fine texture: which (0 none, 1 satin, 2 sandblast, 3 brushed,
      4 ripple, 5 hammered), how far it tilts the surface, its grain (1 as drawn,
      larger finer), and the matte veil it leaves on the glass */
@@ -1234,6 +1250,49 @@ const GLASS_COMMON_GLSL = /* glsl */ `
     color *= mix(vec3(1.0), min(uMemoryTint / GROUND, vec3(1.1)), tintRise() * uMemoryTintAmount);
     return mix(color, color * uMemoryTintDeep / GROUND, tintFoot());
   }
+  /* The tint fill: a broad soft light in the memory's hue, high above the glass and
+     a little to the left and in front. It reaches the wall through the glass, wrapped
+     wide so it spreads round the form, and nearer the top (it is above, so the upper
+     glass is nearer it); off the surface it is a very wide, low reflection, stronger
+     toward the grazing edge. What it gives is how much of it falls there; the glass's
+     own colour is not touched. */
+  float fillLight(vec3 n, vec3 v, float back) {
+    if (uFillLight <= 0.0) return 0.0;
+    vec3 L = normalize(vec3(-.35, 1.0, .45));
+    float wrap = mix(.35, .8, uFillSoft);
+    float through = clamp((dot(n, L) + wrap) / (1.0 + wrap), 0.0, 1.0);
+    // little of it gets down to the foot, where the stain's own deep colour is
+    float reach = mix(.12, 1.0, smoothstep(.04, .6, tintUp()));
+    through *= through * reach;
+    vec3 r = reflect(-v, n);
+    float spread = mix(.6, 1.3, uFillSoft);
+    float d = acos(clamp(dot(r, L), -1.0, 1.0));
+    float sheen = exp(-(d * d) / (spread * spread)) * (.25 + .75 * pow(1.0 - max(dot(n, v), 0.0), 2.0)) * reach;
+    return uFillLight * (.6 * through + .4 * sheen) * mix(1.0, .5, back) * (1.0 - uHazeEdge * .5);
+  }
+  /* Where the fill falls, the light the glass passes and reflects is the fill's colour
+     (taken at unit brightness, so it colours without darkening), and a little brighter.
+     Laid over pale glass as light alone, a pale light would only whiten it. */
+  vec3 lightByFill(vec3 color, float w) {
+    vec3 hue = uFillColor / max(dot(uFillColor, vec3(.2126, .7152, .0722)), 1e-3);
+    color = mix(color, color * hue, clamp(w * 2.5, 0.0, 1.0));
+    return addLight(color, uFillColor * w * .3);
+  }
+  /* The neutral white key, from the room's key direction: a crisp highlight with a
+     narrow soft shoulder, on the facing wall and, weaker, on the far wall seen
+     through it (so the two layers part), and a clean bright line just inside the
+     silhouette on the side it lights (the wall's thickness, edge-on). White: it
+     takes nothing of the memory's colour. 0…1+, laid over the glass by the caller. */
+  float whiteLight(vec3 n, vec3 v, float back, float g) {
+    if (uWhiteLight <= 0.0) return 0.0;
+    vec3 h = normalize(uKey + v);
+    float nh = max(dot(n, h), 0.0);
+    float shine = mix(60.0, 420.0, uWhiteSharp);
+    float spot = pow(nh, shine) + .18 * pow(nh, shine * .12);
+    float lit = smoothstep(-.2, .8, dot(n, uKey));
+    float edge = pow(g, mix(5.0, 9.0, uWhiteSharp)) * (1.0 - smoothstep(.95, 1.0, g)) * lit;
+    return uWhiteLight * uKeyIntensity * (spot + .45 * edge) * mix(1.0, .4, back) * (1.0 - uHazeEdge);
+  }
 `;
 
 /* Thin clear glass, from the descent's formFragment: the rim is light and
@@ -1274,6 +1333,12 @@ export const glassFragment = /* glsl */ `
     vec3 flow = catchLight(nt, v);
     color = addLight(color, flow);
     alpha += max(flow.r, max(flow.g, flow.b)) * .65 * uFlowSheer;
+    float fill = fillLight(nt, v, 0.0);
+    color = lightByFill(color, fill);
+    alpha += fill * .1;
+    float white = whiteLight(nt, v, 0.0, 1.0 - facing);
+    color = addLight(color, vec3(white));
+    alpha += white * .6;
     color *= mix(1.0, .74 + .38 * smoothstep(-.7, .9, dot(n, uKey)), uHazeShade);
     alpha += uHazeShade * .14;
     color = mix(color, uAir, uHazeWash * .5);
@@ -1414,6 +1479,13 @@ export const glassRefractFragment = /* glsl */ `
     vec3 flow = catchLight(nt, v) * mix(1.0, .35, back);
     color = addLight(color, flow);
     alpha += max(flow.r, max(flow.g, flow.b)) * .55 * uFlowSheer;
+    // the tint fill, then the white key over it, so the brightest light is white
+    float fill = fillLight(nt, v, back);
+    color = lightByFill(color, fill);
+    alpha += fill * .1;
+    float white = whiteLight(nt, v, back, g);
+    color = addLight(color, vec3(white));
+    alpha += white * .6;
     // a frosted body takes the key as a soft volume: a lit shoulder, a shaded side
     float shade = uHazeShade * (1.0 - back);
     color *= mix(1.0, .74 + .38 * smoothstep(-.7, .9, dot(n, uKey)), shade);
@@ -1765,6 +1837,11 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uFlashColor: { value: new THREE.Vector3(1, 1, 1) },
     uFlashEvery: { value: 4.5 },
     uFlashGain: { value: 1.1 },
+    uFillLight: { value: 0 },
+    uFillSoft: { value: 0.7 },
+    uFillColor: { value: new THREE.Vector3(1, 1, 1) },
+    uWhiteLight: { value: 0 },
+    uWhiteSharp: { value: 0.6 },
     uTexKind: { value: 0 },
     uTexAmount: { value: 0 },
     uTexScale: { value: 1 },
@@ -1860,10 +1937,24 @@ export function flashColor(hue: number, toneChroma: number): Rgb {
   return [c[0] / top, c[1] / top, c[2] / top];
 }
 
+/** The tint fill's colour: the memory's hue, far lighter than the stain and with
+ *  `share` of its chroma (a pale, dusty tone of it). */
+export function fillLightColor(hue: number, toneChroma: number, share: number): Rgb {
+  const hex = oklchToHex({ l: .95, c: Math.min(.06, Math.max(0, toneChroma) * share), h: hue });
+  return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as Rgb;
+}
+
 /** The knobs written into a glass's uniforms. */
 export function writeGlassUniforms(u: GlassUniformSet, w: GlassWrite) {
   const { tune } = w;
   u.uMemoryTintAmount.value = tune.memoryTintAmount ?? 0;
+  // the two lights come with the memory's colour, and go as its stain does (the colour step eases it in)
+  const lit = Math.min(1, Math.max(0, (tune.memoryTintAmount ?? 0) / MEMORY_STAIN));
+  u.uFillLight.value = lit * (tune.tintFill ?? 0);
+  u.uFillSoft.value = tune.tintFillSoft ?? VESSEL_TUNE_DEFAULT.tintFillSoft;
+  u.uFillColor.value.fromArray(fillLightColor(tune.memoryTintHue ?? 0, tune.memoryTintChroma ?? 0, tune.tintFillChroma ?? VESSEL_TUNE_DEFAULT.tintFillChroma));
+  u.uWhiteLight.value = lit * (tune.whiteLight ?? 0);
+  u.uWhiteSharp.value = tune.whiteSharp ?? VESSEL_TUNE_DEFAULT.whiteSharp;
   u.uTintSpan.value.set(w.span.lo, w.span.hi);
   u.uMemoryTintDepth.value = tune.memoryTintDepth ?? 0;
   // the picked tone, and the same tone a little deeper for the band at the foot —
@@ -2381,6 +2472,14 @@ const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "memoryFlash", label: "in the highlights  (0 none)", min: 0, max: 1, step: 0.01 },
     { key: "flashEvery", label: "flash every  s", min: 1, max: 12, step: 0.1 },
     { key: "flashGain", label: "flash strength", min: 0, max: 3, step: 0.01 },
+  ] },
+  // two lights set round the memory's colour; the stain at the foot is the colour itself
+  { group: "colour lights", knobs: [
+    { key: "tintFill", label: "tint fill  (0 none)", min: 0, max: 1, step: 0.01 },
+    { key: "tintFillSoft", label: "tint fill breadth", min: 0, max: 1, step: 0.01 },
+    { key: "tintFillChroma", label: "tint fill colour  (share of the pick)", min: 0, max: 1, step: 0.01 },
+    { key: "whiteLight", label: "white key  (0 none)", min: 0, max: 1.5, step: 0.01 },
+    { key: "whiteSharp", label: "white key crispness", min: 0, max: 1, step: 0.01 },
   ] },
   // the eye: orbiting, so the light on the form changes as it would walking round it
   { group: "camera", knobs: [

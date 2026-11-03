@@ -96,7 +96,7 @@ const GALLERY_TONES: Record<string, MemoryTone> = {
   "9": { stain: "#656c6f", foot: "#727a7f", ownFoot: true }, // 2023 · Started learning to trust my own eye (was #8ca4c2 / #7892b2, foot drawn from the stain; /studio 2026-11-03)
   "10": { stain: "#a9bcbe", foot: "#6593a9" }, // 2024 · A friendship that quietly ended (stain was #7ba5b9; /studio 2026-11-03)
   "11": { stain: "#caaeaf", foot: "#b89e89" }, // 2024 · My first audiovisual performance
-  "13": { stain: "#8db7bc", foot: "#77a5a8" }, // 2025 · Finding the thread between poetry, film, and design
+  "13": { stain: "#92a7b6", foot: "#77a5a8" }, // 2025 · Finding the thread between poetry, film, and design
   "14": { stain: "#d2b1b2", foot: "#c09e98" }, // 2025 · Found my muse
   "15": { stain: "#c49ea9", foot: "#b38a96" }, // 2026 · Still figuring out what love means
 };

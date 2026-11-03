@@ -184,8 +184,10 @@ const TUNED: Tuned[] = [
   { key: "E-14", morph: 0.45, size: 1.1, photoHeight: 0.96, photoAround: -1, photoSize: 1.302, photo: 7, view: { around: 14, pitch: -3 },
     form: { category: "diamond", top: { m: 4, n1: 1.026, n2: 1.026, n3: 1.026, a: 1, b: 1 }, side: { m: 4, n1: 0.878, n2: 0.878, n3: 0.878, a: 1, b: 1 } },
     tune: { inset: 0.865, tornDepth: 3.2, edgeFade: 5, holeSize: 0.2, tilt: 0, contact: 29.5, sag: 17, peel: 10, gap: 0, flowSheer: 0.24 } },
-  { key: "E-02", morph: 0.67, size: 1.32, photoHeight: 1, photoAround: -2, photoSize: 1.03, photo: 8, view: { around: 0, pitch: 4 },
-    form: { category: "hybrid", top: { m: 6, n1: 0.198, n2: 1.714, n3: 1.714 }, side: { m: 0, n1: 1.01, n2: 1.01, n3: 1.01 }, hybridOf: ["flower", "sphere"] } },
+  // 2025 · Finding the thread, tuned in /studio 2026-11-03: a new form, morph .67 → .56, the view turned
+  // (strip kept at the size it had: 1.03 of the old fit)
+  { key: "E-02", morph: 0.56, size: 1.32, photoHeight: 1, photoAround: -2, photoSize: 1.179, photo: 8, view: { around: 11, pitch: -16.5 },
+    form: { category: "hybrid", top: { m: 5.85, n1: 0.283, n2: 0.708, n3: 1.01, a: 1, b: 1 }, side: { m: 4, n1: 21.08, n2: 21.08, n3: 21.08, a: 1, b: 1 } } },
   // 2025 · tuned in /studio 2026-11-03: top m 20.9 → 13.65, n1 3.24 → 6.09, n2 4.44 → 3.11, morph .46 → .37, a kept view
   // (strip kept at the size it had: 1 of the old fit)
   { key: "Y-12", morph: 0.37, size: 1.19, photoHeight: 1, photoAround: 0, photoSize: 0.813, photo: 0, view: { around: 18, pitch: 17.5 },

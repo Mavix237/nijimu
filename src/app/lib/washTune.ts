@@ -87,21 +87,21 @@ export interface WashTune {
 }
 
 export const WASH_TUNE_DEFAULT: WashTune = {
-  fieldOpacity: 0.78, // was .85: lighter
-  reach: 1.34,
-  threshold: 0.2,
-  join: 4.9, // was 3.3: washes join only where both are wet
+  fieldOpacity: 0.85,
+  reach: 1.25,
+  threshold: 0.18,
+  join: 3.3,
   warp: 1,
-  morph: 2.4, // was 1.75: shapes keep changing
-  fringe: 0.15, // was .21: a finer, livelier pigment edge
-  edge: 0.2,
+  morph: 1.75,
+  fringe: 0.21,
+  edge: 0.56,
   edgeShown: 0.73,
-  softness: 0.64, // was 1: a crisper edge
-  grain: 0.77,
-  grainPx: 0.7,
+  softness: 1,
+  grain: 2.2,
+  grainPx: 0.8,
   deepTone: 1,
   saturation: 1.38,
-  sharpness: 0.9, // was .7: the field painted closer to the screen's density
+  sharpness: 0.7,
   bloom: 0.49,
   bloomDrift: 2.55,
   interior: 0.22, // was .3: thinner inside, more transparent
@@ -123,14 +123,14 @@ export const WASH_TUNE_DEFAULT: WashTune = {
   bleedReach: 1,
   bleedTone: 0.62,
 
-  brushPx: 32,
-  grip: 0.16, // was .1
+  brushPx: 38,
+  grip: 0.1,
   wipe: 0.45,
-  curl: 4.5, // was 0: eddies after a stroke
-  velFadeS: 1.2, // was .7: the flow carries on, as water does
-  relaxS: 2.55, // was 1.6: stirred paint returns slowly
+  curl: 0,
+  velFadeS: 0.7,
+  relaxS: 1.6,
   pressureIters: 16,
-  simLong: 104,
+  simLong: 120,
   dyeLong: 272,
 
   dotSize: 5.2,

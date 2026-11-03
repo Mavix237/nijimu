@@ -48,7 +48,8 @@ const PAD = 64;
     in them is already soft. Only the final threshold is drawn full size. */
 const LAYER_RES = 0.5;
 /** The final pass's pixel budget (the field is ~1.8× the screen). */
-const OUT_PIXELS = 6e6;
+/** A 1080p field at 2× still fits; the output never goes past two device pixels per CSS pixel. */
+const OUT_PIXELS = 1920 * 1080 * 4;
 const ROWS = 8;
 
 const VERT = `#version 300 es
@@ -289,6 +290,7 @@ function program(gl: WebGL2RenderingContext, frag: string): WebGLProgram | null 
 function setup(canvas: HTMLCanvasElement): Gl | null {
   const gl = canvas.getContext("webgl2", {
     alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false,
+    preserveDrawingBuffer: true,
   });
   if (!gl) return null;
   const layer = program(gl, LAYER_FRAG);
@@ -417,9 +419,8 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
     const canvas = canvasRef.current;
     if (!g || !canvas) return;
     const { colors: bg, width: fw, height: fh, params: p } = live.current;
-    const dpr = window.devicePixelRatio || 1;
     const maxEdge = 8192;
-    const res = Math.min(dpr, Math.sqrt(OUT_PIXELS / Math.max(1, fw * fh)));
+    const res = Math.min(2, Math.sqrt(OUT_PIXELS / Math.max(1, fw * fh)));
     const layerRes = LAYER_RES;
     const cw = Math.max(1, Math.round(fw * res));
     const ch = Math.max(1, Math.round(fh * res));

@@ -161,7 +161,7 @@ export function createPaletteWater(
     depth: false,
     stencil: false,
     premultipliedAlpha: true,
-    preserveDrawingBuffer: false,
+    preserveDrawingBuffer: true,
   });
   if (!gl || !gl.getExtension("EXT_color_buffer_float")) return null;
 

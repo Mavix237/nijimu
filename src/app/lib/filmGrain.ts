@@ -237,8 +237,13 @@ export class GrainStudy {
 
   constructor(readonly source: Pixels, readonly seed: number = GRAIN_SEED) {}
 
-  /** The source with `settings`' grain, written into `out` (a new buffer if none is given). */
-  render(settings: GrainSettings, out?: Pixels): Pixels {
+  /**
+   * The source with `settings`' grain, written into `out` (a new buffer if none is given).
+   * `pixelScale` is how many output pixels one grain covers on each axis. At 2 the field
+   * is built on the 1× grid and each sample fills a 2×2 block, so the grain does not
+   * get finer just because the canvas is larger. Size and intensity are not scaled.
+   */
+  render(settings: GrainSettings, out?: Pixels, pixelScale = 1): Pixels {
     const { width: w, height: h, data: src } = this.source;
     const target: Pixels = out && out.width === w && out.height === h
       ? out
@@ -246,9 +251,11 @@ export class GrainStudy {
     const dst = target.data;
     const s = grainSettingsOf(settings);
     if (s.kind === "off" || s.intensity <= 0) { dst.set(src); return target; }
+    const scale = Math.max(1, Math.round(pixelScale) || 1);
     const sigma = GRAIN_SIGMA * s.intensity * KIND_GAIN[s.kind];
     const size = Math.round(s.size * 20) / 20;
-    const [g, cr, cb] = this.field(s.kind, size);
+    const [g, cr, cb] = this.field(s.kind, size, scale);
+    const gw = Math.max(1, Math.ceil(w / scale));
     const luma = this.lumaOf();
     const tone = tonalTables();
     const curveOf = s.kind === "tonal" ? tone.tonal : s.kind === "hybrid" ? tone.hybrid : s.kind === "spatial" ? tone.even : null;
@@ -256,20 +263,26 @@ export class GrainStudy {
     // the hybrid's grain also stretches or flattens the image's own local contrast
     const local = 3 * sigma;
     const tint = .08 * sigma;
-    for (let i = 0, p = 0; i < w * h; i++, p += 4) {
-      const y = luma[i];
-      const n = g[i];
-      let d = sigma * n * (curveOf ? curveOf[Math.round(y * LUT)] : 1);
-      if (mean) d += (y - mean[i]) * local * n;
-      let dr = d, dg = d, db = d;
-      if (cr && cb) {
-        const r = tint * cr[i], b = tint * cb[i];
-        dr += r; db += b; dg -= (.2126 * r + .0722 * b) / .7152;
+    for (let y = 0; y < h; y++) {
+      const row = Math.floor(y / scale) * gw;
+      for (let x = 0; x < w; x++) {
+        const i = y * w + x;
+        const p = i * 4;
+        const gi = row + Math.min(gw - 1, Math.floor(x / scale));
+        const yv = luma[i];
+        const n = g[gi];
+        let d = sigma * n * (curveOf ? curveOf[Math.round(yv * LUT)] : 1);
+        if (mean) d += (yv - mean[i]) * local * n;
+        let dr = d, dg = d, db = d;
+        if (cr && cb) {
+          const r = tint * cr[gi], b = tint * cb[gi];
+          dr += r; db += b; dg -= (.2126 * r + .0722 * b) / .7152;
+        }
+        dst[p] = src[p] + dr * 255;
+        dst[p + 1] = src[p + 1] + dg * 255;
+        dst[p + 2] = src[p + 2] + db * 255;
+        dst[p + 3] = src[p + 3];
       }
-      dst[p] = src[p] + dr * 255;
-      dst[p + 1] = src[p + 1] + dg * 255;
-      dst[p + 2] = src[p + 2] + db * 255;
-      dst[p + 3] = src[p + 3];
     }
     return target;
   }
@@ -292,20 +305,22 @@ export class GrainStudy {
     return m;
   }
 
-  private field(kind: Exclude<GrainKind, "off">, size: number): Float32Array[] {
-    const key = `${kind}|${size}`;
+  private field(kind: Exclude<GrainKind, "off">, size: number, scale = 1): Float32Array[] {
+    const key = scale === 1 ? `${kind}|${size}` : `${kind}|${size}|${scale}`;
     const kept = this.fields.get(key);
     if (kept) { this.fields.delete(key); this.fields.set(key, kept); return kept; }
     const { width: w, height: h } = this.source;
+    const gw = Math.max(1, Math.ceil(w / scale));
+    const gh = Math.max(1, Math.ceil(h / scale));
     const seed = this.seed;
     const made =
-      kind === "uniform" ? [uniformCells(w, h, size, seed)]
-      : kind === "tonal" ? [normalize(smoothCells(w, h, size, seed + 5))]
-      : kind === "spatial" ? [organicField(w, h, size, seed, SPATIAL)]
+      kind === "uniform" ? [uniformCells(gw, gh, size, seed)]
+      : kind === "tonal" ? [normalize(smoothCells(gw, gh, size, seed + 5))]
+      : kind === "spatial" ? [organicField(gw, gh, size, seed, SPATIAL)]
       : [
-        organicField(w, h, size, seed + 101, HYBRID),
-        normalize(blur(whiteField(w, h, seed + 151), w, h, Math.max(.5, .6 * size))),
-        normalize(blur(whiteField(w, h, seed + 161), w, h, Math.max(.5, .6 * size))),
+        organicField(gw, gh, size, seed + 101, HYBRID),
+        normalize(blur(whiteField(gw, gh, seed + 151), gw, gh, Math.max(.5, .6 * size))),
+        normalize(blur(whiteField(gw, gh, seed + 161), gw, gh, Math.max(.5, .6 * size))),
       ];
     this.fields.set(key, made);
     while (this.fields.size > FIELD_CACHE) this.fields.delete(this.fields.keys().next().value as string);

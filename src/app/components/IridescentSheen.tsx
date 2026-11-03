@@ -180,6 +180,7 @@ export function IridescentSheen({
       antialias: false,
       depth: false,
       stencil: false,
+      preserveDrawingBuffer: true,
     });
     if (!gl) return;
 

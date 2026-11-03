@@ -28,6 +28,12 @@ const { imageTextLines, surfaceTooth, surfaceGrain, IMAGE_CARD_PRESET } = module
   }
   const g = stats(surfaceGrain(w, h));
   assert.ok(Math.abs(g.mean) < .01 && Math.abs(g.sd - 1) < .01 && g.max <= Math.sqrt(6) + 1e-6, 'grain: zero mean, unit σ, bounded');
+  const fine = surfaceGrain(80, 60);
+  const block = surfaceGrain(160, 120, 2);
+  for (let y = 0; y < 120; y++) for (let x = 0; x < 160; x++) {
+    assert.equal(block[y * 160 + x], fine[(y >> 1) * 80 + (x >> 1)], '2× grain is the 1× field, one value per 2×2');
+  }
+  assert.equal(surfaceGrain(160, 120, 2), block, 'kept per size and scale');
   assert.deepEqual({ ...IMAGE_CARD_PRESET.wall }, { density: 0, densitySize: .5, tooth: 0, toothSize: .6, grain: 1 });
   assert.equal(IMAGE_CARD_PRESET.tonalContrast, 1);
   assert.deepEqual({ ...IMAGE_CARD_PRESET.filmGrain }, { kind: 'tonal', intensity: .2, size: .5 });

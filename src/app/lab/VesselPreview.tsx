@@ -10,7 +10,7 @@ import { TextButton } from "../components/TextButton";
 import { FILM_LOOK_DEFAULT, FILM_LOOK_GLSL, filmLookUniforms, prepareFilmPhoto, setFilmLook, type FilmLook } from "../lib/filmLook";
 import { SHEET_GLSL, STOCKS, STRIP_FACE_GLSL, STRIP_GLSL, STRIP_MM, createEdgePrint, setStock, sheetUniforms, stockHex } from "./filmStrip";
 import { createArtifactGeometry } from "../hooks/useArtifactGeometry";
-import { MAX_DPR, RT_SAMPLES, VESSEL_DETAIL } from "../lib/deviceTier";
+import { RT_SAMPLES, VESSEL_DETAIL } from "../lib/deviceTier";
 import { FINITE_GLSL } from "../lib/finiteGlsl";
 import {
   ARTIFACT_CATEGORIES, CATEGORY_LABELS, computeMeshNormals, createArtifactForm, describeForm, formKey, isArtifactForm, type ArtifactCategory, type ArtifactForm, type SuperParams,
@@ -2852,7 +2852,7 @@ export function VesselPreview({ initial, onChange, onBack, backLabel = "back", y
       style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: backdropCss(backdrop) }}>
       {/* a long lens, as the still-life references are shot: the far wall projects nearly as large as the near one */}
       <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
-        dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }}
+        dpr={2} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }}
         style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: "calc(100% - 260px)" }}>
         <Stage tune={tune} mode={mode} sheetMode={sheetMode} face={face} show={show} backdrop={backdrop} room={room} url={url} seed={seed} form={form} held={held} drag={drag}
           yaw0={yawProp === undefined ? undefined : (yawProp * Math.PI) / 180} />

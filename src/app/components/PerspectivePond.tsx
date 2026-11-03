@@ -753,7 +753,7 @@ export function PerspectivePond(props: PondProps) {
   const fallback = <StillPond onReady={props.onReady} cueRef={props.cueRef} />;
   return <PondBoundary fallback={fallback}>
     <Canvas camera={{ ...POND_LENS, position: [0, 2.2, 10] }}
-      dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }} fallback={fallback}
+      dpr={2} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} fallback={fallback}
       style={{ position: "absolute", inset: 0 }}>
       <CaptureFrame />
       <PortraitFit />

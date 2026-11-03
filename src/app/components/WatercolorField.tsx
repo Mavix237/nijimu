@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { captureFrozen } from "../lib/captureFreeze";
+import { captureBoost, onCaptureBoost } from "../lib/captureScale";
 import type { WashTune } from "../lib/washTune";
 import { LANDING_MOTION } from "../lib/landingMotion";
 
@@ -728,11 +729,12 @@ export function WatercolorField({
   readyRef.current = onReady;
   const settlingRef = useRef(onSettling);
   settlingRef.current = onSettling;
+  const presentRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const attrs: WebGLContextAttributes = { premultipliedAlpha: true, alpha: true, antialias: false, depth: false, stencil: false };
+    const attrs: WebGLContextAttributes = { premultipliedAlpha: true, alpha: true, antialias: false, depth: false, stencil: false, preserveDrawingBuffer: true };
     const gl2 = canvas.getContext("webgl2", attrs) as WebGL2RenderingContext | null;
     const fluid = !!gl2 && !!gl2.getExtension("EXT_color_buffer_float");
     const gl: GL | null = gl2 ?? (canvas.getContext("webgl", attrs) as WebGLRenderingContext | null);
@@ -1235,8 +1237,10 @@ export function WatercolorField({
       readyRef.current(true);
       raf = requestAnimationFrame(draw);
     }
+    presentRef.current = () => present();
 
     return () => {
+      presentRef.current = () => {};
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
       stop();
@@ -1247,8 +1251,12 @@ export function WatercolorField({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.width = Math.max(1, Math.round(width * resolution));
-    canvas.height = Math.max(1, Math.round(height * resolution));
+    const fit = (boost: number) => {
+      canvas.width = Math.max(1, Math.round(width * resolution * boost));
+      canvas.height = Math.max(1, Math.round(height * resolution * boost));
+    };
+    fit(captureBoost());
+    return onCaptureBoost((boost) => { fit(boost); presentRef.current(); });
   }, [width, height, resolution]);
 
   return (

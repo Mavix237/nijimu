@@ -717,7 +717,7 @@ export function BlobScene({
   /* The field at the screen's own density, within a pixel budget: the
      canvas spans the field, which is viewport-sized on the landing. */
   const fieldResolution = Math.min(
-    Math.min(window.devicePixelRatio || 1, 2) * washTune.sharpness,
+    2 * washTune.sharpness,
     Math.sqrt((isMobile ? FIELD_PX_PHONE : FIELD_PX) / Math.max(1, canvasWidth * canvasHeight)),
   );
   const baseSize = 120 * scale;
@@ -1782,7 +1782,7 @@ export function BlobScene({
       data-ink-stage={!landingArrival ? "field" : entryTime < INK_ENTRY.descEnd ? "desc" : entryTime < INK_ENTRY.headerEnd ? "header" : entryTime < INK_ENTRY.labelsEnd ? "labels"
         : entryTime < INK_ENTRY.shrinkEnd ? "shrink" : entryTime < INK_ENTRY.pathEnd ? "gather" : entryTime < INK_ENTRY.pathHoldEnd ? "curve"
         : entryTime < INK_ENTRY.unfoldEnd ? "unfold" : "artifacts"}
-      data-capture-root="landing"
+      data-capture-root="landing" data-capture-filter=""
       className={`relative w-full h-dvh overflow-hidden select-none ${classicChrome ? "cursor-default" : "cursor-pointer"}`}
       style={{
         // the landing's paper is its own layer (below), so it can be a gradient and still fade through Enter
@@ -1803,21 +1803,21 @@ export function BlobScene({
     >
       {/* ═══ PAPER (landing): its colour or gradient, fading out through Enter ═══ */}
       {classicChrome && (
-        <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none",
+        <div aria-hidden data-capture-backdrop="" style={{ position: "absolute", inset: 0, pointerEvents: "none",
           background: landingPaperCss(landingLook.paper), opacity: landingArrival ? entryPaper : 1 }} />
       )}
 
       {/* ═══ LOOK: a tint and a pool of light over the whole landing (LandingDials) ═══ */}
       {lookTint > 0.001 && (
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
+        <div aria-hidden data-capture-veil="" style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
           background: landingLook.tint.color, opacity: lookTint, mixBlendMode: landingLook.tint.blend as never }} />
       )}
       {lookVeil > 0.001 && (
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
+        <div aria-hidden data-capture-veil="" style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
           background: landingLook.light.color, opacity: lookVeil }} />
       )}
       {lookLight > 0.001 && (
-        <div aria-hidden style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
+        <div aria-hidden data-capture-veil="" style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none",
           background: landingLightGradient(landingLook.light), opacity: lookLight,
           mixBlendMode: landingLook.light.blend as never }} />
       )}
@@ -1910,7 +1910,7 @@ export function BlobScene({
             transition: classicChrome ? "opacity 6.8s cubic-bezier(.45, 0, .2, 1)" : undefined,
           }}
         >
-          <div className="absolute" data-capture-plate="" style={{
+          <div className="absolute" data-capture-veil="" style={{
             left: "20%", top: "30%",
             width: `${500 * scale}px`, height: `${500 * scale}px`,
             background: "radial-gradient(circle, rgba(26,138,110,0.25), transparent 70%)",
@@ -1918,7 +1918,7 @@ export function BlobScene({
             animation: "ambientDrift1 20s ease-in-out infinite",
             animationPlayState: hoveredIdx !== null ? "paused" : "running",
           }} />
-          <div className="absolute" data-capture-plate="" style={{
+          <div className="absolute" data-capture-veil="" style={{
             left: "60%", top: "50%",
             width: `${450 * scale}px`, height: `${450 * scale}px`,
             background: "radial-gradient(circle, rgba(93,212,224,0.2), transparent 70%)",
@@ -1926,7 +1926,7 @@ export function BlobScene({
             animation: "ambientDrift2 18s ease-in-out infinite",
             animationPlayState: hoveredIdx !== null ? "paused" : "running",
           }} />
-          <div className="absolute" data-capture-plate="" style={{
+          <div className="absolute" data-capture-veil="" style={{
             left: "45%", top: "65%",
             width: `${400 * scale}px`, height: `${400 * scale}px`,
             background: "radial-gradient(circle, rgba(242,196,170,0.25), transparent 70%)",
@@ -1995,7 +1995,7 @@ export function BlobScene({
           ? { mixBlendMode: landingLook.grain.blend as never, imageRendering: "auto", opacity: landingLook.grain.amount * (landingArrival ? entryGrain : 1) }
           : { mixBlendMode: "overlay", imageRendering: "pixelated", opacity: landingArrival ? 0.48 * entryGrain : undefined }}
       />
-      <div className="absolute inset-0 pointer-events-none" data-capture-plate="" style={{
+      <div className="absolute inset-0 pointer-events-none" data-capture-veil="" style={{
         opacity: entryVignette,
         background: classicChrome
           ? landingVignetteCss(landingLook.vignette)

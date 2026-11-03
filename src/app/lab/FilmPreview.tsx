@@ -267,7 +267,7 @@ export function FilmPreview() {
       style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden",
         background: "linear-gradient(#ededE8, #e4e6e3 50%, #d6dcd9)" }}>
       <Canvas orthographic camera={{ position: [0, 0, 10], zoom: 1, near: 0.1, far: 100 }}
-        dpr={[1, 2]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
+        dpr={2} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} style={{ position: "absolute", inset: 0 }}>
         <Strip url={url} look={shown} stock={stock} photoOpacity={photoOpacity} edgeFade={edgeFade} seed={seed} />
       </Canvas>
 

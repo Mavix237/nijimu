@@ -234,34 +234,72 @@ export function surfaceTooth(w: number, h: number, size = 1): Float32Array {
   return tooth;
 }
 
-/** The fine grain for a page of `w`×`h` px: a triangular draw per pixel, zero mean, unit σ. */
-export function surfaceGrain(w: number, h: number): Float32Array {
-  const key = `${w}x${h}`;
+/**
+ * The fine grain for a page of `w`×`h` px: a triangular draw per pixel, zero mean, unit σ.
+ * `pixelScale` covers that many output pixels with one draw (2 → the 1× field, each grain a 2×2 block).
+ */
+export function surfaceGrain(w: number, h: number, pixelScale = 1): Float32Array {
+  const step = Math.max(1, Math.round(pixelScale) || 1);
+  const key = step === 1 ? `${w}x${h}` : `${w}x${h}@${step}`;
   const hit = grainCache.get(key);
   if (hit) return hit;
-  const n = w * h;
-  const grain = new Float32Array(n);
+  const gw = Math.max(1, Math.ceil(w / step));
+  const gh = Math.max(1, Math.ceil(h / step));
+  const grain = new Float32Array(w * h);
   // two uniforms: σ of their sum is 1/√6
   const scale = Math.sqrt(6);
-  for (let k = 0; k < n; k++) grain[k] = (lattice(k, 1, SURFACE.seed + 5) + lattice(k, 2, SURFACE.seed + 5) - 1) * scale;
+  const coarse = new Float32Array(gw * gh);
+  for (let k = 0; k < coarse.length; k++) coarse[k] = (lattice(k, 1, SURFACE.seed + 5) + lattice(k, 2, SURFACE.seed + 5) - 1) * scale;
+  for (let y = 0; y < h; y++) {
+    const row = Math.floor(y / step) * gw;
+    const at = y * w;
+    for (let x = 0; x < w; x++) grain[at + x] = coarse[row + Math.min(gw - 1, Math.floor(x / step))];
+  }
   remember(grainCache, key, grain);
   return grain;
 }
 
-/** Lays the tooth and grain over what is on `ctx` now (the ground alone), in place. */
-function wearTooth(ctx: CanvasRenderingContext2D, w: number, h: number, contrast: number, surface: SurfaceSettings) {
+/** The wall's tooth and fine grain, multiplied onto `px` (`w`×`h`). */
+function multiplyWall(px: Uint8ClampedArray, w: number, h: number, contrast: number, surface: SurfaceSettings, pixelScale = 1) {
   const k = .9 + .1 * contrast;
   const t = SURFACE.tooth * surface.tooth * k, g = SURFACE.grain * surface.grain * k;
   if (t <= 0 && g <= 0) return;
-  const img = ctx.getImageData(0, 0, w, h);
-  const px = img.data;
   const tooth = t > 0 ? surfaceTooth(w, h, surface.toothSize) : null;
-  const grain = g > 0 ? surfaceGrain(w, h) : null;
+  const grain = g > 0 ? surfaceGrain(w, h, pixelScale) : null;
   for (let i = 0, p = 0; i < w * h; i++, p += 4) {
     const f = 1 + (tooth ? tooth[i] * t : 0) + (grain ? grain[i] * g : 0);
     px[p] = px[p] * f; px[p + 1] = px[p + 1] * f; px[p + 2] = px[p + 2] * f;
   }
+}
+
+/** Lays the tooth and grain over what is on `ctx` now (the ground alone), in place. */
+function wearTooth(ctx: CanvasRenderingContext2D, w: number, h: number, contrast: number, surface: SurfaceSettings) {
+  const img = ctx.getImageData(0, 0, w, h);
+  multiplyWall(img.data, w, h, contrast, surface, 1);
   ctx.putImageData(img, 0, 0);
+}
+
+/**
+ * The card's wall grain on a finished ground. Reads `IMAGE_CARD_PRESET` only.
+ * `pixelScale` 2 keeps the grain on the 1× grid.
+ */
+export function applyWallGrain(image: ImageData, pixelScale = 1) {
+  multiplyWall(image.data, image.width, image.height, IMAGE_CARD_PRESET.tonalContrast, IMAGE_CARD_PRESET.wall, pixelScale);
+}
+
+/** The card's film grain (B · tonal, as preset). `pixelScale` 2 keeps it on the 1× grid. */
+export function applyCardFilmGrain(image: ImageData, pixelScale = 1) {
+  const grain = IMAGE_CARD_PRESET.filmGrain;
+  if (grain.kind === "off" || grain.intensity <= 0) return;
+  new GrainStudy(image).render(grain, image, pixelScale);
+}
+
+/** The card's ground at logical `w`×`h`, lit from `IMAGE_CARD_PRESET` and drawn up with smoothing. */
+export function cardLight(w: number, h: number, place?: Placement): HTMLCanvasElement {
+  const aspect = h / Math.max(1, w);
+  // With no vessel the shade sits below the page, so the ground stays the open paper.
+  const standing = place ?? { ox: .5, oy: aspect + .8, fy: aspect + 1, bodyW: .22, aspect };
+  return lightCanvas(w, h, { ...standing, aspect }, undefined, SURFACE.seed, IMAGE_CARD_PRESET.tonalContrast, IMAGE_CARD_PRESET.wall);
 }
 
 /* ---- the light ---- */
@@ -396,27 +434,35 @@ export function copyArtifactFrame(source: HTMLCanvasElement): HTMLCanvasElement 
   return copy;
 }
 
-/** The downloaded image: the card, its grain applied at full size, as a PNG. */
+/** The downloaded image: ground, wall grain, vessel, film grain, then the words. */
 export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<Blob> {
-  const canvas = await memoryCard(artifact, title, year, transcript, tone);
-  const grain = IMAGE_CARD_PRESET.filmGrain;
-  if (grain.kind !== "off") {
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Image canvas unavailable");
-    const source = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const out = ctx.createImageData(canvas.width, canvas.height);
-    new GrainStudy(source).render(grain, out);
-    ctx.putImageData(out, 0, 0);
-  }
-  return pngOf(canvas);
+  const laid = await layCard(artifact, title, year, transcript, tone);
+  const ctx = laid.canvas.getContext("2d");
+  if (!ctx) throw new Error("Image canvas unavailable");
+  const source = ctx.getImageData(0, 0, laid.canvas.width, laid.canvas.height);
+  applyCardFilmGrain(source, 1);
+  ctx.putImageData(source, 0, 0);
+  laid.paintWords(ctx);
+  return pngOf(laid.canvas);
 }
 
 export function pngOf(canvas: HTMLCanvasElement): Promise<Blob> {
   return new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Image export failed")), "image/png"));
 }
 
+type LaidCard = { canvas: HTMLCanvasElement; paintWords: (ctx: CanvasRenderingContext2D) => void };
+
 /** The card before any grain: the room, the vessel and the words, at full size. */
 export async function memoryCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<HTMLCanvasElement> {
+  const laid = await layCard(artifact, title, year, transcript, tone);
+  const ctx = laid.canvas.getContext("2d");
+  if (!ctx) throw new Error("Image canvas unavailable");
+  laid.paintWords(ctx);
+  return laid.canvas;
+}
+
+/** The room and the vessel. The words stay a separate pass so film grain can fall between them. */
+async function layCard(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<LaidCard> {
   await Promise.all([
     document.fonts.load(`28px ${SERIF}`),
     document.fonts.load(`32px ${SERIF_CJK}`, "滲む nijimu"),
@@ -464,22 +510,24 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
   wearTooth(ctx, w, h, contrast, wall);
   ctx.drawImage(artifact, artifactX, artifactY, artifactSize, artifactSize);
 
-  ctx.fillStyle = CHROME_GRAY;
-  ctx.textBaseline = "top";
-  ctx.font = `32px ${SERIF_CJK}`;
-  const jp = ctx.measureText("滲む").width, en = ctx.measureText("nijimu").width, gap = 32;
-  ctx.textAlign = "left";
-  const logoX = (w - jp - en - gap) / 2;
-  ctx.fillText("滲む", logoX, headerY);
-  ctx.fillText("nijimu", logoX + jp + gap, headerY);
-  ctx.textAlign = "center";
-  ctx.font = `36px ${SERIF}`;
-  titles.forEach((line, i) => ctx.fillText(line, 600, titleY + i * 48));
-  ctx.font = `24px ${SERIF}`;
-  ctx.fillText(year, 600, yearY);
-  ctx.font = `28px ${SERIF}`;
-  lines.forEach((line, i) => ctx.fillText(line, 600, textY + i * transcriptLineHeight));
-  return canvas;
+  const paintWords = (words: CanvasRenderingContext2D) => {
+    words.fillStyle = CHROME_GRAY;
+    words.textBaseline = "top";
+    words.font = `32px ${SERIF_CJK}`;
+    const jp = words.measureText("滲む").width, en = words.measureText("nijimu").width, gap = 32;
+    words.textAlign = "left";
+    const logoX = (w - jp - en - gap) / 2;
+    words.fillText("滲む", logoX, headerY);
+    words.fillText("nijimu", logoX + jp + gap, headerY);
+    words.textAlign = "center";
+    words.font = `36px ${SERIF}`;
+    titles.forEach((line, i) => words.fillText(line, 600, titleY + i * 48));
+    words.font = `24px ${SERIF}`;
+    words.fillText(year, 600, yearY);
+    words.font = `28px ${SERIF}`;
+    lines.forEach((line, i) => words.fillText(line, 600, textY + i * transcriptLineHeight));
+  };
+  return { canvas, paintWords };
 }
 
 export function downloadMemoryImage(blob: Blob, title: string) {

@@ -28,7 +28,7 @@ export function FamilyMesh({ form }: { form: ArtifactForm }) {
 }
 function FormView({ form, large = false }: { form: ArtifactForm; large?: boolean }) {
   return <div style={{ height: large ? 290 : 175 }}>
-    <Canvas frameloop="demand" dpr={[1, 1.5]} camera={{ position: [3.1, 2.8, 4.8], fov: large ? 32 : 34 }} gl={{ alpha: true }}>
+    <Canvas frameloop="demand" dpr={2} camera={{ position: [3.1, 2.8, 4.8], fov: large ? 32 : 34 }} gl={{ alpha: true, preserveDrawingBuffer: true }}>
       <ambientLight intensity={1.1} /><directionalLight position={[3, 5, 4]} intensity={2.5} /><directionalLight position={[-3, 0, -2]} intensity={0.8} color="#b7d3d7" />
       <FamilyMesh form={form} /><OrbitControls enablePan={false} enableZoom={false} />
     </Canvas>

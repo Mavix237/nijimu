@@ -76,7 +76,7 @@ import photoA from "../../assets/memory-photo.jpg";
 import photoB from "../../assets/memory-photo-02.jpg";
 import { PortraitFit, viewHalfTan } from "../lib/portraitView";
 import { readPhoto } from "../lib/photoSize";
-import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
+import { RT_SAMPLES } from "../lib/deviceTier";
 import { UNDERWATER, UNDERWATER_GLSL } from "../lib/atmosphere";
 
 /*
@@ -2971,7 +2971,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   };
 
   return (
-    <main ref={hostRef} data-capture-root="descent" style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
+    <main ref={hostRef} data-capture-root="descent" data-capture-backdrop="" style={{ position: "relative", width: "100%", height: "100dvh", overflow: "clip",
       pointerEvents: leaving ? "none" : undefined,
       background: resume ? SINK_WASH : pondBackdropCss(pondSky) }}
       onPointerMove={pointerAsHand}
@@ -2980,7 +2980,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         reducedMotion={reducedMotion} covered={!invitation}
         renderScene={pond => ready ? (<Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
         onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
-        dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
+        dpr={2} gl={{ antialias: true, alpha: true, preserveDrawingBuffer: true }} style={{ position: "absolute", inset: 0 }}>
         <CaptureFrame />
         <PortraitFit />
         <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef} haloRef={haloRef}
@@ -2993,7 +2993,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           onAscended={ascended}
           onRewound={(to) => setPhase(to)} />
       </Canvas>) : null} />
-      <div ref={glowRef} aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none",
+      <div ref={glowRef} aria-hidden data-capture-veil="" style={{ position: "absolute", inset: 0, pointerEvents: "none",
         background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />
       <div ref={haloRef} aria-hidden style={{
         position: "absolute", left: 0, top: 0, pointerEvents: "none", zIndex: 7, opacity: 0,

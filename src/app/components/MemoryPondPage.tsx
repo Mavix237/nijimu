@@ -173,10 +173,10 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     promptRipples: !overlaid && active, sinkRef };
 
   return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
-    data-capture-root="pond"
+    data-capture-root="pond" data-capture-backdrop=""
     style={{ position: "absolute", inset: 0, overflow: "hidden", background: pondBackdropCss(tune.sky), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
     {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
-    {!renderScene && <div aria-hidden style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
+    {!renderScene && <div aria-hidden data-capture-veil="" style={{ position: "absolute", inset: 0, pointerEvents: "none", background: "radial-gradient(ellipse at 48% 24%, #fff9, transparent 58%)" }} />}
 
     {POND_THOUGHTS.map((thought, i) => <div key={thought.text} ref={el => { promptRefs.current[i] = el; }} data-pond-prompt={i} aria-hidden="true"
       style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SANS, fontWeight: 400, fontSynthesis: "none", fontSize: POND_PROMPT_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>

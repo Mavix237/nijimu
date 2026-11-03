@@ -603,7 +603,7 @@ export function createPuddleSimulation(
     antialias: false,
     depth: false,
     stencil: false,
-    preserveDrawingBuffer: false,
+    preserveDrawingBuffer: true,
   });
   if (!gl || !gl.getExtension("EXT_color_buffer_float")) return null;
 
@@ -992,7 +992,7 @@ export function createPuddleSimulation(
       if (disposed) return;
       // kept at 2× on phones too: the paper grain is drawn per canvas pixel,
       // and a lower ratio would coarsen it (deviceTier.ts lowers the others)
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = 2;
       const w = Math.max(Math.round(canvas.clientWidth * dpr), 1);
       const h = Math.max(Math.round(canvas.clientHeight * dpr), 1);
       if (canvas.width !== w || canvas.height !== h) {

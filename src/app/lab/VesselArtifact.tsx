@@ -4,7 +4,7 @@ import * as THREE from "three";
 import { formKey, type ArtifactForm } from "../lib/superformula";
 import { prepareFilmPhoto } from "../lib/filmLook";
 import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
-import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
+import { RT_SAMPLES } from "../lib/deviceTier";
 import { captureFrozen } from "../lib/captureFreeze";
 import { CaptureFrame } from "../components/CaptureFrame";
 import { setApexHover } from "../lib/apexHover";
@@ -673,7 +673,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
     // that tiny size and stretched when it reached the apex
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
-      dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
+      dpr={2} gl={{ antialias: true, alpha: true, premultipliedAlpha: true, preserveDrawingBuffer: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       style={extra > 0 ? { width: "100%", height: `${(1 + extra) * 100}%` } : { width: "100%", height: "100%" }}>
       <CaptureFrame />

@@ -68,6 +68,22 @@ const spread = (x0, y0) => {
 };
 assert.ok(spread(560, 500) > spread(60, 1500) * 1.5, 'tonal: midtones carry more grain than highlights');
 
+// printed at 2×, the card's grain is the same pattern at the same size: each grain over its 2×2 px
+{
+  const w = 300, h = 400, flat = (s) => {
+    const d = new Uint8ClampedArray(w * s * h * s * 4);
+    for (let p = 0; p < d.length; p += 4) { d[p] = 186; d[p + 1] = 180; d[p + 2] = 176; d[p + 3] = 255; }
+    return { width: w * s, height: h * s, data: d };
+  };
+  const card = { kind: 'tonal', intensity: .2, size: .5 };
+  const one = new GrainStudy(flat(1)).render(card);
+  const two = new GrainStudy(flat(2)).render(card, undefined, 2);
+  for (let y = 0; y < 2 * h; y++) for (let x = 0; x < 2 * w; x++) {
+    const p = (y * 2 * w + x) * 4, q = ((y >> 1) * w + (x >> 1)) * 4;
+    if (two.data[p + 1] !== one.data[q + 1]) assert.fail(`grain at 2× differs from the card's at ${x},${y}`);
+  }
+}
+
 assert.deepEqual({ ...grainSettingsOf({ kind: 'nope', intensity: 9, size: -1 }) }, { kind: 'off', intensity: 1, size: .5 }, 'settings are clamped');
 console.log('Film grain checks passed: deterministic, source untouched, off exact, monochrome, tonal response.');
 console.log('ms at 1200×1600 (first render / intensity change):', JSON.stringify(times));

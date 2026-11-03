@@ -83,6 +83,8 @@ export interface VesselArtifactProps {
   onPick?: () => void;
   /** Called after the first complete frame, so arrivals wait for the actual vessel. */
   onReady?: (canvas: HTMLCanvasElement) => void;
+  /** A fixed pixel ratio in place of the screen's (the image card's frame, the same on every device). */
+  dpr?: number;
 }
 
 interface Built { glass: Glass; sheet: Sheet; distance: number; radius: number }
@@ -484,7 +486,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
     // that tiny size and stretched when it reached the apex
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
-      dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
+      dpr={props.dpr ?? [1, MAX_DPR]} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       style={{ width: "100%", height: "100%" }}>
       <VesselObject {...props} parts={parts} />

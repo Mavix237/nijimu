@@ -237,8 +237,12 @@ export class GrainStudy {
 
   constructor(readonly source: Pixels, readonly seed: number = GRAIN_SEED) {}
 
-  /** The source with `settings`' grain, written into `out` (a new buffer if none is given). */
-  render(settings: GrainSettings, out?: Pixels): Pixels {
+  /**
+   * The source with `settings`' grain, written into `out` (a new buffer if none is given).
+   * `unit` is the source's px per grain pixel: an image printed at `unit`× wears the grain
+   * of its own size, the same pattern, each grain over the `unit`×`unit` px it now covers.
+   */
+  render(settings: GrainSettings, out?: Pixels, unit = 1): Pixels {
     const { width: w, height: h, data: src } = this.source;
     const target: Pixels = out && out.width === w && out.height === h
       ? out
@@ -248,22 +252,28 @@ export class GrainStudy {
     if (s.kind === "off" || s.intensity <= 0) { dst.set(src); return target; }
     const sigma = GRAIN_SIGMA * s.intensity * KIND_GAIN[s.kind];
     const size = Math.round(s.size * 20) / 20;
-    const [g, cr, cb] = this.field(s.kind, size);
+    const per = Math.max(1, unit);
+    const gw = Math.max(1, Math.round(w / per)), gh = Math.max(1, Math.round(h / per));
+    const [g, cr, cb] = this.field(s.kind, size, gw, gh);
+    const col = new Int32Array(w), row = new Int32Array(h);
+    for (let x = 0; x < w; x++) col[x] = Math.min(gw - 1, Math.floor(x / per));
+    for (let y = 0; y < h; y++) row[y] = Math.min(gh - 1, Math.floor(y / per)) * gw;
     const luma = this.lumaOf();
     const tone = tonalTables();
     const curveOf = s.kind === "tonal" ? tone.tonal : s.kind === "hybrid" ? tone.hybrid : s.kind === "spatial" ? tone.even : null;
-    const mean = s.kind === "hybrid" ? this.meanOf(size) : null;
+    const mean = s.kind === "hybrid" ? this.meanOf(size * per) : null;
     // the hybrid's grain also stretches or flattens the image's own local contrast
     const local = 3 * sigma;
     const tint = .08 * sigma;
     for (let i = 0, p = 0; i < w * h; i++, p += 4) {
       const y = luma[i];
-      const n = g[i];
+      const gi = per === 1 ? i : row[(i / w) | 0] + col[i % w];
+      const n = g[gi];
       let d = sigma * n * (curveOf ? curveOf[Math.round(y * LUT)] : 1);
       if (mean) d += (y - mean[i]) * local * n;
       let dr = d, dg = d, db = d;
       if (cr && cb) {
-        const r = tint * cr[i], b = tint * cb[i];
+        const r = tint * cr[gi], b = tint * cb[gi];
         dr += r; db += b; dg -= (.2126 * r + .0722 * b) / .7152;
       }
       dst[p] = src[p] + dr * 255;
@@ -292,11 +302,10 @@ export class GrainStudy {
     return m;
   }
 
-  private field(kind: Exclude<GrainKind, "off">, size: number): Float32Array[] {
-    const key = `${kind}|${size}`;
+  private field(kind: Exclude<GrainKind, "off">, size: number, w: number, h: number): Float32Array[] {
+    const key = `${kind}|${size}|${w}x${h}`;
     const kept = this.fields.get(key);
     if (kept) { this.fields.delete(key); this.fields.set(key, kept); return kept; }
-    const { width: w, height: h } = this.source;
     const seed = this.seed;
     const made =
       kind === "uniform" ? [uniformCells(w, h, size, seed)]

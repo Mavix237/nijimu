@@ -7,8 +7,15 @@ import type { NamingSession } from "./NamingRim";
 import { draftArtifactOf } from "../lib/namingDraft";
 import { galleryStateFor } from "../lab/VesselGalleryPreview";
 import { VesselArtifact } from "../lab/VesselArtifact";
+import type { Room } from "../lab/VesselPreview";
 import { withNamingLights } from "../lib/namingTune";
-import { copyArtifactFrame, downloadMemoryImage, memoryImage } from "../lib/memoryImage";
+import { CARD_SCALE, copyArtifactFrame, downloadMemoryImage, memoryImage } from "../lib/memoryImage";
+
+/* The card photographs the vessel as the gallery wears it: its lighter stain
+   (strength, foot band, flash), its glass and its room, with naming's two lights. */
+const CARD_STAIN = { memoryTintAmount: .21, memoryTintDepth: .47, memoryFlash: .85 };
+const CARD_GLASS = { bend: .67, glassSoft: .9, photoOpacity: .78 };
+const CARD_ROOM: Room = { above: "#eae7e6", below: "#ffffff" };
 
 export function SaveMemoryDialog({ session, title, year, onClose, onContinue, storageError }: {
   session: NamingSession; title: string; year: string;
@@ -21,7 +28,8 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
   const captured = useRef(false);
   const vessel = useMemo(() => {
     const state = galleryStateFor(draftArtifactOf(session));
-    return { ...state, tune: withNamingLights(state.tune) };
+    const stained = state.tune.memoryTintAmount > 0;
+    return { ...state, room: CARD_ROOM, tune: withNamingLights({ ...state.tune, ...CARD_GLASS, ...(stained ? CARD_STAIN : {}) }) };
   }, [session]);
   useEffect(() => () => { attempt.current++; }, []);
   useEffect(() => {
@@ -96,7 +104,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
       <VesselArtifact cacheKey={`export-${session.draftId}|${attempt.current}`} form={vessel.form} morph={vessel.tune.morph}
         photoUrl={vessel.url || undefined} seed={vessel.seed} tune={vessel.tune} room={vessel.room}
         glassMode={vessel.mode} sheetMode={vessel.sheetMode} face={vessel.face} sheetSize={vessel.tune.sheetSize}
-        still focused={false} frameloop="always" onReady={canvas => { void exportFrame(canvas); }} />
+        still focused={false} frameloop="always" dpr={CARD_SCALE} onReady={canvas => { void exportFrame(canvas); }} />
     </div>}
   </div>, document.body);
 }

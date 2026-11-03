@@ -234,29 +234,42 @@ export function surfaceTooth(w: number, h: number, size = 1): Float32Array {
   return tooth;
 }
 
-/** The fine grain for a page of `w`×`h` px: a triangular draw per pixel, zero mean, unit σ. */
-export function surfaceGrain(w: number, h: number): Float32Array {
-  const key = `${w}x${h}`;
+/**
+ * The fine grain for a page of `w`×`h` px: a triangular draw per grain, zero mean, unit σ.
+ * A grain is one pixel of the card at its own scale; printed at `unit` px per card
+ * pixel it is the same grain, the same pattern, over the `unit`×`unit` px it covers.
+ */
+export function surfaceGrain(w: number, h: number, unit = 1): Float32Array {
+  const key = unit > 1 ? `${w}x${h}@${unit}` : `${w}x${h}`;
   const hit = grainCache.get(key);
   if (hit) return hit;
   const n = w * h;
   const grain = new Float32Array(n);
-  // two uniforms: σ of their sum is 1/√6
-  const scale = Math.sqrt(6);
-  for (let k = 0; k < n; k++) grain[k] = (lattice(k, 1, SURFACE.seed + 5) + lattice(k, 2, SURFACE.seed + 5) - 1) * scale;
+  if (unit > 1) {
+    const bw = Math.max(1, Math.round(w / unit)), bh = Math.max(1, Math.round(h / unit));
+    const base = surfaceGrain(bw, bh);
+    for (let j = 0; j < h; j++) {
+      const row = Math.min(bh - 1, Math.floor(j / unit)) * bw;
+      for (let i = 0; i < w; i++) grain[j * w + i] = base[row + Math.min(bw - 1, Math.floor(i / unit))];
+    }
+  } else {
+    // two uniforms: σ of their sum is 1/√6
+    const scale = Math.sqrt(6);
+    for (let k = 0; k < n; k++) grain[k] = (lattice(k, 1, SURFACE.seed + 5) + lattice(k, 2, SURFACE.seed + 5) - 1) * scale;
+  }
   remember(grainCache, key, grain);
   return grain;
 }
 
-/** Lays the tooth and grain over what is on `ctx` now (the ground alone), in place. */
-function wearTooth(ctx: CanvasRenderingContext2D, w: number, h: number, contrast: number, surface: SurfaceSettings) {
+/** Lays the tooth and grain over what is on `ctx` now (the ground alone), in place; `scale` is px per card unit. */
+function wearTooth(ctx: CanvasRenderingContext2D, w: number, h: number, contrast: number, surface: SurfaceSettings, scale: number) {
   const k = .9 + .1 * contrast;
   const t = SURFACE.tooth * surface.tooth * k, g = SURFACE.grain * surface.grain * k;
   if (t <= 0 && g <= 0) return;
   const img = ctx.getImageData(0, 0, w, h);
   const px = img.data;
-  const tooth = t > 0 ? surfaceTooth(w, h, surface.toothSize) : null;
-  const grain = g > 0 ? surfaceGrain(w, h) : null;
+  const tooth = t > 0 ? surfaceTooth(w, h, surface.toothSize * scale) : null;
+  const grain = g > 0 ? surfaceGrain(w, h, scale) : null;
   for (let i = 0, p = 0; i < w * h; i++, p += 4) {
     const f = 1 + (tooth ? tooth[i] * t : 0) + (grain ? grain[i] * g : 0);
     px[p] = px[p] * f; px[p + 1] = px[p + 1] * f; px[p + 2] = px[p + 2] * f;
@@ -346,6 +359,121 @@ function artifactBounds(artifact: HTMLCanvasElement): { top: number; bottom: num
   return { top: top / n, bottom: (bottom + 1) / n, left: left / n, right: (right + 1) / n };
 }
 
+/**
+ * The floor under the vessel is very slightly polished: the rendered vessel,
+ * mirrored about its foot, `strength` as strong as itself at the contact and
+ * gone by `reach` of its height, softening downward from `blurFrom` to `blurTo`
+ * card px (the radius of two box passes each way, most of it gained early), with
+ * a little of its saturation and contrast taken out (`flatten` toward the floor's
+ * own colour under it).
+ */
+const REFLECTION = {
+  strength: .3,
+  reach: .36,
+  blurFrom: .5,
+  blurTo: 10,
+  desaturate: .25,
+  flatten: .2,
+} as const;
+
+/** The mean colour (0…1) of the wall in a `w`×`h` px box centred at `x`, `y`. */
+function floorColor(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): [number, number, number] {
+  const x0 = Math.max(0, Math.round(x - w / 2)), y0 = Math.max(0, Math.round(y - h / 2));
+  const bw = Math.max(1, Math.min(ctx.canvas.width - x0, Math.round(w))), bh = Math.max(1, Math.min(ctx.canvas.height - y0, Math.round(h)));
+  const d = ctx.getImageData(x0, y0, bw, bh).data;
+  let r = 0, g = 0, b = 0;
+  for (let p = 0; p < d.length; p += 4) { r += d[p]; g += d[p + 1]; b += d[p + 2]; }
+  const n = 255 * (d.length / 4);
+  return [r / n, g / n, b / n];
+}
+
+/** Box blur along rows or (`vertical`) columns, the radius set per row; premultiplied channels, clear past the edges. */
+function boxBlur(channels: Float32Array[], w: number, h: number, radiusOf: (row: number) => number, vertical: boolean) {
+  const len = vertical ? h : w, lines = vertical ? w : h;
+  const prefix = new Float32Array(len + 1);
+  const line = new Float32Array(len);
+  for (const c of channels) {
+    for (let l = 0; l < lines; l++) {
+      const at = (i: number) => vertical ? i * w + l : l * w + i;
+      for (let i = 0; i < len; i++) prefix[i + 1] = prefix[i] + c[at(i)];
+      for (let i = 0; i < len; i++) {
+        const r = radiusOf(vertical ? i : l);
+        const lo = Math.max(0, i - r), hi = Math.min(len, i + r + 1);
+        line[i] = (prefix[hi] - prefix[lo]) / (2 * r + 1);
+      }
+      for (let i = 0; i < len; i++) c[at(i)] = line[i];
+    }
+  }
+}
+
+/**
+ * The vessel's reflection for a body drawn `size` px square, at `scale` px per
+ * card unit: a canvas `size` wide that hangs from the row under the foot, and
+ * that foot's row in the body. Null when the frame is clear or unreadable.
+ */
+function artifactReflection(artifact: HTMLCanvasElement, size: number, scale: number,
+  floor: readonly [number, number, number]): { canvas: HTMLCanvasElement; foot: number } | null {
+  const body = document.createElement("canvas");
+  body.width = body.height = size;
+  const bctx = body.getContext("2d", { willReadFrequently: true });
+  if (!bctx) return null;
+  bctx.imageSmoothingEnabled = true;
+  bctx.imageSmoothingQuality = "high";
+  bctx.drawImage(artifact, 0, 0, size, size);
+  let src: Uint8ClampedArray;
+  try { src = bctx.getImageData(0, 0, size, size).data; } catch { return null; }
+  let top = -1, foot = -1;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0, p = y * size * 4 + 3; x < size; x++, p += 4) {
+      if (src[p] <= 8) continue;
+      if (top < 0) top = y;
+      foot = y;
+      break;
+    }
+  }
+  if (foot < 0) return null;
+  const reach = Math.max(2, Math.round((foot - top + 1) * REFLECTION.reach));
+  const r0 = REFLECTION.blurFrom * scale, r1 = REFLECTION.blurTo * scale;
+  // the blur reads a little past the end of the fade
+  const rows = reach + Math.ceil(r1) * 2;
+  const n = size * rows;
+  const [R, G, B, A] = [0, 1, 2, 3].map(() => new Float32Array(n));
+  for (let d = 0; d < rows && foot - d >= 0; d++) {
+    for (let x = 0, p = (foot - d) * size * 4, k = d * size; x < size; x++, p += 4, k++) {
+      const a = src[p + 3] / 255;
+      R[k] = src[p] / 255 * a; G[k] = src[p + 1] / 255 * a; B[k] = src[p + 2] / 255 * a; A[k] = a;
+    }
+  }
+  const radius = (d: number) => Math.round(r0 + (r1 - r0) * Math.sqrt(Math.min(1, d / reach)));
+  for (let pass = 0; pass < 2; pass++) {
+    boxBlur([R, G, B, A], size, rows, radius, false);
+    boxBlur([R, G, B, A], size, rows, radius, true);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = size; canvas.height = reach;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  const img = ctx.createImageData(size, reach);
+  const out = img.data;
+  for (let d = 0; d < reach; d++) {
+    const t = d / reach;
+    const fade = REFLECTION.strength * (1 - t) * (1 - t);
+    for (let x = 0, k = d * size, p = k * 4; x < size; x++, k++, p += 4) {
+      const a = A[k];
+      if (a <= 1e-4) continue;
+      const luma = .2126 * R[k] + .7152 * G[k] + .0722 * B[k];
+      const tone = (c: number, ground: number) => {
+        const grey = c + (luma - c) * REFLECTION.desaturate;
+        return (grey + (ground * a - grey) * REFLECTION.flatten) / a;
+      };
+      out[p] = tone(R[k], floor[0]) * 255; out[p + 1] = tone(G[k], floor[1]) * 255; out[p + 2] = tone(B[k], floor[2]) * 255;
+      out[p + 3] = Math.min(1, a) * fade * 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return { canvas, foot };
+}
+
 /** Wrap the complete passage, including paragraph breaks and unspaced text. */
 export function imageTextLines(text: string, width: number, measure: (text: string) => number, balanceEnd = false): string[] {
   return text.split(/\r?\n/).flatMap(paragraph => {
@@ -396,6 +524,12 @@ export function copyArtifactFrame(source: HTMLCanvasElement): HTMLCanvasElement 
   return copy;
 }
 
+/** The card is laid out in units of its 1200-wide page and printed at this many px per unit. */
+export const CARD_SCALE = 2;
+const CARD_WIDTH = 1200;
+/** Safari's largest canvas; a card long enough to pass it prints a little coarser instead. */
+const CARD_MAX_PIXELS = 16_777_216;
+
 /** The downloaded image: the card, its grain applied at full size, as a PNG. */
 export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<Blob> {
   const canvas = await memoryCard(artifact, title, year, transcript, tone);
@@ -405,7 +539,8 @@ export async function memoryImage(artifact: HTMLCanvasElement, title: string, ye
     if (!ctx) throw new Error("Image canvas unavailable");
     const source = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const out = ctx.createImageData(canvas.width, canvas.height);
-    new GrainStudy(source).render(grain, out);
+    // the grain is the card's at its own scale, however finely it is printed
+    new GrainStudy(source).render(grain, out, canvas.width / CARD_WIDTH);
     ctx.putImageData(out, 0, 0);
   }
   return pngOf(canvas);
@@ -422,7 +557,7 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
     document.fonts.load(`32px ${SERIF_CJK}`, "滲む nijimu"),
   ]);
   const canvas = document.createElement("canvas");
-  canvas.width = 1200;
+  canvas.width = CARD_WIDTH;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Image canvas unavailable");
   ctx.font = `36px ${SERIF}`;
@@ -435,8 +570,14 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
   const titleY = 1190;
   const yearY = titleY + titles.length * 48 + 12;
   const textY = yearY + 100;
-  canvas.height = Math.max(1600, textY + lines.length * transcriptLineHeight + 120);
-  const w = canvas.width, h = canvas.height;
+  const w = CARD_WIDTH, h = Math.max(1600, textY + lines.length * transcriptLineHeight + 120);
+  const scale = Math.min(CARD_SCALE, Math.sqrt(CARD_MAX_PIXELS / (w * h)));
+  // resizing clears the context, the font with it
+  canvas.width = Math.round(w * scale);
+  canvas.height = Math.round(h * scale);
+  const pw = canvas.width, ph = canvas.height;
+  // everything is placed in card units; the pixel passes work on the print's own px
+  ctx.setTransform(pw / w, 0, 0, ph / h, 0, 0);
 
   // Keep the smaller artifact midway between the header and first title line.
   const artifactSize = 864;
@@ -458,10 +599,20 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
   ctx.imageSmoothingQuality = "high";
   const contrast = IMAGE_CARD_PRESET.tonalContrast;
   const wall = IMAGE_CARD_PRESET.wall;
-  ctx.drawImage(lightCanvas(w, h, place, tone, seed, contrast, wall), 0, 0, w, h);
+  ctx.drawImage(lightCanvas(pw, ph, place, tone, seed, contrast, wall), 0, 0, w, h);
   ctx.restore();
   // the tooth is the wall's, so it goes on before the vessel and the words
-  wearTooth(ctx, w, h, contrast, wall);
+  wearTooth(ctx, pw, ph, contrast, wall, pw / w);
+  // the reflection lies on the floor under the vessel's own shade, and the vessel stands over its top edge
+  const body = Math.round(artifactSize * pw / w);
+  const reflection = artifactReflection(artifact, body, pw / w, floorColor(ctx,
+    place.ox * pw, (place.fy + .03) * pw, place.bodyW * .5 * pw, .02 * pw));
+  if (reflection) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(reflection.canvas, Math.round(artifactX * pw / w), Math.round(artifactY * ph / h) + reflection.foot + 1);
+    ctx.restore();
+  }
   ctx.drawImage(artifact, artifactX, artifactY, artifactSize, artifactSize);
 
   ctx.fillStyle = CHROME_GRAY;

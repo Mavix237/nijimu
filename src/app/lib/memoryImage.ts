@@ -524,11 +524,12 @@ export function copyArtifactFrame(source: HTMLCanvasElement): HTMLCanvasElement 
   return copy;
 }
 
-/** The card is laid out in units of its 1200-wide page and printed at this many px per unit. */
+/** The card is laid out in units of its 1200 × 1750 page and printed at this many px per unit (2400 × 3500). */
 export const CARD_SCALE = 2;
 const CARD_WIDTH = 1200;
-/** Safari's largest canvas; a card long enough to pass it prints a little coarser instead. */
-const CARD_MAX_PIXELS = 16_777_216;
+const CARD_HEIGHT = 1750;
+/** The transcript at its own size, and as small as it may go to fit the page; its line height keeps their ratio. */
+const PASSAGE = { size: 28, minSize: 16, lineHeight: 40 / 28, bottom: 120 } as const;
 
 /** The downloaded image: the card, its grain applied at full size, the words printed clean over it, as a PNG. */
 export async function memoryImage(artifact: HTMLCanvasElement, title: string, year: string, transcript: string, tone?: Oklch): Promise<Blob> {
@@ -567,19 +568,31 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
   if (!ctx) throw new Error("Image canvas unavailable");
   ctx.font = `36px ${SERIF}`;
   const titles = imageTextLines(title, 960, text => ctx.measureText(text).width);
-  ctx.font = `28px ${SERIF}`;
-  const lines = imageTextLines(transcript, 900, text => ctx.measureText(text).width, true);
-  const transcriptLineHeight = 40;
   const headerY = 80;
   const headerHeight = 32;
   const titleY = 1190;
   const yearY = titleY + titles.length * 48 + 12;
   const textY = yearY + 100;
-  const w = CARD_WIDTH, h = Math.max(1600, textY + lines.length * transcriptLineHeight + 120);
-  const scale = Math.min(CARD_SCALE, Math.sqrt(CARD_MAX_PIXELS / (w * h)));
+  const w = CARD_WIDTH, h = CARD_HEIGHT;
+  // the page does not grow: a long transcript is set smaller until it fits above the foot
+  let passageSize: number = PASSAGE.size;
+  let lines: string[] = [];
+  for (; ; passageSize--) {
+    ctx.font = `${passageSize}px ${SERIF}`;
+    lines = imageTextLines(transcript, 900, text => ctx.measureText(text).width, true);
+    if (textY + lines.length * passageSize * PASSAGE.lineHeight + PASSAGE.bottom <= h || passageSize <= PASSAGE.minSize) break;
+  }
+  const transcriptLineHeight = passageSize * PASSAGE.lineHeight;
+  const room = Math.max(1, Math.floor((h - PASSAGE.bottom - textY) / transcriptLineHeight));
+  if (lines.length > room) {
+    lines = lines.slice(0, room);
+    let last = lines[room - 1];
+    while (last && ctx.measureText(`${last}…`).width > 900) last = last.slice(0, -1);
+    lines[room - 1] = `${last.trimEnd()}…`;
+  }
   // resizing clears the context, the font with it
-  canvas.width = Math.round(w * scale);
-  canvas.height = Math.round(h * scale);
+  canvas.width = Math.round(w * CARD_SCALE);
+  canvas.height = Math.round(h * CARD_SCALE);
   const pw = canvas.width, ph = canvas.height;
   // everything is placed in card units; the pixel passes work on the print's own px
   ctx.setTransform(pw / w, 0, 0, ph / h, 0, 0);
@@ -634,7 +647,7 @@ export async function memoryCard(artifact: HTMLCanvasElement, title: string, yea
     titles.forEach((line, i) => ctx.fillText(line, 600, titleY + i * 48));
     ctx.font = `24px ${SERIF}`;
     ctx.fillText(year, 600, yearY);
-    ctx.font = `28px ${SERIF}`;
+    ctx.font = `${passageSize}px ${SERIF}`;
     lines.forEach((line, i) => ctx.fillText(line, 600, textY + i * transcriptLineHeight));
   };
   return { canvas, writeWords };

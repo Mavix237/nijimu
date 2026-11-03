@@ -1,11 +1,11 @@
 import { baseForm, isArtifactForm, superRadius, type ArtifactCategory, type ArtifactForm, type SuperParams } from "./superformula";
 import { ASSESSMENT_VERSION, isAssessment, type MemoryAssessment } from "../../../shared/memory-assessment.mjs";
 export type { MemoryAssessment } from "../../../shared/memory-assessment.mjs";
-export const MAPPING_VERSION = "memory-form-v3";
+export const MAPPING_VERSION = "memory-form-v4";
 export const MEMORY_FAMILIES = ["shell", "bowl", "tower", "floral"] as const;
 export type MemoryShapeFamily = typeof MEMORY_FAMILIES[number];
 export const FAMILY_LABELS: Record<MemoryShapeFamily, string> = { shell: "shell · 贝", bowl: "bowl · 碗", tower: "tower · 塔", floral: "floral · 花" };
-export const SHARPNESS_RULE = { pain: 0.7, disruption: 0.3, comfort: 0.15 } as const;
+export const SHARPNESS_RULE = { pain: 0.7, disruption: 0.3, comfort: 0.4 } as const;
 
 /**
  * The map is the user's own: eighteen kept vessel shapes placed by hand on the

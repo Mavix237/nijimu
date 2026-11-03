@@ -88,6 +88,10 @@ Shape step left untouched (growth under `RHYTHM_UNSHAPED` .05) is revealed to
 read relative to the hand as it is first seen (`createRhythmPinch`'s offset,
 `live()` for the hold): whatever gap it arrives with stands for the current
 m2, so a hand still spread from Shape no longer drives m2 to 16.
+Comfort softens more (`SHARPNESS_RULE.comfort` .4, was .15; `MAPPING_VERSION`
+memory-form-v4): a warm, comforting memory read as intense (designX: comfort
+.9, intensity .7) lands among the soft bowls (Y-17) instead of the urchins
+Y-16/Y-18 (the stacked "saucer"); very intense joy (.95) still reads floral.
 
 ## DialKit panels start folded (2026-11-02)
 

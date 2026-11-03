@@ -196,7 +196,7 @@ assert.ok(!contract.isAssessment({ ...assessment, beats: [{ ...assessment.beats[
 assert.ok(!contract.isAssessment({ ...assessment, beats: [] }, transcript));
 const assigned = shape.assignMemoryShape(assessment, "one", "api", "test", transcript);
 assert.equal(assigned.family, "floral", "positive excitement remains sharp");
-assert.ok(assigned.coordinates.sharpness > 0.8);
+assert.ok(assigned.coordinates.sharpness > 0.6);
 assert.ok(shape.isMemoryAssignment(assigned, transcript));
 assert.ok(!shape.isMemoryAssignment(assigned, `${transcript} But that is not what I remember most.`), "changed whole transcript invalidates an old reading");
 assert.ok(!shape.isMemoryAssignment({ ...assigned, form: geometry.baseForm("sphere") }, transcript), "tampered / mismatched form is not carried");

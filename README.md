@@ -173,7 +173,7 @@ to 1.2 lobes; the cross-section's `m` is left alone so closed seams stay closed.
 Kept shapes with fractional `m` keep their open seams.
 
 The assessment returns inward/outward orientation independently of positivity.
-Sharpness is `clamp(max(intensity, .7*discomfort + .3*disruption) - .15*comfort)`;
+Sharpness is `clamp(max(intensity, .7*discomfort + .3*disruption) - .4*comfort)`;
 joyful intensity can therefore be sharp. The coefficients are artistic starting
 values, not psychological measures. Bilinear quadrant weights name the family
 (none at a tie, though the map still gives the form); only a missing or

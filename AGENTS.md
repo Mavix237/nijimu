@@ -11,7 +11,8 @@ Naming's "preview image" (`MemoryImagePreview`) shows the downloaded card.
 field in OKLab; "Tonal Contrast" 0–200 scales the depth/ground
 fields and, past 100, keeps some colour in them), `memoryImage` adds the
 chosen grain at full size and returns a PNG. The preview's settings (contrast,
-grain) are kept in localStorage so "Download as image" matches the preview.
+the wall, grain) are kept in localStorage so "Download as image" matches the
+preview.
 `lib/filmGrain.ts` is the grain study, on plain RGBA buffers (ready for the
 grade/Snapshot pipeline): Off, A Uniform, B Tonal, C Spatial (correlated,
 clumped), D Hybrid (finer correlated grain, tonal, local contrast, faint
@@ -32,7 +33,12 @@ octaves of soft noise at 1.35/3.4/9 px weighted as the landing's paper tooth,
 level of 255 on the ground). Both are static, the tooth cached per size
 (~70 ms once, cards ~50 ms after); tonal contrast moves the tooth by a tenth
 either way. Measured against the smooth ground: rms 1.1–1.6 levels, max ~6,
-no more at 200 than at 100; it also dissolves the old 8-bit banding.
+no more at 200 than at 100; it also dissolves the old 8-bit banding. The
+preview's "Wall Density" (Density, Size) and "Wall Tooth" (Tooth, Size, Fine
+grain) rows scale those strengths as multiples of `SURFACE` (100 is the
+built-in; density 0–600, tooth and grain 0–800, sizes 30–300 and 50–400;
+double-click a slider for 100), kept in localStorage `nijimu.memoryImage.surface`
+and read by the download too.
 
 A coloured vessel is lit by three lights in the shared glass shader
 (`GLASS_COMMON_GLSL`); its material is not recoloured. The bottom colour is

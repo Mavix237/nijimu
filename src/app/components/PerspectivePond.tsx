@@ -8,7 +8,6 @@ import { POND_DROP_SLOTS } from "../lib/voicePeaks";
 import { POND_LENS, pondCameraPose, type PondSinkTarget } from "../lib/pondCamera";
 import { PortraitFit } from "../lib/portraitView";
 import { CAPTURE_SCALE_GLSL } from "../lib/captureScale";
-import { captureFragScaleFor } from "../lib/renderExport";
 import { POND_PIGMENT_GLSL, POND_SLOW_DROP, createPondPigmentUniforms, type PondPigmentUniforms } from "../lib/pondPigment";
 import { POND_TUNE_GLSL, POND_TUNE_UNIFORMS, pondBackdropCss, pondTune } from "../lib/pondTune";
 import { POND_SKY_FOOT, POND_SKY_MIDDLE, POND_SKY_TOP, POND_WATER, UNDERWATER_GLSL, hexRgb } from "../lib/atmosphere";
@@ -584,7 +583,6 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
   }, [gl, onReady]);
 
   useFrame((_, delta) => {
-    if ("uCaptureScale" in uniforms) uniforms.uCaptureScale.value = captureFragScaleFor(gl.domElement);
     if (sharedWaves) time.current = sharedWaves.uTime.value;
     else {
       if (!document.hidden && !reducedMotion && !captureFrozen()) time.current += Math.min(delta, .05);

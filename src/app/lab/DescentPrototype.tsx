@@ -5,7 +5,6 @@ import { ascentLightAt, ASCENT_LIGHT_GLSL, ASCENT_INTERIOR_GLSL } from "../lib/a
 import { FlowPageGrid } from "../components/FlowPageGrid";
 import { vesselTint } from "../lib/vesselTint";
 import { holdSurfaceFrame } from "../lib/surfaceHandoff";
-import { captureFragScaleFor, markCaptureTargets, useExportDrawingDpr } from "../lib/renderExport";
 import { CAPTURE_SCALE_GLSL } from "../lib/captureScale";
 import { captureFrozen } from "../lib/captureFreeze";
 import { CaptureFrame } from "../components/CaptureFrame";
@@ -929,21 +928,8 @@ function useKept<T>(make: () => T): T {
   return kept.current;
 }
 
-/** Screen-sized 4K keeps multisampling. Larger exports drop it, or the half-float targets never allocate. */
-const CAPTURE_MSAA_PIXELS = 3840 * 2160;
-
-function fitCaptureTarget(target: THREE.WebGLRenderTarget, w: number, h: number) {
-  const samples = w * h > CAPTURE_MSAA_PIXELS ? 0 : RT_SAMPLES;
-  if (target.samples !== samples) {
-    target.samples = samples;
-    target.dispose();
-  }
-  target.setSize(w, h);
-}
-
 function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossingRef, glowRef, pickRef, captionRef, hintRef, haloRef, onFallStart, onSettled, onDescend, onUnder, onWrapped, onRisen, onAscended, onRewound }: StageProps) {
   const { camera, size, gl, scene, viewport, invalidate } = useThree();
-  const exportDpr = useExportDrawingDpr(gl.domElement, viewport.dpr);
   const time = useRef(0);
   const jumped = useRef(false);
   const dropIndex = useRef(0);
@@ -1248,28 +1234,15 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
   }, []);
   useEffect(() => () => { touch.target.dispose(); touch.material.dispose(); touch.quad.geometry.dispose(); }, [touch]);
   useEffect(() => {
-    const w = Math.max(1, Math.round(size.width * exportDpr)), h = Math.max(1, Math.round(size.height * exportDpr));
-    // 4× MSAA half-float at 8K is about a gigabyte a target and the frame comes back blank.
-    // Above the screen's own 4K buffer, allocate a plain target. While the glass is not
-    // on screen the refraction target stays at the live size, so a transcript or a photo
-    // does not allocate a second full frame.
-    const formOn = Boolean(form.current?.visible) || stage.current.step === "distance";
-    fitCaptureTarget(touch.target, w, h);
+    const w = Math.max(1, Math.round(size.width * viewport.dpr)), h = Math.max(1, Math.round(size.height * viewport.dpr));
+    touch.target.setSize(w, h);
     ascentBloom.resize(w, h);
     silhouetteBlur.resize(w, h);
-    const live = Math.min(exportDpr, MAX_DPR);
-    fitCaptureTarget(
-      refract.target,
-      formOn ? w : Math.max(1, Math.round(size.width * live)),
-      formOn ? h : Math.max(1, Math.round(size.height * live)),
-    );
+    refract.target.setSize(w, h);
     touch.material.uniforms.uAspect.value = size.width / size.height;
-    // Touch bends in UV, so the lens stays the same fraction of the picture
-    // when the buffer grows. uViewport stays the CSS size.
     touch.material.uniforms.uViewport.value.set(size.width, size.height);
-    markCaptureTargets(gl.domElement, w, h);
     invalidate();
-  }, [touch, refract, ascentBloom, silhouetteBlur, exportDpr, size, gl, invalidate]);
+  }, [touch, refract, ascentBloom, silhouetteBlur, viewport.dpr, size, invalidate]);
   /* Three binds a material's uniform holders once, when its program is first
      acquired, and never reads `material.uniforms` again. A Fast Refresh (any
      save while the lab is open) recomputes every memo above, so the materials
@@ -1300,10 +1273,6 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     void pending;
   }, [gl, scene, camera]);
   useFrame(({ gl: renderer, scene, camera: view }) => {
-    const frag = captureFragScaleFor(renderer.domElement);
-    surfaceUniforms.uCaptureScale.value = frag;
-    volumeUniforms.uCaptureScale.value = frag;
-    sheetU.uCaptureScale.value = frag;
     motesUniforms.uPixel.value = renderer.getPixelRatio();
     const body = form.current;
     if ((body && body.visible) || stage.current.step === "distance") {

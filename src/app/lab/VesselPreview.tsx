@@ -11,7 +11,6 @@ import { FILM_LOOK_DEFAULT, FILM_LOOK_GLSL, filmLookUniforms, prepareFilmPhoto, 
 import { SHEET_GLSL, STOCKS, STRIP_FACE_GLSL, STRIP_GLSL, STRIP_MM, createEdgePrint, setStock, sheetUniforms, stockHex } from "./filmStrip";
 import { createArtifactGeometry } from "../hooks/useArtifactGeometry";
 import { MAX_DPR, RT_SAMPLES, VESSEL_DETAIL } from "../lib/deviceTier";
-import { captureFragScaleFor, markCaptureTargets, useExportDrawingDpr } from "../lib/renderExport";
 import { FINITE_GLSL } from "../lib/finiteGlsl";
 import {
   ARTIFACT_CATEGORIES, CATEGORY_LABELS, computeMeshNormals, createArtifactForm, describeForm, formKey, isArtifactForm, type ArtifactCategory, type ArtifactForm, type SuperParams,
@@ -2156,8 +2155,7 @@ interface StageProps {
 export const FRONT_LAYER = 1;
 
 function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, form, held, drag, yaw0 = YAW }: StageProps) {
-  const { camera, gl, size, viewport, invalidate } = useThree();
-  const exportDpr = useExportDrawingDpr(gl.domElement, viewport.dpr);
+  const { camera, size, viewport, invalidate } = useThree();
   const yaw = useRef(yaw0);
   // how much of the table is there: 1 with the eye above it, 0 once it has gone under
   const tableFade = useRef(1);
@@ -2200,14 +2198,13 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
     pass.blit.dispose(); pass.blur.dispose(); pass.extract.dispose(); pass.composite.dispose(); pass.quad.geometry.dispose();
   }, [pass]);
   useEffect(() => {
-    const w = Math.max(1, Math.round(size.width * exportDpr)), h = Math.max(1, Math.round(size.height * exportDpr));
+    const w = Math.max(1, Math.round(size.width * viewport.dpr)), h = Math.max(1, Math.round(size.height * viewport.dpr));
     pass.target.setSize(w, h);
     pass.frame.setSize(w, h);
     pass.pong.setSize(w, h);
     pass.soft.setSize(w, h);
-    markCaptureTargets(gl.domElement, w, h);
     invalidate();
-  }, [pass, exportDpr, size, gl, invalidate]);
+  }, [pass, viewport.dpr, size, invalidate]);
   const blurPx = tune.haze * tune.hazeBlur;
   const bloom = tune.haze * tune.hazeBloom;
   useFrame(({ gl: renderer, scene, camera: view }) => {

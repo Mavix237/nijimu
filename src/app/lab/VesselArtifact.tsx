@@ -5,7 +5,6 @@ import { formKey, type ArtifactForm } from "../lib/superformula";
 import { prepareFilmPhoto } from "../lib/filmLook";
 import { SEAT_PHOTO_MAX, scaledImage } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
-import { captureFragScaleFor, markCaptureTargets, useExportDrawingDpr } from "../lib/renderExport";
 import { captureFrozen } from "../lib/captureFreeze";
 import { CaptureFrame } from "../components/CaptureFrame";
 import { setApexHover } from "../lib/apexHover";
@@ -224,7 +223,6 @@ function VesselObject({
   parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, viewport, invalidate } = useThree();
-  const exportDpr = useExportDrawingDpr(gl.domElement, viewport.dpr);
   const mirror = reflection && reflection.strength > 0 ? reflection : null;
   // the canvas reaches below the seat by this share of its height; the seat itself is the top of it
   const extra = mirror ? Math.max(0, mirror.room) : 0;
@@ -422,14 +420,13 @@ function VesselObject({
     return soften.current;
   };
   useEffect(() => {
-    const w = Math.max(1, Math.round(size.width * exportDpr));
-    const h = Math.max(1, Math.round(size.height * exportDpr));
+    const w = Math.max(1, Math.round(size.width * viewport.dpr));
+    const h = Math.max(1, Math.round(size.height * viewport.dpr));
     pass.target.setSize(w, h);
     const s = soften.current;
     if (s) { s.frame.setSize(w, h); s.pong.setSize(w, h); }
-    markCaptureTargets(gl.domElement, w, h);
     invalidate();
-  }, [pass, exportDpr, size, gl, invalidate]);
+  }, [pass, viewport.dpr, size, invalidate]);
 
   const framing = useMemo(() => frameVessel(parts.glass.positions, LOOK_Y, FOV), [parts]);
   const built = useMemo<Built>(() => ({
@@ -517,7 +514,6 @@ function VesselObject({
   };
   const refract = glassMode === "refract";
   useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
-    sheetU.uCaptureScale.value = captureFragScaleFor(renderer.domElement);
     if (compiledFor.current !== glassMode) return;
     const step = captureFrozen() ? 0 : Math.min(dt, 0.1);
     if (focused && !still) yaw.current += tune.turn * step;

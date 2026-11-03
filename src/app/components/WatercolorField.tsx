@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { registerCaptureRedraw } from "../lib/renderExport";
 import { captureFrozen } from "../lib/captureFreeze";
 import type { WashTune } from "../lib/washTune";
 import { LANDING_MOTION } from "../lib/landingMotion";
@@ -1237,15 +1236,7 @@ export function WatercolorField({
       raf = requestAnimationFrame(draw);
     }
 
-    registerCaptureRedraw(canvas, (pixels) => {
-      if (pixels) {
-        canvas.width = pixels.width;
-        canvas.height = pixels.height;
-      }
-      present();
-    });
     return () => {
-      registerCaptureRedraw(canvas, null);
       cancelAnimationFrame(raf);
       window.removeEventListener("pointermove", onMove);
       stop();

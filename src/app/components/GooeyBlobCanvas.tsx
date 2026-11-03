@@ -1,5 +1,4 @@
 import { useEffect, useLayoutEffect, useRef, type MutableRefObject } from "react";
-import { registerCaptureRedraw, type CapturePixels } from "../lib/renderExport";
 
 /* The landing's gooey field, drawn in WebGL so every browser shows it.
 
@@ -410,7 +409,6 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
   const gradients = useRef<{ css: string; g: Gradient }[]>([]);
   const last = useRef<{ data: Float32Array; key: string } | null>(null);
   const failed = useRef(false);
-  const captureSize = useRef<CapturePixels | null>(null);
 
   // Draws one frame if anything changed since the last one.
   const frame = useRef(() => {});
@@ -420,15 +418,9 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
     if (!g || !canvas) return;
     const { colors: bg, width: fw, height: fh, params: p } = live.current;
     const dpr = window.devicePixelRatio || 1;
-    const normal = Math.min(dpr, Math.sqrt(OUT_PIXELS / Math.max(1, fw * fh)));
-    const capture = captureSize.current;
     const maxEdge = 8192;
-    const res = capture
-      ? Math.min(capture.width / Math.max(1, fw), maxEdge / Math.max(fw, fh))
-      : normal;
-    // The blur is measured in layer pixels. Raising the layer with the output
-    // keeps the same CSS-sized pool while the edge is drawn at the new size.
-    const layerRes = capture ? LAYER_RES * (res / Math.max(normal, 1e-3)) : LAYER_RES;
+    const res = Math.min(dpr, Math.sqrt(OUT_PIXELS / Math.max(1, fw * fh)));
+    const layerRes = LAYER_RES;
     const cw = Math.max(1, Math.round(fw * res));
     const ch = Math.max(1, Math.round(fh * res));
     if (canvas.width !== cw || canvas.height !== ch) {
@@ -473,13 +465,7 @@ export function GooeyBlobCanvas({ els, colors, width, height, active, params, on
     canvas.addEventListener("webglcontextlost", lost);
     frame.current();
     live.current.onSupport(true);
-    registerCaptureRedraw(canvas, (pixels) => {
-      captureSize.current = pixels ?? null;
-      last.current = null;
-      frame.current();
-    });
     return () => {
-      registerCaptureRedraw(canvas, null);
       canvas.removeEventListener("webglcontextlost", lost);
       g.gl.getExtension("WEBGL_lose_context")?.loseContext();
       glRef.current = null;

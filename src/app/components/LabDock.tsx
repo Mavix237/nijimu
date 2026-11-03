@@ -98,6 +98,7 @@ export function LabDock() {
     <nav
       aria-label="editors"
       className="lab-dock"
+      data-export-hide=""
       style={{
         position: "absolute",
         top: 18,

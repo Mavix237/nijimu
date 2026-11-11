@@ -17,7 +17,8 @@ import { useSyncExternalStore } from "react";
  */
 export interface FilmTune { leak: number; cool: number; halation: number; split: number; bloom: number }
 
-export const FILM_TUNE_DEFAULT: FilmTune = { leak: 1, cool: 0, halation: .1, split: .6, bloom: 1 };
+// halation .16 from the gallery panel, 2026-11-10 (was .1)
+export const FILM_TUNE_DEFAULT: FilmTune = { leak: 1, cool: 0, halation: .16, split: .6, bloom: 1 };
 
 let current: FilmTune = FILM_TUNE_DEFAULT;
 const listeners = new Set<() => void>();

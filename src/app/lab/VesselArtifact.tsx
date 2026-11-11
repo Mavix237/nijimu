@@ -122,12 +122,15 @@ export interface VesselSheen {
   speed: number;
   wander: number;
   breath: number;
+  /** 0 laid over the glass as a colour (as built), 1 added as light. */
+  add?: number;
 }
 
 const sheenColor = new THREE.Color();
 function writeSheen(u: ReturnType<typeof createGlassUniformSet>, sheen: VesselSheen | undefined) {
   if (!sheen || sheen.amount <= 0) { u.uSheen0.value = 0; return; }
   u.uSheen0.value = sheen.amount;
+  u.uSheenAdd.value = sheen.add ?? 0;
   u.uSheenColor.value.copy(sheenColor.set(sheen.color));
   u.uSheenEdge.value.copy(sheenColor.set(sheen.edge));
   u.uSheenAt.value.set(sheen.x, sheen.y);

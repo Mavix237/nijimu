@@ -952,6 +952,8 @@ const GLASS_COMMON_GLSL = /* glsl */ `
   uniform vec4 uSheenShape;
   uniform vec3 uSheenMotion;
   uniform float uSheenTime;
+  // 0 lays the sheen over the glass as a colour (as built); 1 adds it as light, brightening what is there
+  uniform float uSheenAdd;
   vec4 studioSheen(vec3 nWorld, float facing) {
     if (uSheen0 <= 0.0) return vec4(0.0);
     vec3 nv = normalize((viewMatrix * vec4(nWorld, 0.0)).xyz);
@@ -1562,8 +1564,10 @@ export const glassRefractFragment = /* glsl */ `
     alpha += glow * .4;
     // the studio sheen, on the facing wall only: laid on as light, and it asserts the glass under it
     vec4 sheen = studioSheen(n, facing) * (1.0 - back);
-    color = mix(color, sheen.rgb, clamp(sheen.a, 0.0, 1.0));
-    alpha += sheen.a * .7;
+    vec3 sheenOver = mix(color, sheen.rgb, clamp(sheen.a, 0.0, 1.0));
+    vec3 sheenLight = color + sheen.rgb * sheen.a * .6;
+    color = mix(sheenOver, sheenLight, uSheenAdd);
+    alpha += sheen.a * mix(.7, .25, uSheenAdd);
     gl_FragColor = vec4(color, clamp(alpha, 0.0, 1.0) * reflectFade(vWorld));
   }
 `;
@@ -1871,6 +1875,7 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uSheenShape: { value: new THREE.Vector4(.5, .5, 0, 0) },
     uSheenMotion: { value: new THREE.Vector3(0, 0, 0) },
     uSheenTime: { value: 0 },
+    uSheenAdd: { value: 0 },
     uMemoryTint: { value: new THREE.Color("#ffffff") },
     uMemoryTintAmount: { value: 0 },
     uTintSpan: { value: new THREE.Vector2(-1, 1) },

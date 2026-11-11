@@ -109,6 +109,8 @@ export const VESSEL_GALLERY_TUNE: VesselTune = {
   pitch: 4, turn: 0, ground: 0,
   // the gallery panel's settling (2026-11-01): a softer, less bent view through the glass, the picture a little thinner
   bend: 0.67, glassSoft: 0.9, photoOpacity: 0.78,
+  // lighter, clearer glass (the gallery panel, 2026-11-10; was rim .38, bodyAlpha .85, thickDark .21, envBelow .84)
+  rim: 0.25, bodyAlpha: 0.73, thickDark: 0.09, envBelow: 0.88,
 };
 
 /**
@@ -117,7 +119,7 @@ export const VESSEL_GALLERY_TUNE: VesselTune = {
  * pale water it read as a dark cast on every vessel, so here the room is the
  * water's own light.
  */
-export const VESSEL_GALLERY_ROOM: Room = { above: "#eae7e6", below: "#ffffff" };
+export const VESSEL_GALLERY_ROOM: Room = { above: "#eeebea", below: "#ffffff" }; // above was #eae7e6 until 2026-11-10
 
 function seedOf(id: string): number {
   let h = 0;

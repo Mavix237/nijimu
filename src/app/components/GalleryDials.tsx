@@ -4,6 +4,7 @@ import "dialkit/styles.css";
 import { DIALS_OPEN } from "../lib/dialsOpen";
 import { LIFE_EVENTS } from "../data/memoryData";
 import { GALLERY_TUNE_DEFAULT, setGalleryTune, type GalleryTune } from "../lib/galleryTune";
+import { FILM_TUNE_DEFAULT as FD, setFilmTune, type FilmTune } from "../lib/filmTune";
 import { previewFinishMode, setFinishUnder, type FinishMode } from "../lib/paperFinish";
 
 /*
@@ -12,7 +13,7 @@ import { previewFinishMode, setFinishUnder, type FinishMode } from "../lib/paper
  * the screen in front (the landing's own panel is gone by then). Two separate
  * shells, each draggable:
  *
- *   gallery          (bottom right) reflection, sheen, glass, room, seats, timing, framing
+ *   gallery          (bottom right) reflection, sheen, glass (+ room light, frost, dye), room, film, seats, timing, framing
  *   gallery ground   (top left) the paper finish's mode and place (to compare);
  *                    the water's colour, grain, paper and vignette;
  *                    a noise texture and a tint over the whole gallery; a CSS filter
@@ -37,6 +38,12 @@ const GLASS_RANGES: Record<keyof GalleryTune["glass"], [number, number, number]>
   thickDark: [0, 1, 0.01],
   highlight: [0, 1, 0.01],
   photoOpacity: [0, 1, 0.01],
+  envBelow: [0, 1, 0.01],
+  warmth: [0, 1, 0.01],
+  frostStrength: [0, 1, 0.01],
+  dyeExposure: [-1, 1, 0.01],
+  dyeShoulder: [0, 1, 0.01],
+  dyeLift: [0, 0.25, 0.005],
 };
 const SEAT_RANGES: Record<keyof GalleryTune["seats"], [number, number, number]> = {
   focusBoost: [-0.2, 0.3, 0.005],
@@ -145,9 +152,17 @@ const MAIN_CONFIG = {
     speed: [D.sheen.speed, 0, 3, 0.01] as Range,
     wander: [D.sheen.wander, 0, 0.8, 0.01] as Range,
     breath: [D.sheen.breath, 0, 1, 0.01] as Range,
+    add: [D.sheen.add, 0, 1, 0.01] as Range,
   },
   glass: sliders(D.glass, GLASS_RANGES),
-  room: { _collapsed: true, above: D.room.above, below: D.room.below },
+  room: { above: D.room.above, below: D.room.below },
+  film: {
+    leak: [FD.leak, 0, 2, 0.01] as Range,
+    cool: [FD.cool, 0, 1, 0.01] as Range,
+    halation: [FD.halation, 0, 1, 0.01] as Range,
+    split: [FD.split, 0, 1, 0.01] as Range,
+    bloom: [FD.bloom, 0, 2, 0.01] as Range,
+  },
   seats: sliders(D.seats, SEAT_RANGES, true),
   timing: sliders(D.timing, TIMING_RANGES, true),
   framing: { _collapsed: true, maxWidth: [D.framing.maxWidth, 0.3, 1.6, 0.01] as Range },
@@ -172,7 +187,7 @@ const COLOR_KEY = (() => {
   return `nijimu-gallery-colours-${(h >>> 0).toString(36)}`;
 })();
 
-type Main = Pick<GalleryTune, "glass" | "room" | "seats" | "timing" | "framing" | "reflection" | "sheen">;
+type Main = Pick<GalleryTune, "glass" | "room" | "seats" | "timing" | "framing" | "reflection" | "sheen"> & { film?: Partial<FilmTune> };
 type Ground = Pick<GalleryTune, "backdrop" | "texture" | "filter"> & { finish?: { mode?: string; underVessels?: boolean } };
 type Colors = { foot: GalleryTune["foot"]; memories: Record<string, { stain: string; foot: string }> };
 
@@ -202,6 +217,11 @@ export default function GalleryDials() {
   }), [key]);
 
   useEffect(() => { setGalleryTune(tune); }, [tune]);
+
+  // the photo's film look (every vessel), from the "film" folder; as built again when the panel goes
+  const filmKey = JSON.stringify(main.film ?? {});
+  useEffect(() => { setFilmTune({ ...FD, ...main.film }); }, [filmKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => setFilmTune(FD), []);
 
   const finishPick = ground.finish?.mode ?? "as is";
   const finishUnder = !!ground.finish?.underVessels;

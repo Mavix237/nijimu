@@ -50,6 +50,10 @@ export interface GalleryTune {
   glass: {
     rim: number; thickness: number; bend: number; glassSoft: number; bodyAlpha: number; thickDark: number;
     highlight: number; photoOpacity: number;
+    /** The room's lightness below the horizon, its warmth, the frost patches' strength. */
+    envBelow: number; warmth: number; frostStrength: number;
+    /** The photo's dye: exposure, highlight shoulder, black lift. */
+    dyeExposure: number; dyeShoulder: number; dyeLift: number;
   };
   room: { above: string; below: string };
   seats: {
@@ -75,6 +79,8 @@ export interface GalleryTune {
   sheen: {
     amount: number; color: string; edge: string; x: number; y: number;
     size: number; soft: number; rim: number; tilt: number; speed: number; wander: number; breath: number;
+    /** 0 laid over as a colour (as built), 1 added as light. */
+    add: number;
   };
 }
 
@@ -113,8 +119,10 @@ export const GALLERY_TUNE_DEFAULT: GalleryTune = {
   },
   tones: Object.fromEntries(LIFE_EVENTS.map((e) => [e.id, GALLERY_TONES[e.id] ?? { stain: toneOf(e.feeling), foot: deepOf(e.feeling) }])),
   // the gallery's own values (VESSEL_GALLERY_TUNE); kept in step by hand
-  glass: { rim: .38, thickness: .3, bend: .67, glassSoft: .9, bodyAlpha: .85, thickDark: .21, highlight: .34, photoOpacity: .78 },
-  room: { above: "#eae7e6", below: "#ffffff" },
+  // (lighter glass, 2026-11-10: rim .38, bodyAlpha .85, thickDark .21, envBelow .84 before)
+  glass: { rim: .25, thickness: .3, bend: .67, glassSoft: .9, bodyAlpha: .73, thickDark: .09, highlight: .34, photoOpacity: .78,
+    envBelow: .88, warmth: .4, frostStrength: .15, dyeExposure: .01, dyeShoulder: .5, dyeLift: .06 },
+  room: { above: "#eeebea", below: "#ffffff" }, // above was #eae7e6 until 2026-11-10
   seats: { focusBoost: .06, shrink1: .13, shrink2: .45, out1: .02, out2: -.025, down1: .045, down2: .05, fadeNear: .1, fadeFar: .2 },
   timing: { transcriptDwellMs: 3000, flightMs: 1500, staggerMs: 55, parallaxX: .03, parallaxY: .02 },
   framing: { maxWidth: 1 },
@@ -127,10 +135,10 @@ export const GALLERY_TUNE_DEFAULT: GalleryTune = {
   filter: { brightness: 1, contrast: 1, saturate: 1, sepia: 0, hue: 0, blur: 0 },
   // a faint, soft mirror under each vessel's foot (settled in the panel, 2026-11-01)
   reflection: { strength: .23, fall: .54, gap: .01, soft: 2.25, room: .25 },
-  // a broad soft light high on the left of the facing wall, slowly drifting (settled in the panel, 2026-11-01)
+  // a broad soft light high on the left (amount .28, core #f3f2f2 until 2026-11-10) of the facing wall, slowly drifting (settled in the panel, 2026-11-01)
   sheen: {
-    amount: .28, color: "#f3f2f2", edge: "#ecf0f0", x: -.45, y: .5,
-    size: .34, soft: .74, rim: .1, tilt: -20, speed: .19, wander: .12, breath: .22,
+    amount: .35, color: "#f6f5f5", edge: "#ecf0f0", x: -.45, y: .5,
+    size: .34, soft: .74, rim: .1, tilt: -20, speed: .19, wander: .12, breath: .22, add: 0,
   },
 };
 

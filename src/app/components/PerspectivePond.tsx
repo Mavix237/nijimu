@@ -13,6 +13,7 @@ import { NAMING_WATER_GLSL, NAMING_WATER_UNIFORMS, lendPondSurface } from "../li
 import { POND_SKY_FOOT, POND_SKY_MIDDLE, POND_SKY_TOP, POND_WATER, UNDERWATER_GLSL, hexRgb } from "../lib/atmosphere";
 import { PondPigmentDrops } from "./PondPigmentDrops";
 import { MAX_DPR } from "../lib/deviceTier";
+import { SHADER_CHECKS } from "../lib/deviceTier";
 
 /** The pond's water grey (lib/atmosphere.ts), as display values. */
 export const POND_PAPER = hexRgb(POND_WATER);
@@ -770,6 +771,7 @@ export function PerspectivePond(props: PondProps) {
   return <PondBoundary fallback={fallback}>
     <Canvas camera={{ ...POND_LENS, position: [0, 2.2, 10] }}
       dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} fallback={fallback}
+      onCreated={({ gl }) => { gl.debug.checkShaderErrors = SHADER_CHECKS; }}
       style={{ position: "absolute", inset: 0 }}>
       <PortraitFit />
       <PondWater {...props} />

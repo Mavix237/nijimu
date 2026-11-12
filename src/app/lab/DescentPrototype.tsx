@@ -77,6 +77,7 @@ import { PortraitFit, viewHalfTan } from "../lib/portraitView";
 import { readPhoto } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
 import { SINK_WASH_GLSL, UNDERWATER, UNDERWATER_GLSL } from "../lib/atmosphere";
+import { SHADER_CHECKS } from "../lib/deviceTier";
 
 /*
  * Lab: the whole shot from the photo to the named memory, in one canvas.
@@ -2984,7 +2985,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       <MemoryPondPage {...pondEntry} active={invitation && (pondEntry?.active ?? true)}
         reducedMotion={reducedMotion} covered={!invitation}
         renderScene={pond => ready ? (<Canvas camera={{ fov: 48, near: 0.1, far: 2400, position: POND_CAMERA.toArray() }}
-        onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; }}
+        onCreated={({ gl, scene }) => { gl.domElement.dataset.pondScene = scene.uuid; gl.debug.checkShaderErrors = SHADER_CHECKS; }}
         dpr={[1, MAX_DPR]} gl={{ antialias: true, alpha: true }} style={{ position: "absolute", inset: 0 }}>
         <PortraitFit />
         <Stage pond={pond} stage={stage} form={form} from={from} tune={tune} transport={transport} crossingRef={crossingRef} glowRef={glowRef} pickRef={pickRef} captionRef={captionRef} hintRef={hintRef} haloRef={haloRef}

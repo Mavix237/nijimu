@@ -43,7 +43,7 @@ import timelineIcon from "../../../timeline icon.svg";
  * memory wears its shape from the gallery library (lib/galleryLibrary, chosen
  * in /lab/shapes) at the size and with the picture placed as kept there; the
  * photos are src/assets/vessel-gallery, one per memory, named for it
- * (`13.jpg` is the memory with id "13"; the bundled stills stand in for any missing).
+ * (`13.webp` is the memory with id "13"; the bundled stills stand in for any missing).
  *
  * Pressing the vessel at the apex opens it in the lab as an editor for that
  * one memory — its form, glass, sheet, dye, light and photo — and "back to
@@ -67,17 +67,22 @@ const GALLERY_FILES = Object.entries(
   import.meta.glob("../../assets/vessel-gallery/*.{jpg,jpeg,png,webp}", { eager: true, import: "default" }) as Record<string, string>,
 ).sort(([a], [b]) => a.localeCompare(b));
 export const PHOTOS = GALLERY_FILES.map(([, url]) => url);
-/** A still named for a memory — `13.jpg` is the memory with id "13" — keyed by that number. */
+/** A still named for a memory — `13.webp` is the memory with id "13" — keyed by that number. */
 const PHOTO_BY_MEMORY = new Map(GALLERY_FILES.flatMap(([path, url]) => {
   const stem = path.split("/").pop()!.replace(/\.[^.]+$/, "");
   return /^\d+$/.test(stem) ? [[Number(stem), url] as const] : [];
 }));
 const FALLBACK = [photoA, photoB];
-// fetched and decoded once the page is idle — after the landing's first paint, not competing with
-// its fonts and script — so the seats still open with their pictures already in the stock
+// fetched and decoded once the landing's opening has mostly played (its washes take ~7 s, and Enter
+// waits for them), then when the page is idle — each still is decoded and resampled on the main
+// thread, which would catch the opening's frames — so the seats still open with their pictures
+// already in the stock. A direct visit to the gallery loads them on mount (LiveVesselGallery).
+const PHOTO_PRELOAD_DELAY_MS = 5000;
 const preloadWhenIdle = () => preloadSeatPhotos(PHOTOS.length ? PHOTOS : FALLBACK);
-if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(preloadWhenIdle, { timeout: 2500 });
-else setTimeout(preloadWhenIdle, 1200);
+setTimeout(() => {
+  if (typeof window.requestIdleCallback === "function") window.requestIdleCallback(preloadWhenIdle, { timeout: 2500 });
+  else preloadWhenIdle();
+}, PHOTO_PRELOAD_DELAY_MS);
 
 /** Which of the curated memories the lab seats; these are the ones with a photo. */
 const SEATS: { event: number }[] = [

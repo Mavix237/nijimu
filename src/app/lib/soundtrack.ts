@@ -3,6 +3,9 @@
  * change — inside the root layout or out of it (the labs, /style) — stops or
  * restarts it. Whether the music is on and where it had got to are kept in
  * sessionStorage, so a reload or a full page load carries on from there.
+ *
+ * The file is large (~9 MB), so it is not fetched until the music is on: a
+ * visit that never turns it on never downloads it. Muting pauses it.
  */
 import { useEffect, useSyncExternalStore } from "react";
 
@@ -15,6 +18,9 @@ type Saved = { on: boolean; at: number };
 
 let audio: HTMLAudioElement | null = null;
 let muted = true;
+let begun = false;
+/** Where the music had got to, carried until a player exists to take it. */
+let savedAt = 0;
 const listeners = new Set<() => void>();
 
 function read(): Saved | null {
@@ -27,9 +33,10 @@ function read(): Saved | null {
 }
 
 function save() {
-  if (!audio) return;
+  if (!begun) return;
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ on: !muted, at: audio.currentTime } satisfies Saved));
+    const at = audio ? audio.currentTime : savedAt;
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ on: !muted, at } satisfies Saved));
   } catch {
     // storage refused: the music still plays, it just starts over next load
   }
@@ -44,7 +51,8 @@ function play(player: HTMLAudioElement) {
     const resume = () => {
       window.removeEventListener("pointerdown", resume);
       window.removeEventListener("keydown", resume);
-      player.muted = muted;
+      if (muted) return; // turned off meanwhile: stay paused
+      player.muted = false;
       player.play().catch(() => {});
     };
     window.addEventListener("pointerdown", resume);
@@ -52,21 +60,29 @@ function play(player: HTMLAudioElement) {
   });
 }
 
-function start() {
-  if (audio || typeof window === "undefined") return;
-  const saved = read();
-  muted = !saved?.on;
+/** Makes the player, from where the music had got to. Only once it is wanted. */
+function createPlayer(): HTMLAudioElement {
   const player = new Audio(SOUNDTRACK_URL);
   player.loop = true;
   player.volume = VOLUME;
   player.muted = muted;
-  if (saved?.at) {
+  const at = savedAt;
+  if (at) {
     player.addEventListener("loadedmetadata", () => {
-      player.currentTime = Number.isFinite(player.duration) && player.duration > 0 ? saved.at % player.duration : saved.at;
+      player.currentTime = Number.isFinite(player.duration) && player.duration > 0 ? at % player.duration : at;
     }, { once: true });
   }
   audio = player;
-  play(player);
+  return player;
+}
+
+function start() {
+  if (begun || typeof window === "undefined") return;
+  begun = true;
+  const saved = read();
+  muted = !saved?.on;
+  savedAt = saved?.at ?? 0;
+  if (!muted) play(createPlayer());
   window.addEventListener("pagehide", save);
   listeners.forEach((listener) => listener());
 }
@@ -74,9 +90,15 @@ function start() {
 export function setSoundtrackMuted(next: boolean) {
   start();
   muted = next;
-  if (audio) {
-    audio.muted = next;
-    if (!next && audio.paused) play(audio);
+  if (next) {
+    if (audio) {
+      audio.muted = true;
+      audio.pause();
+    }
+  } else {
+    const player = audio ?? createPlayer();
+    player.muted = false;
+    if (player.paused) play(player);
   }
   save();
   listeners.forEach((listener) => listener());
@@ -99,4 +121,5 @@ import.meta.hot?.dispose(() => {
   window.removeEventListener("pagehide", save);
   audio?.pause();
   audio = null;
+  begun = false;
 });

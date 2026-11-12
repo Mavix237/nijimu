@@ -4,6 +4,39 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Far cutouts no longer boxy (2026-11-11)
+
+The ink entry's cutouts are drawn on the wash's paint grid (`dyeLong` 272,
+~10 device px a cell), and the composite thresholds a bilinear read of it, so
+outlines were chains of straight facets; a far seat's cutout, a few cells
+across, came out as stepped slabs. Two halves of a middle ground in
+`WatercolorField`: COMPOSITE3 reads the paint through a cubic B-spline
+(`smoothTex`, four bilinear taps), a sub-cell softening of the field, not of
+its edge, so contours are curves; and while the entry runs the paint grid is
+`ENTRY_DETAIL` (1.5×) finer, the paint carried across the change (`COPY3`),
+not restarted. Frame pacing through the entry measured unchanged on an M1
+Max; the wash pass costs ~2.25× for those seconds.
+
+## A lighter first load (2026-11-11)
+
+Measured on the production build (headless Chrome, 4G): a first visit
+fetched ~11 MB in its first seconds, 7 MB of it the soundtrack. Now ~1.7 MB.
+The soundtrack (~9 MB, jsdelivr) is fetched only once the music is turned on
+(`soundtrack.ts`: no player until then; muting pauses it). The landing no
+longer mounts the old gallery-morph `SceneViewer` while hidden (it pulled
+three.js and drei's "city" HDRI at once) nor `GooeyBlobCanvas` (a hidden
+WebGL2 context, 3 shaders and a full frame in a layout effect); the header
+tick no longer samples the washes' luma (90 rect reads a frame, discarded).
+The gallery stills are WebP at their full size (q85, ICC kept; 3.4 MB → 1.0
+MB, SSIM ≥ .97), and their preload waits 5 s past the chunk's load, then
+idle, so their decode stays out of the landing's opening. Production
+canvases (seats, pond, descent) set `gl.debug.checkShaderErrors` from
+`SHADER_CHECKS` (dev only). Still heavy, not yet done: one WebGL context per
+gallery seat (~7 programs and its own uploads each), cloth builds on the main
+thread at Enter, seats rendered at full box size whatever their scale, the
+landing's Enter held for its ~6.8 s opening, and BlobScene re-rendering
+every frame. `.claude/launch.json` has `prod-preview` (vite preview, 4173).
+
 ## One paper finish past Enter (2026-11-01)
 
 Everything but the landing wears the gallery's grain and tooth

@@ -61,6 +61,14 @@ const MASK_EASE_MS = () => LANDING_MOTION.follow.maskEaseMs;
 const DISC_SPAN: [number, number] = [0.12, 0.88];
 /** Through the ink entry the paint returns this quickly (s), so it follows the washes to their seats while still flowing. */
 const ENTRY_RELAX_S = () => LANDING_MOTION.follow.entryRelaxS;
+/**
+ * The paint grid's detail while the ink entry runs (× dyeLong). The cutouts
+ * are drawn on that grid, and a far seat's is only a few cells across, so it
+ * read boxy; this much more detail, with the smooth read in COMPOSITE3, keeps
+ * even the far outlines whole. Only for the entry's few seconds: the wash
+ * pass costs about the square of it. The paint is carried across the change.
+ */
+const ENTRY_DETAIL = 1.5;
 const FRAME_MS = 1000 / 30;
 /** While the paint is moving it is painted at full rate. */
 const STIR_FRAME_MS = 1000 / 60;
@@ -354,9 +362,10 @@ vec4 look(vec2 p, float D, float comp, vec3 pig, vec3 pigDeep, float vis, float 
   float cover = body * (uInterior + (1. - uInterior) * interior) * (1. - uBloom * .5 + uBloom * bloom);
   // pigment carried to the drying edge of a complete wash
   float edge = clamp(exp(-pow((D - T) / (mix(.12, .035, comp) * uSoft), 2.)) * comp * body * tide, 0., 1.);
-  // the paper's tooth is laid in screen pixels, so it stays fine at any density
+  // the paper's tooth is laid in screen pixels, so it stays fine at any density;
+  // all three octaves follow its size (.296 = the built .37 at grainPx .8)
   vec2 px = gl_FragCoord.xy / (uPxScale * uGrainPx);
-  float tooth = noise(px) * .45 + noise(mat2(.8, -.6, .6, .8) * px * .43 + 7.7) * .35 + noise(pr2 * .37) * .2;
+  float tooth = noise(px) * .45 + noise(mat2(.8, -.6, .6, .8) * px * .43 + 7.7) * .35 + noise(pr2 * (.296 / uGrainPx)) * .2;
   cover *= 1. + uTooth * uGrain * (tooth - .5);
   vec3 c = mix(pig, pigDeep, clamp(interior * uDeepMix + edge * .7, 0., 1.));
   c *= 1. - edge * uEdgeDark;
@@ -584,12 +593,42 @@ void main() {
 }
 `;
 
+/** Carries the paint onto a grid of another size (the entry's finer one, and back). */
+const COPY3 = `${H3}
+uniform sampler2D uA, uB, uC;
+layout(location = 0) out vec4 o0;
+layout(location = 1) out vec4 o1;
+layout(location = 2) out vec4 o2;
+void main() { o0 = texture(uA, vUv); o1 = texture(uB, vUv); o2 = texture(uC, vUv); }
+`;
+
 const COMPOSITE3 = `${H3}${DECL}${NOISE}${LOOK}
 uniform sampler2D uA, uB, uC, uTA, uTC;
 uniform float uEdge;
 out vec4 o;
+/* The paint is laid on a coarse grid (dyeLong, ~10 device px a cell) and its
+   edge is a threshold of it, so read with bilinear filtering every outline is
+   a chain of straight facets: unseen in a large wash, but a far cutout only a
+   few cells across came out boxy, its rising fill a flat step. A cubic
+   B-spline read (four bilinear taps) makes the density smooth between cells,
+   so the threshold draws curves: a sub-cell softening of the field, not of
+   the edge, which stays as sharp as the look makes it. */
+vec4 smoothTex(sampler2D t, vec2 uv) {
+  vec2 res = vec2(textureSize(t, 0));
+  vec2 st = uv * res - .5;
+  vec2 i = floor(st), f = st - i;
+  vec2 f2 = f * f, f3 = f2 * f;
+  vec2 w0 = (1. - 3. * f + 3. * f2 - f3) / 6.;
+  vec2 w1 = (4. - 6. * f2 + 3. * f3) / 6.;
+  vec2 w2 = (1. + 3. * f + 3. * f2 - 3. * f3) / 6.;
+  vec2 w3 = f3 / 6.;
+  vec2 g0 = w0 + w1, g1 = w2 + w3;
+  vec2 h0 = (i - .5 + w1 / g0) / res, h1 = (i + 1.5 + w3 / g1) / res;
+  return g0.y * (g0.x * texture(t, h0) + g1.x * texture(t, vec2(h1.x, h0.y)))
+       + g1.y * (g0.x * texture(t, vec2(h0.x, h1.y)) + g1.x * texture(t, h1));
+}
 void main() {
-  vec4 A = texture(uA, vUv), B = texture(uB, vUv);
+  vec4 A = smoothTex(uA, vUv), B = smoothTex(uB, vUv);
   float D = A.a;
   if (D < .004) { o = vec4(0.); return; }
   vec2 p = vec2(vUv.x, 1. - vUv.y) * uRes;
@@ -599,7 +638,7 @@ void main() {
   // the tide line belongs to a wash's own rim: where the undisturbed paint is
   // well inside a wash, paint thinned by a stroke shows paper, not a dark line
   tide *= 1. - smoothstep(uThresh + .12, uThresh + .32, TD);
-  o = look(p, D, clamp(B.a / D, 0., 1.), A.rgb / D, B.rgb / D, clamp(texture(uC, vUv).r / D, 0., 1.), tide);
+  o = look(p, D, clamp(B.a / D, 0., 1.), A.rgb / D, B.rgb / D, clamp(smoothTex(uC, vUv).r / D, 0., 1.), tide);
 }
 `;
 
@@ -977,6 +1016,7 @@ export function WatercolorField({
         grad: link(g, VERT3, GRAD3),
         dye: link(g, VERT3, DYE3),
         composite: link(g, VERT3, COMPOSITE3),
+        copy: link(g, VERT3, COPY3),
       };
       if (Object.values(progs).some((p) => !p)) { readyRef.current(false); return; }
       const P = progs as { [K in keyof typeof progs]: Program };
@@ -993,12 +1033,35 @@ export function WatercolorField({
         [...vel, ...pres, ...dye, target, curl, div].forEach((t) => dropTarget(g, t));
         vel = []; pres = []; dye = []; target = curl = div = null;
       };
-      const ensure = () => {
+      const ensure = (entering: boolean) => {
         const cw = canvas.clientWidth, ch = canvas.clientHeight;
-        const { simLong, dyeLong } = tuneRef.current;
-        const key = `${cw}x${ch}|${simLong}|${dyeLong}`;
+        const { simLong, dyeLong: built } = tuneRef.current;
+        const dyeLong = built * (entering ? ENTRY_DETAIL : 1);
+        const base = `${cw}x${ch}|${simLong}`;
+        const key = `${base}|${dyeLong}`;
         if (key === size) return true;
         if (cw < 2 || ch < 2) return false;
+        // only the paint's detail changed (the entry began or ended): carry the
+        // paint onto the new grid rather than starting it over
+        if (size.startsWith(`${base}|`) && dye.length && !fresh) {
+          const grid = gridFor(cw, ch, Math.round(dyeLong));
+          const next = [makeTarget(g, grid.w, grid.h, 3), makeTarget(g, grid.w, grid.h, 3)];
+          const nextTarget = makeTarget(g, grid.w, grid.h, 3);
+          if (next.every(Boolean) && nextTarget) {
+            pass(P.copy, next[0], () => {
+              tex(P.copy, "uA", dye[0].tex[0]);
+              tex(P.copy, "uB", dye[0].tex[1]);
+              tex(P.copy, "uC", dye[0].tex[2]);
+            });
+            [...dye, target].forEach((t) => dropTarget(g, t));
+            dye = next as Target[];
+            target = nextTarget;
+            dyeGrid = grid;
+            size = key;
+            return true;
+          }
+          [...next, nextTarget].forEach((t) => dropTarget(g, t));
+        }
         freeAll();
         size = key;
         sim = gridFor(cw, ch, Math.round(simLong));
@@ -1124,7 +1187,7 @@ export function WatercolorField({
         last = now;
         const dt = Math.min(1 / 30, Math.max(1 / 240, (now - lastT) / 1000));
         lastT = now;
-        if (!ensure()) return;
+        if (!ensure(entering)) return;
         const n = readBlobs(now);
         if (n < 0) return;
         const time = (now - start) / 1000;

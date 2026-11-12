@@ -27,3 +27,11 @@ const detailParam = Number(params.get("detail"));
 /** Share of the superformula grid a vessel's glass keeps (1 = full). The glass
     is smooth-shaded and seen a few hundred pixels across on a phone. */
 export const VESSEL_DETAIL = detailParam > 0 && detailParam <= 1 ? detailParam : LIGHT_TIER ? 0.8 : 1;
+
+/**
+ * three.js checks every shader's compile and link log on first use, which
+ * waits for the GPU to finish compiling it. Kept in development, where the
+ * log is wanted; off in production, where it only costs load time (each
+ * gallery seat is its own context and compiles its own programs).
+ */
+export const SHADER_CHECKS = import.meta.env.DEV;

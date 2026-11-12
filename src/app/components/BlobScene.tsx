@@ -347,16 +347,6 @@ const LANDING_MONO = {
   mixBlendMode: "saturation" as const,
 };
 
-function hexLuma(hex: string): number {
-  const n = hex.replace("#", "");
-  const r = parseInt(n.slice(0, 2), 16);
-  const g = parseInt(n.slice(2, 4), 16);
-  const b = parseInt(n.slice(4, 6), 16);
-  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-}
-
-const PAPER_LUMA = hexLuma(LANDING_PAPER);
-
 type Ink = { r: number; g: number; b: number; a: number };
 function parseInk(color: string): Ink {
   const m = color.match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+))?\s*\)/);
@@ -1419,32 +1409,9 @@ export function BlobScene({
     if (!classicChrome) return;
     let raf = 0;
     let last = performance.now();
-    const ENTER_DARK = 0.46;
-    const LEAVE_DARK = 0.58;
     const INNER_PAD = 36;
     const BAND = 90;
     const TAU = 0.16;
-
-    const lumaAt = (px: number, py: number) => {
-      let luma = PAPER_LUMA;
-      for (let i = 0; i < blobs.length; i++) {
-        const el = blobEls.current[i];
-        if (!el) continue;
-        const br = el.getBoundingClientRect();
-        const rx = br.width / 2 * WASH_BODY || 1;
-        const ry = br.height / 2 * WASH_BODY || 1;
-        const nx = (px - (br.left + br.width / 2)) / rx;
-        const ny = (py - (br.top + br.height / 2)) / ry;
-        if (nx * nx + ny * ny > 1) continue;
-        const hex = COLOR_PALETTE[blobs[i].shape.colorIndex % COLOR_PALETTE.length].color;
-        const field = washTuneRef.current.fieldOpacity;
-        luma = Math.min(luma, hexLuma(hex) * blobs[i].opacity * field + PAPER_LUMA * (1 - field));
-      }
-      return luma;
-    };
-
-    const onDarkFrom = (avg: number, was: boolean) =>
-      was ? avg < LEAVE_DARK : avg < ENTER_DARK;
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
@@ -1460,21 +1427,12 @@ export function BlobScene({
       const ky = (hr.top + hr.bottom) / 2;
       const follow = 1 - Math.exp(-dt / TAU);
 
-      const xs = [0.18, 0.5, 0.82];
-      const ys = [0.22, 0.78];
-      let sum = 0;
-      let n = 0;
-      for (const fx of xs) {
-        for (const fy of ys) {
-          sum += lumaAt(hr.left + hr.width * fx, hr.top + hr.height * fy);
-          n++;
-        }
-      }
-      // the landing's line and Enter keep their dark ink over any wash
-      const headerDark = !classicChrome && onDarkFrom(sum / (n || 1), headerOnDarkRef.current);
-      if (headerDark !== headerOnDarkRef.current) {
-        headerOnDarkRef.current = headerDark;
-        setHeaderOnDark(headerDark);
+      // The landing's line and Enter keep their dark ink over any wash, so
+      // the washes' luma under the copy is not sampled here (it cost ~90
+      // layout reads a frame for a value that was always thrown away).
+      if (headerOnDarkRef.current) {
+        headerOnDarkRef.current = false;
+        setHeaderOnDark(false);
       }
 
       const laid = blobs.map((_, i) => {
@@ -1880,7 +1838,10 @@ export function BlobScene({
             />
           ))}
         </div>
-        {!lite && !gooeySvgOnly && gooeyGl !== false && (
+        {/* Mounted only where the goo can show (never on the landing, whose
+            washes keep their own edge): even hidden it made a WebGL context,
+            compiled its shaders and drew a full frame before first paint. */}
+        {!lite && !classicChrome && !gooeySvgOnly && gooeyGl !== false && (
           <GooeyBlobCanvas
             els={blobEls}
             colors={blobColors}
@@ -1977,7 +1938,9 @@ export function BlobScene({
           paddingBottom: `${vh * 0.1}px`, // Moved 3D viewer 10vh upward
         }}
       >
-        {blobs[activeIdx] && blobs[activeIdx].shape && (
+        {/* Mounted only once the gallery morph shows it: mounted while hidden
+            it fetched three.js (and drei's environment map) on the landing. */}
+        {morphVal > 0.65 && blobs[activeIdx] && blobs[activeIdx].shape && (
           <div
             style={{
               width: "clamp(310px, 33.4vw, 430px)",

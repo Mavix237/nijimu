@@ -16,6 +16,7 @@ import {
   keyFrom, photoLoader, seedDirections, sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms,
   type Glass, type GlassMode, type Room, type Sheet, type SheetFace, type SheetMode, type VesselTune,
 } from "./VesselPreview";
+import { SHADER_CHECKS } from "../lib/deviceTier";
 
 /* Hovered at the apex: a float of a few percent of the eye's distance and a
    turn of about a minute a revolution, eased in and out as the mouse comes and goes. */
@@ -1024,7 +1025,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
       dpr={props.dpr ?? seatDpr(props.pixelScale)} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
-      onCreated={({ gl }) => { glRef.current = gl; }}
+      onCreated={({ gl }) => { glRef.current = gl; gl.debug.checkShaderErrors = SHADER_CHECKS; }}
       style={extra > 0 ? { width: "100%", height: `${(1 + extra) * 100}%` } : { width: "100%", height: "100%" }}>
       <VesselObject {...props} parts={parts} />
     </Canvas>

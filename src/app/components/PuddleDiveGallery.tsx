@@ -360,6 +360,9 @@ export function PuddleDiveGallery({
   const viewport = useViewport();
   const geo = carouselFrame(viewport.w, viewport.h);
   const growth = inkArrival ? inkGrowth(inkArrival) : 1;
+  // The landing is still playing. The vessels are clear, so none of them redraws
+  // every frame, and the seats past the rim wait until the growth has finished.
+  const inkHolding = !!inkArrival && growth < 1;
   const washIn = inkArrival ? inkWash(inkArrival) : 1;
 
   /* Animate the chronological offset, then project it every frame. A CSS
@@ -446,7 +449,7 @@ export function PuddleDiveGallery({
      as the step compiles its shaders on the frame the rim is trying to move. */
   const [builtAround, setBuiltAround] = useState<number | null>(null);
   useEffect(() => {
-    if (!rimSettled || phase === "diving") return;
+    if (!rimSettled || phase === "diving" || inkHolding) return;
     let live = true;
     const apply = () => { if (live) setBuiltAround(activeIdx); };
     const idle = window.requestIdleCallback;
@@ -456,13 +459,13 @@ export function PuddleDiveGallery({
     }
     const id = window.setTimeout(apply, 200);
     return () => { live = false; window.clearTimeout(id); };
-  }, [rimSettled, activeIdx, phase]);
+  }, [rimSettled, activeIdx, phase, inkHolding]);
   /* The apex canvas is the dense one. Switching that on the frame a seat
      reaches the middle resizes its buffer while the rim is moving (a long
      frame). The density follows a step later, once the row is still. */
   const [sharpId, setSharpId] = useState(focusId);
   useEffect(() => {
-    if (!rimSettled || !focusId) return;
+    if (!rimSettled || !focusId || inkHolding) return;
     let live = true;
     const apply = () => { if (live) setSharpId(focusId); };
     const idle = window.requestIdleCallback;
@@ -472,7 +475,7 @@ export function PuddleDiveGallery({
     }
     const id = window.setTimeout(apply, 280);
     return () => { live = false; window.clearTimeout(id); };
-  }, [rimSettled, focusId]);
+  }, [rimSettled, focusId, inkHolding]);
   /* The step gap has to outlive the listener. A step re-renders the page and
      the effect subscribes again; a lock kept in the effect would be dropped
      and the next wheel event would step at once. */
@@ -1204,7 +1207,7 @@ export function PuddleDiveGallery({
                     /* Every canvas holds its last frame while the rim moves,
                        including the one in hand. Redrawing it on those frames
                        is what drops the row. It draws again once the row stops. */
-                    frameloop: focused && rimSettled ? "always" : "demand",
+                    frameloop: focused && rimSettled && !inkHolding ? "always" : "demand",
                     rest: rimSettled ? Math.round(offset) : undefined,
                     sharp: slotItem.id === sharpId,
                     haze: depth.haze,
@@ -1227,7 +1230,7 @@ export function PuddleDiveGallery({
                     frameMargin={1.12}
                     /* The row holds every canvas while it moves, including the
                        one in hand, and that one draws again once the row stops. */
-                    frameloop={focused && rimSettled ? "always" : "demand"}
+                    frameloop={focused && rimSettled && !inkHolding ? "always" : "demand"}
                     still={!focused && rimSettled}
                     // the apex artifact turns on the page's clock rather than
                     // its canvas's, so the same memory on two screens reads as

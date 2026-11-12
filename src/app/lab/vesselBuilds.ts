@@ -107,17 +107,26 @@ function nextTask(run: () => void) {
 function pump() {
   if (pumping) return;
   pumping = true;
-  nextTask(() => {
-    pumping = false;
-    let best: Job | undefined;
-    for (const job of jobs.values()) {
-      if (!best || job.priority < best.priority || (job.priority === best.priority && job.order < best.order)) best = job;
-    }
-    if (!best) return;
-    jobs.delete(best.key);
-    const parts = vesselParts(best.request);
-    for (const done of best.waiting) done(parts);
-    if (jobs.size) pump();
+  // A frame between builds. The macrotask alone still ran every seat's cloth
+  // back to back, and Enter's first seconds were that queue.
+  requestAnimationFrame(() => {
+    nextTask(() => {
+      pumping = false;
+      let best: Job | undefined;
+      for (const job of jobs.values()) {
+        if (!best || job.priority < best.priority || (job.priority === best.priority && job.order < best.order)) best = job;
+      }
+      if (!best) return;
+      if (!best.waiting.size) {
+        jobs.delete(best.key);
+        if (jobs.size) pump();
+        return;
+      }
+      jobs.delete(best.key);
+      const parts = vesselParts(best.request);
+      for (const done of best.waiting) done(parts);
+      if (jobs.size) pump();
+    });
   });
 }
 

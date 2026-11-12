@@ -29,6 +29,34 @@ import { previewFinishMode, setFinishUnder, type FinishMode } from "../lib/paper
 type Range = [number, number, number, number];
 const D = GALLERY_TUNE_DEFAULT;
 
+/* The panel keeps its last copy, which would hide a reflection number changed in code.
+   Only the previous built-in numbers are moved; a value set by hand stays. */
+const GALLERY_PANEL_KEY = "dialkit:nijimu-gallery";
+const PREVIOUS_REFLECTION: Record<string, { previous: number[]; next: number }> = {
+  "reflection.strength": { previous: [0.23, 0.7], next: D.reflection.strength },
+  "reflection.gap": { previous: [0.01, 0.03, 0.054], next: D.reflection.gap },
+  "reflection.soft": { previous: [2.25], next: D.reflection.soft },
+};
+function adoptReflectionDefaults() {
+  try {
+    const raw = localStorage.getItem(GALLERY_PANEL_KEY);
+    if (!raw) return;
+    const saved = JSON.parse(raw) as { values?: Record<string, number>; baseValues?: Record<string, number>; presets?: { values?: Record<string, number> }[] };
+    const take = (bag?: Record<string, number>) => {
+      if (!bag) return false;
+      let changed = false;
+      for (const key of Object.keys(PREVIOUS_REFLECTION)) {
+        const row = PREVIOUS_REFLECTION[key];
+        if (row.previous.includes(bag[key])) { bag[key] = row.next; changed = true; }
+      }
+      return changed;
+    };
+    const changed = [take(saved.values), take(saved.baseValues), ...(saved.presets ?? []).map((p) => take(p.values))].some(Boolean);
+    if (changed) localStorage.setItem(GALLERY_PANEL_KEY, JSON.stringify(saved));
+  } catch { /* a private window, or a store this build does not own */ }
+}
+adoptReflectionDefaults();
+
 const GLASS_RANGES: Record<keyof GalleryTune["glass"], [number, number, number]> = {
   rim: [0, 1, 0.01],
   thickness: [0, 1, 0.01],
@@ -132,7 +160,7 @@ const GROUND_CONFIG = {
 const REFLECTION_RANGES: Record<keyof GalleryTune["reflection"], [number, number, number]> = {
   strength: [0, 0.8, 0.01],
   fall: [0.1, 3, 0.01],
-  gap: [-0.2, 0.5, 0.005],
+  gap: [-0.2, 0.5, 0.001],
   soft: [0, 24, 0.25],
   room: [0, 1, 0.01],
 };

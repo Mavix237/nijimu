@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { formKey, type ArtifactForm } from "../lib/superformula";
@@ -204,6 +204,35 @@ export interface PondSurfaceShare {
 const REFLECT_SHEET_LAYER = 3;
 const REFLECT_GLASS_LAYER = 4;
 
+const mirrorUp = new THREE.Vector3();
+const mirrorDown = new THREE.Vector3();
+const mirrorFoot = new THREE.Vector3();
+const mirrorPlane = new THREE.Vector3();
+const mirrorScratch = new THREE.Vector3();
+
+/** The vertex furthest along `dir` (a unit vector). */
+function supportToward(positions: ArrayLike<number>, dir: THREE.Vector3, out: THREE.Vector3) {
+  let best = -Infinity;
+  let x = 0, y = 0, z = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const d = positions[i] * dir.x + positions[i + 1] * dir.y + positions[i + 2] * dir.z;
+    if (d > best) { best = d; x = positions[i]; y = positions[i + 1]; z = positions[i + 2]; }
+  }
+  return out.set(x, y, z);
+}
+
+/** Reflect through the plane through `p` with unit normal `n` (the side `n` points to stays put). */
+function reflectionMatrix(m: THREE.Matrix4, p: THREE.Vector3, n: THREE.Vector3) {
+  const nx = n.x, ny = n.y, nz = n.z;
+  const t = 2 * (nx * p.x + ny * p.y + nz * p.z);
+  return m.set(
+    1 - 2 * nx * nx, -2 * nx * ny, -2 * nx * nz, t * nx,
+    -2 * ny * nx, 1 - 2 * ny * ny, -2 * ny * nz, t * ny,
+    -2 * nz * nx, -2 * nz * ny, 1 - 2 * nz * nz, t * nz,
+    0, 0, 0, 1,
+  );
+}
+
 interface Built { glass: Glass; sheet: Sheet; distance: number; radius: number }
 
 /* The mirror laid on the lake. Each pixel finds the water under it through
@@ -384,6 +413,7 @@ function VesselObject({
   // a mouse resting on the vessel at the apex: it floats and turns, unless a drag has it in hand
   const hover = useRef({ over: false, held: false, amount: 0, phase: 0 });
   const body = useRef<THREE.Mesh>(null);
+  const mirrorGroup = useRef<THREE.Group>(null);
   useEffect(() => {
     if (!focused) {
       hover.current.over = false;
@@ -713,6 +743,32 @@ function VesselObject({
       lens.clearViewOffset();
     }
     lens.updateProjectionMatrix();
+    // The gallery's mirror stays on the ground of the view: the plane's normal
+    // is the screen's up, through whatever part of the vessel is lowest there.
+    // Orbiting the eye used to mirror through world down, so the reflection
+    // swung with the vessel's own axis and, from above, hid under it.
+    // The lake is a level plane and keeps that mirror.
+    const mirrored = mirrorGroup.current;
+    if (mirrored && mirror) {
+      if (mirror.water) {
+        mirrorUp.set(0, 1, 0);
+        mirrorPlane.set(0, mirrorY, 0);
+      } else {
+        mirrorUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+        mirrorDown.copy(mirrorUp).negate();
+        supportToward(built.glass.positions, mirrorDown, mirrorFoot);
+        const sheetPos = built.sheet.geometry.getAttribute("position").array as ArrayLike<number>;
+        supportToward(sheetPos, mirrorDown, mirrorScratch);
+        if (mirrorScratch.dot(mirrorDown) > mirrorFoot.dot(mirrorDown)) mirrorFoot.copy(mirrorScratch);
+        mirrorPlane.copy(mirrorFoot).addScaledVector(mirrorUp, -mirror.gap);
+        const level = mirrorUp.dot(mirrorPlane);
+        sheetM.uGroundN.value.copy(mirrorUp);
+        glassM.uGroundN.value.copy(mirrorUp);
+        sheetM.uGroundY.value = glassM.uGroundY.value = level;
+      }
+      reflectionMatrix(mirrored.matrix, mirrorPlane, mirrorUp);
+      mirrored.matrixWorldNeedsUpdate = true;
+    }
     // CSS blur()'s argument is the Gaussian deviation, in the canvas's own
     // pixels (the seat scales afterwards). The 13-tap kernel is σ = 2.5 taps.
     const sigma = blurLive.current * renderer.getPixelRatio();
@@ -857,8 +913,9 @@ function VesselObject({
     <mesh ref={body} geometry={built.glass.geometry} visible={false} frustumCulled={false} />
     {/* the distance's mist, as the editor shows it (the editor's post blur is the lab's own and is not drawn here) */}
     <Mist geometry={built.glass.geometry} uniforms={glassU} layer={refract ? FRONT_LAYER : 0} renderOrder={3} on={tune.haze * (tune.hazeMist + tune.hazeGlow) > 0} />
-    {/* the reflection: the same meshes mirrored under the foot, on layers of their own (refraction only) */}
-    {mirror && refract && <group scale={[1, -1, 1]} position={[0, 2 * mirrorY, 0]}>
+    {/* the reflection, on its own layers (refraction only). The plane is set each frame:
+        the view's ground for the gallery, the level waterline for the lake. */}
+    {mirror && refract && <group ref={mirrorGroup} matrixAutoUpdate={false}>
       <mesh geometry={built.glass.geometry} renderOrder={0} frustumCulled={false} layers={REFLECT_GLASS_LAYER}>
         <shaderMaterial transparent depthWrite={false} side={THREE.BackSide}
           vertexShader={glassVertex} fragmentShader={glassRefractFragment} uniforms={glassM} />
@@ -882,6 +939,31 @@ const seatBlurPx = new Map<string, number>();
 
 export function setSeatBlur(cacheKey: string, px: number) {
   seatBlurPx.set(cacheKey, px);
+}
+
+/** One new WebGL context per frame, nearest seat first. Enter used to create
+ *  every gallery context in the click's own turn. */
+const canvasWaiters: { priority: number; order: number; run: () => void; cancelled: boolean }[] = [];
+let canvasWaiterOrder = 0;
+let canvasPumping = false;
+function pumpCanvasMounts() {
+  if (canvasPumping) return;
+  canvasPumping = true;
+  requestAnimationFrame(() => {
+    canvasPumping = false;
+    while (canvasWaiters.length && canvasWaiters[0].cancelled) canvasWaiters.shift();
+    const next = canvasWaiters.shift();
+    if (!next) return;
+    if (!next.cancelled) next.run();
+    if (canvasWaiters.some((waiter) => !waiter.cancelled)) pumpCanvasMounts();
+  });
+}
+function scheduleCanvasMount(priority: number, run: () => void): () => void {
+  const waiter = { priority, order: canvasWaiterOrder++, run, cancelled: false };
+  canvasWaiters.push(waiter);
+  canvasWaiters.sort((a, b) => a.priority - b.priority || a.order - b.order);
+  pumpCanvasMounts();
+  return () => { waiter.cancelled = true; };
 }
 
 /** How far past MAX_DPR a stretched seat may render (desktop 2 → 3.5; a phone's 1.75 → 2.45). */
@@ -922,7 +1004,18 @@ export function VesselArtifact(props: VesselArtifactProps) {
     form: props.form, morph: props.morph, tune: props.tune, sheetMode: props.sheetMode ?? "draped",
     seed: props.seed, sheetSize: props.sheetSize,
   }, props.priority ?? (props.focused ? 0 : 1));
-  if (!parts) return <div style={{ width: "100%", height: "100%" }} />;
+  const [canvasOn, setCanvasOn] = useState(false);
+  useEffect(() => {
+    if (!parts) return;
+    let live = true;
+    const cancel = scheduleCanvasMount(props.priority ?? (props.focused ? 0 : 1), () => {
+      if (live) setCanvasOn(true);
+    });
+    return () => { live = false; cancel(); };
+    // priority orders the queue; the parts' identity is the build
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parts, props.priority, props.focused]);
+  if (!parts || !canvasOn) return <div style={{ width: "100%", height: "100%" }} />;
   const extra = props.reflection && props.reflection.strength > 0 ? Math.max(0, props.reflection.room) : 0;
   return (
     // offsetSize: the seat is scaled by a CSS transform along the curve, and a resize observer does not see

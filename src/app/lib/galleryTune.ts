@@ -133,8 +133,9 @@ export const GALLERY_TUNE_DEFAULT: GalleryTune = {
   // a faint soft-light tooth over everything (settled 2026-11-01); the tint is kept at 0
   texture: { amount: .12, size: 140, contrast: 1, blend: "soft-light", tint: "#e7e5e5", tintAmount: 0, tintBlend: "multiply" },
   filter: { brightness: 1, contrast: 1, saturate: 1, sepia: 0, hue: 0, blur: 0 },
-  // a faint, soft mirror under each vessel's foot (settled in the panel, 2026-11-01)
-  reflection: { strength: .23, fall: .54, gap: .01, soft: 2.25, room: .25 },
+  // a soft mirror under each vessel's foot (settled in the panel, 2026-11-01;
+  // 2026-11-11: gap 0.07, blur a step softer, strength at 15%)
+  reflection: { strength: .15, fall: .54, gap: .07, soft: 4, room: .25 },
   // a broad soft light high on the left (amount .28, core #f3f2f2 until 2026-11-10) of the facing wall, slowly drifting (settled in the panel, 2026-11-01)
   sheen: {
     amount: .35, color: "#f6f5f5", edge: "#ecf0f0", x: -.45, y: .5,

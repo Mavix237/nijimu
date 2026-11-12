@@ -443,7 +443,10 @@ export function galleryStateFor(item: ArchiveArtifact): VesselState {
  * the middle of the archive first, where Enter lands. A phone's Enter then
  * finds its seats ready instead of settling cloth during the ink.
  */
+let warming = false;
 export function warmGalleryVessels() {
+  if (warming) return;
+  warming = true;
   const items = buildArchive();
   const middle = (items.length - 1) / 2;
   const queue = items.slice().sort((a, b) => Math.abs(items.indexOf(a) - middle) - Math.abs(items.indexOf(b) - middle));

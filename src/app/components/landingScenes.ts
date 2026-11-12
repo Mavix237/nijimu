@@ -41,7 +41,9 @@ export function warmGalleryTransition() {
   void vesselGallery().then((m) => m.warmGalleryVessels()).catch(() => { warmed = false; });
 }
 
-/** Preload once the landing has painted and the page is idle. */
+/** Preload once the landing has painted and the page is idle. Vessel builds
+ *  stay off this path: they would run through the opening the click is about
+ *  to leave. The phone warms those itself (warmGalleryTransition). */
 export function preloadLandingScenesWhenIdle(): () => void {
   if (typeof window.requestIdleCallback === "function") {
     const id = window.requestIdleCallback(preloadLandingScenes, { timeout: 1500 });

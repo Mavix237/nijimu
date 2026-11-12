@@ -770,10 +770,15 @@ export function buildDrapedSheet(glass: Glass, inset: number, d: Drape): Sheet {
 const REFLECT_GLSL = /* glsl */ `
   uniform float uReflect;
   uniform float uGroundY;
+  uniform vec3 uGroundN;
   uniform float uReveal;
   uniform float uReflectFall;
   float reflectFade(vec3 world) {
-    return (uReflect >= 0.0 ? uReflect * (1.0 - smoothstep(0.0, uReflectFall, uGroundY - world.y)) : 1.0) * uReveal;
+    // depth under the mirror plane. uGroundN is (0, 1, 0) and uGroundY the plane's
+    // height for a level floor (the lab, the lake); the gallery's mirror passes
+    // the view's own up, so the fade follows that ground instead of world down.
+    float below = uGroundY - dot(uGroundN, world);
+    return (uReflect >= 0.0 ? uReflect * (1.0 - smoothstep(0.0, uReflectFall, below)) : 1.0) * uReveal;
   }
 `;
 
@@ -1827,6 +1832,7 @@ export function createSheetUniformSet(edgePrint: THREE.Texture) {
     uKeyIntensity: { value: 1 },
     uReflect: { value: 0 },
     uGroundY: { value: 0 },
+    uGroundN: { value: new THREE.Vector3(0, 1, 0) },
     uReveal: { value: 1 },
     uReflectFall: { value: 1.3 },
     uDevelop: { value: 1.45 },
@@ -1866,6 +1872,7 @@ export function createGlassUniformSet(scene: THREE.Texture) {
     uResolution: { value: new THREE.Vector2(1, 1) },
     uReflect: { value: 0 },
     uGroundY: { value: 0 },
+    uGroundN: { value: new THREE.Vector3(0, 1, 0) },
     uReveal: { value: 1 },
     uReflectFall: { value: 1.3 },
     uSheen0: { value: 0 },

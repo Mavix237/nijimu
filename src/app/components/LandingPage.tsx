@@ -1,6 +1,6 @@
 import { FLOW_PAGE } from "../lib/theme";
 import { resumeColorState } from "../lib/namingDraft";
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { BlobScene } from "./BlobScene";
 // the 3D scenes are their own chunks: the landing paints without three.js
@@ -13,7 +13,7 @@ import { useLandingReturn } from "../lib/landingReturn";
 import { INK_ENTRY, pickLandingGalleryIndex, type InkArrival } from "../lib/landingTransition";
 import { clearInkSeats } from "../lib/inkCutouts";
 import { buildArchive } from "../lib/archive";
-import { useGalleryPush } from "../lib/labPush";
+import { useGalleryPush, type GalleryPanelPush } from "../lib/labPush";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH, DESCENT_STEP_PATHS, isDescentPath } from "../lib/routes";
 import { POND_ENTRY, pondTransition, pondSurfaceMask } from "../lib/pondTransition";
 import type { NameFlowState, NamingSession } from "./NamingRim";
@@ -27,6 +27,39 @@ interface GalleryEntry {
   galleryFocusId?: string;
   galleryCarried?: boolean;
 }
+
+/** The gallery under the landing. The ink clock re-renders the page every
+ *  frame; this only follows it once the vessels are about to appear, so the
+ *  click does not rebuild ten canvases on every frame of the entry. */
+const GalleryBehindInk = memo(function GalleryBehindInk({
+  active, panels, pushedAt, onFocus, inkArrival, galleryFocusId, galleryCarried, onPondEnter, pondDeparture, hideHeader,
+}: {
+  active: boolean;
+  panels?: GalleryPanelPush[];
+  pushedAt: number;
+  onFocus: (id: string) => void;
+  inkArrival?: InkArrival;
+  galleryFocusId?: string;
+  galleryCarried: boolean;
+  onPondEnter: () => void;
+  pondDeparture: number;
+  hideHeader: boolean;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <LiveVesselGallery active={active} panels={panels} pushedAt={pushedAt} onFocus={onFocus}>
+        <MemoryCarouselPage
+          inkArrival={inkArrival}
+          galleryFocusId={galleryFocusId}
+          galleryCarried={galleryCarried}
+          onPondEnter={onPondEnter}
+          pondDeparture={pondDeparture}
+          hideHeader={hideHeader}
+        />
+      </LiveVesselGallery>
+    </Suspense>
+  );
+});
 
 /**
  * One layout owns /, /memory, /memory/pond, /record/start,
@@ -203,7 +236,34 @@ export function LandingPage() {
     setArrival({ elapsed: 0, reducedMotion });
     setStartedAt(performance.now());
   };
-  const showGallery = inGallery || inPond || !!arrival || pondElapsed !== null;
+  const galleryWanted = inGallery || inPond || !!arrival || pondElapsed !== null;
+  // The click paints the landing's first step alone. The gallery mounts a beat
+  // later, so creating its canvases is not the frame the press waits on.
+  const [galleryReady, setGalleryReady] = useState(inGallery || inPond);
+  useEffect(() => {
+    if (!galleryWanted) { setGalleryReady(false); return; }
+    if (!arrival || inGallery || inPond) { setGalleryReady(true); return; }
+    // Let the header start moving before any vessel is built. The seats stay
+    // invisible until the growth, a few seconds on, so this wait is unseen.
+    let live = true;
+    const start = performance.now();
+    const wait = () => {
+      if (!live) return;
+      if (performance.now() - start < 420) requestAnimationFrame(wait);
+      else setGalleryReady(true);
+    };
+    requestAnimationFrame(wait);
+    return () => { live = false; };
+  }, [galleryWanted, !!arrival, inGallery, inPond]);
+  const showGallery = galleryReady;
+  // Until the vessels are about to grow, the gallery's picture does not change.
+  // Hold one arrival so the per-frame clock does not walk that tree.
+  const inkHeld = !!arrival && arrival.elapsed < (arrival.reducedMotion ? 200 : INK_ENTRY.unfoldEnd - 500);
+  const galleryArrival = useMemo<InkArrival | undefined>(() => {
+    if (!arrival) return undefined;
+    if (inkHeld) return { elapsed: 0, reducedMotion: arrival.reducedMotion };
+    return arrival;
+  }, [!!arrival, inkHeld, arrival?.reducedMotion, inkHeld || !arrival ? 0 : arrival.elapsed]);
   const pond = pondTransition(pondElapsed ?? 0, reducedMotion);
   const pondArrival = inPond && pondElapsed === null ? 1 : pond.arrival;
   return (
@@ -211,18 +271,18 @@ export function LandingPage() {
       {showGallery && (
         <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>
-          <Suspense fallback={null}>
-          <LiveVesselGallery active={inGallery && pondElapsed === null} panels={publishedGallery?.panels} pushedAt={publishedGallery?.at ?? 0} onFocus={setVesselFocus}>
-            <MemoryCarouselPage
-              inkArrival={arrival ?? undefined}
-              galleryFocusId={pondReturnId ?? vesselFocus ?? galleryEntry?.galleryFocusId ?? entryFocus?.id}
-              galleryCarried={!!pondReturnId || !!galleryEntry?.galleryCarried || vesselFocus !== undefined}
-              onPondEnter={openPond}
-              pondDeparture={pondElapsed !== null ? Math.max(.00001, pond.departure) : 0}
-              hideHeader={pondElapsed !== null || inPond}
-            />
-          </LiveVesselGallery>
-          </Suspense>
+          <GalleryBehindInk
+            active={inGallery && pondElapsed === null}
+            panels={publishedGallery?.panels}
+            pushedAt={publishedGallery?.at ?? 0}
+            onFocus={setVesselFocus}
+            inkArrival={galleryArrival}
+            galleryFocusId={pondReturnId ?? vesselFocus ?? galleryEntry?.galleryFocusId ?? entryFocus?.id}
+            galleryCarried={!!pondReturnId || !!galleryEntry?.galleryCarried || vesselFocus !== undefined}
+            onPondEnter={openPond}
+            pondDeparture={pondElapsed !== null ? Math.max(.00001, pond.departure) : 0}
+            hideHeader={pondElapsed !== null || inPond}
+          />
         </div>
       )}
       {pondOnStage && (

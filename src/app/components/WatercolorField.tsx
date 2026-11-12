@@ -23,12 +23,14 @@ import { LANDING_MOTION } from "../lib/landingMotion";
  * wash bound for the gallery has a mask waiting at its vessel's seat — the
  * vessel's outline (`masks`, white inside; a soft disc until one arrives) in a
  * box (`boxes`, centre x, y and half-side in container px, half 0 for none).
- * The wash keeps living and fills its mask with its own paint from the foot
- * up (`fill`), draining into it as it does (`drain`); `fade` lets a wash go.
+ * The wash keeps living, spreads out to the outline (`form`), then fills its
+ * mask with its own paint from the foot up (`fill`), draining into it as it does (`drain`); `fade` lets a wash go.
  */
 export interface WashCuts {
   on: boolean;
   boxes: number[];
+  /** How far the wash has spread out to its vessel's outline, 0–1; the fill follows once it has. */
+  form: number[];
   fill: number[];
   drain: number[];
   fade: number[];
@@ -55,6 +57,19 @@ export interface WashBlob {
 const MAX = 24;
 /** The cutouts' outlines share one texture, a tile per wash. */
 const ATLAS_COLS = 6, ATLAS_ROWS = 4, ATLAS_TILE = 128;
+/** While the paint rises from the foot it also closes in from the outline's outer
+    edge, over the same time, until the outline's own band (the softened mask under
+    EDGE_FILL_TO) is full. */
+const EDGE_FILL_TO = 0.72;
+/** The outline drawn before the paint comes: the band of the softened mask it
+    covers (was .25–.6), and the even paint its inside holds (was .12). */
+const OUTLINE_BAND = [0.4, 0.85] as const;
+const OUTLINE_INNER = 0.22;
+/** How much of its colour the outlined inside shows, evenly top to bottom, before
+    the paint comes (once filled the cutout's top washes out to .08, as the glass is clear). */
+const OUTLINE_SHOW = 0.6;
+/** How far past EDGE_FILL_TO the band's inner side thins out (softened-mask units). */
+const EDGE_FILL_FEATHER = 0.3;
 /** A cutout's outline eases in over this when it arrives late, rather than snapping from the disc. */
 const MASK_EASE_MS = () => LANDING_MOTION.follow.maskEaseMs;
 /** The soft disc's top and bottom down its box, before an outline arrives. */
@@ -98,8 +113,9 @@ const FREE_REVEAL = {
   get fadeLonger() { return REVEAL.freeFadeLonger; },
 };
 const revealSpan = () => REVEAL.lastStart + REVEAL.jitter + REVEAL.growMs * (1 + FREE_REVEAL.growLonger);
-/** The share of the opening after which the field counts as nearly painted (`onSettling`). */
-const REVEAL_NEAR = 0.8;
+/** The share of the opening after which the landing's copy may come in (`onSettling`;
+    LANDING_MOTION.reveal.copyAt, was a fixed .8). */
+const REVEAL_NEAR = () => LANDING_MOTION.reveal.copyAt;
 /** 1 for a free, elongated wash, 0 for a complete round one. */
 const freeness = (comp: number) => {
   const x = Math.min(1, Math.max(0, (0.75 - comp) / 0.4));
@@ -275,9 +291,19 @@ bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, o
       float shape = mix(disc, outline, cb.y);
       // down the outline itself, 0 at its top and 1 at its foot
       float down = clamp((lc.y - cb.z) / max(cb.w - cb.z, .05), 0., 1.);
-      // the paint rises from the foot, its front uneven and wet
-      float front = 1.08 - uCut[i].w * 1.25 + (fbm(vec2(lc.x * 4.2 + s * 2.3, uTime * .25)) - .5) * .18;
-      float filled = smoothstep(front - .07, front + .07, down);
+      // uCut.w runs 0 → 2: the outline forming, then the paint filling it
+      float formed = clamp(uCut[i].w, 0., 1.);
+      float fillP = clamp(uCut[i].w - 1., 0., 1.);
+      // together: the paint closes in from the outer edge, a wet ragged front, until
+      // the outline's band is full, while it rises from the foot, uneven and wet
+      float edgeP = fillP;
+      float riseP = fillP;
+      float edgeFront = mix(-.12, ${EDGE_FILL_TO}, edgeP) + (fbm(lc * 5.3 + s * 3.7 + uTime * .2) - .5) * .14 * (1. - edgeP * .6);
+      // its inner side is washed out, thinning over a wide feather toward the middle
+      float edgeFilled = 1. - smoothstep(edgeFront - .1, edgeFront + ${EDGE_FILL_FEATHER}, shape);
+      float front = 1.08 - riseP * 1.25 + (fbm(vec2(lc.x * 4.2 + s * 2.3, uTime * .25)) - .5) * .18;
+      float risen = smoothstep(front - .07, front + .07, down);
+      float filled = max(edgeFilled, risen);
       // pooling deeper at the border as it dries, in blotches; denser low, as the vessels hold their photo low
       float blotch = fbm(lc * 4.5 + s * 7.1 + uTime * .02);
       float rim = 1. - smoothstep(.45, .92, shape);
@@ -285,16 +311,41 @@ bool wash(vec2 p, out float D, out float comp, out vec3 pig, out vec3 pigDeep, o
       float low = mix(mix(.55, 1.12, smoothstep(.5, .95, down)), 1., rim * .7);
       float level = mix(.58, 1.05, bc) * (.72 + .38 * blotch + rim * (.7 + .8 * blotch)) * low;
       float fillD = shape * filled * level * uDeep[i].a;
+      // first the wash grows out from its own extent (it arrives at about .7 of
+      // the box, ~.3 from the middle) to the vessel's outline, a ragged wet
+      // edge, and pools where it meets the border: the outline is drawn, its
+      // inside only a pale wash, before the paint rises
+      float spread = mix(.3, .8, formed);
+      float ragged = (fbm(lc * 3.7 + s * 5.3 + uTime * .1) - .5) * .16;
+      float reached = (1. - smoothstep(spread - .1, spread, length(lw - .5) + ragged)) * smoothstep(0., .12, formed);
+      // the outline is a thin, faint line before the paint comes: only the outer
+      // part of the border (where the mask is still thin) and about half the
+      // weight of the fill's own rim, over an even paler inside
+      float thin = 1. - smoothstep(${OUTLINE_BAND[0]}, ${OUTLINE_BAND[1]}, shape);
+      // the inside holds a little paint, laid evenly (the look's paper tooth lies over it)
+      float inner = ${OUTLINE_INNER};
+      float outlineD = shape * reached * mix(.58, 1.05, bc) * (inner + thin * (.55 + .4 * blotch)) * uDeep[i].a;
+      // only the band's outer part firms the wash's edge and tide line, so its
+      // inner side stays soft rather than drawing a second, inner contour
+      float paintD = shape * max(risen, edgeFilled * (1. - smoothstep(.3, .75, shape))) * level * uDeep[i].a;
+      fillD = max(fillD, outlineD);
       // the wash itself drains into the cutout as it fills
       dens *= 1. - cb.x;
       float share = fillD / max(dens + fillD, 1e-4);
+      // how much of that is the rising paint rather than the outline alone
+      float firm = paintD / max(dens + fillD, 1e-4);
       dens = max(dens, fillD);
       // the cutout's colour keeps to a band low down, as the vessels' stain does,
       // and is washed out above it, as their glass is clear
-      show *= mix(1., mix(.08, 1., smoothstep(.45, .85, down)), share * (1. - rim * .75));
-      // a wash keeps its own edge, firmer in the cutout, with a stronger tide line so the outline reads
-      bc = mix(bc, max(bc, .8), share);
-      tideI = mix(tideI, tideI * 1.8 + .7, share);
+      // (the first, outlined inside is one even tone top to bottom until the paint comes)
+      float washed = mix(.08, 1., smoothstep(.45, .85, down));
+      washed = mix(${OUTLINE_SHOW}, washed, smoothstep(0., .4, fillP));
+      show *= mix(1., washed, share * (1. - rim * .75));
+      // a wash keeps its own edge, firmer in the cutout, with a stronger tide
+      // line so the outline reads once the paint is in; the outline alone gets
+      // only a little of that, so it stays a fine, light line
+      bc = mix(bc, max(bc, .8), firm + (share - firm) * .35);
+      tideI = mix(tideI, tideI * 1.8 + .7, firm) + (share - firm) * (tideI * .25 + .15);
     }
     // a p-norm, not a sum: washes join where both are wet, not through their faint tails
     D += pow(dens, uJoin);
@@ -754,7 +805,7 @@ export function WatercolorField({
   cutsRef?: React.MutableRefObject<WashCuts>;
   /** Whether the field could be painted; without it the blob elements stay visible. */
   onReady: (ok: boolean) => void;
-  /** Once, when the washes' opening is nearly done (REVEAL_NEAR of it). */
+  /** Once, when the washes' opening has run REVEAL_NEAR of its span (the landing's copy then comes in). */
   onSettling?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -833,7 +884,7 @@ export function WatercolorField({
       const n = Math.min(MAX, list.length);
       const full = tuneRef.current.reach;
       const since = opening(now);
-      if (!settled && since >= revealSpan() * REVEAL_NEAR) {
+      if (!settled && since >= revealSpan() * REVEAL_NEAR()) {
         settled = true;
         settlingRef.current?.();
       }
@@ -885,7 +936,7 @@ export function WatercolorField({
         if (cuts && half > 0) {
           // the soft disc spans most of its box; an outline its own rows
           const span = cuts.spans[i] ?? DISC_SPAN;
-          cutData.set([cuts.boxes[i * 3] - cr.left, cuts.boxes[i * 3 + 1] - cr.top, half, cuts.fill[i] ?? 0], i * 4);
+          cutData.set([cuts.boxes[i * 3] - cr.left, cuts.boxes[i * 3 + 1] - cr.top, half, (cuts.form[i] ?? 1) + (cuts.fill[i] ?? 0)], i * 4);
           cutDataB.set([cuts.drain[i] ?? 0, maskOn,
             DISC_SPAN[0] + (span[0] - DISC_SPAN[0]) * maskOn, DISC_SPAN[1] + (span[1] - DISC_SPAN[1]) * maskOn], i * 4);
           // the cutout holds the wash's paint even once the wash itself is spent

@@ -406,7 +406,7 @@ export function PondNamingOverlay({
         actionsStyle={{ transform: `translateY(-${FLOW_PAGE.surfaceActionLift})`, position: "relative", zIndex: 2 }}
         headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
           transform: `translateY(calc(${fieldDrop}px - ${TEXT_LIFT}))`,
-          ["--naming-field" as string]: "min(28em, calc(100vw - 40px))" }}
+          ["--naming-field" as string]: "min(40em, calc(100vw - 40px))" }}
         style={{ zIndex: 1 }} />
 
       {/* the overlay lets presses through to the water; the pane takes its own */}

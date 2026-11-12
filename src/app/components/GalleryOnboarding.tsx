@@ -13,7 +13,7 @@ const INTRO_SPLIT = 4900;
 const INTRO_TO = INK_ENTRY.growEnd - 270;
 const INTRO_FADE = 520;
 
-const HINT_DELAY_MS = 3500;
+const HINT_DELAY_MS = 5500;
 /** One breath of the tip: full transcript ink, then a dip, and back. */
 const HINT_BREATHE_S = 5.4;
 /** How far round the tip a pointer or finger makes

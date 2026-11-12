@@ -9,13 +9,14 @@ import { GalleryScrollHint } from "./GalleryOnboarding";
 import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
+import { grainMaskTile } from "../lib/paperFinish";
+import { GALLERY_TEXT_TRACKING, GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
 import { flowProgress, inkGrowth, inkWash, type InkArrival } from "../lib/landingTransition";
 import { INK_CUT_SCALE, captureInkMask, clearInkSeats, setInkSeat } from "../lib/inkCutouts";
 import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
-import { carouselFrame, carouselSeat, carouselContainsOffset, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
+import { carouselFrame, carouselSeat, carouselContainsOffset, carouselLift, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
 import { useHeaderMenu } from "./HeaderMenu";
 import { useCompact } from "../hooks/useCompact";
 
@@ -53,12 +54,16 @@ const NEIGHBOR_OUT_STAGGER_MS = 80;
 const OPEN_FADE_MS = 720;
 const OPEN_FADE_STAGGER_MS = 80;
 const OPEN_READY_CAP_MS = 5000;
+/** The caption (name, year) and the transcript come after the vessels: this
+    long after the seats the gallery opens on have drawn their first frame,
+    so the words follow the vessels' fade rather than arriving over empty seats. */
+const WORDS_AFTER_VESSELS_MS = 450;
 /** Caption block centre-ish, as a fraction of viewport height from the top —
     scales with the window instead of sitting a fixed px above the timescale. */
 export const CAPTION_TOP_VH = 0.62;
-/** Extra downward sit of the title + year. Shared by the carousel and the
-    naming step — both draw this caption from the same seat. */
-export const CAPTION_DOWN_VH = 0.07;
+/** Extra downward sit of the title + year under the apex vessel
+    (2026-11-11: .075 — was .06, briefly .08, before that .07). */
+export const CAPTION_DOWN_VH = 0.075;
 /** Height of the timescale line above the bottom of the viewport. A phone
     keeps a fixed inset, nearer its thumb. Wider screens leave 2vh under the
     slider's hit area — less than the old fixed 42px — and the line sits
@@ -132,7 +137,8 @@ export const CAPTION_TITLE_STYLE: CSSProperties = {
   fontFamily: SERIF,
   fontStyle: "italic",
   fontWeight: 400,
-  fontSize: "clamp(13px, 1.05vw, 16px)",
+  // half a step down from clamp(13px, 1.05vw, 16px) (2026-11-11)
+  fontSize: "clamp(12.5px, 1.015vw, 15.5px)",
   letterSpacing: SERIF_ITALIC_TRACKING,
   lineHeight: 1.35,
   textAlign: "center",
@@ -159,21 +165,27 @@ const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
   ...GALLERY_TRANSCRIPT,
   margin: "1.6em auto 0",
   maxWidth: "60ch",
-  lineHeight: 1.4,
-  letterSpacing: "0.012em",
+  // a little under the "keep scrolling" tip's 1.5 (GalleryOnboarding)
+  lineHeight: 1.45,
+  letterSpacing: GALLERY_TEXT_TRACKING,
   textAlign: "center",
   textWrap: "pretty",
   transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
 };
 
-/** A transcript line slides down into place over LINE_IN_MS, the next LINE_STAGGER_MS after.
-    The first line comes in a word at a time, WORD_STAGGER_MS apart — closer for a long
-    line, so its last word starts within FIRST_LINE_MAX_MS; the second follows the first
-    line's last word by one more step. */
-const LINE_IN_MS = 720;
-const LINE_STAGGER_MS = 80;
-const WORD_STAGGER_MS = 70;
-const FIRST_LINE_MAX_MS = 560;
+/** The words come back line by line as ink into wet paper. Each line fades in (ease in and
+    out, LINE_INK_MS, LINE_STEP_MS after the one above, LINE_LEAD_MS in) as a faint wash: a
+    soft halo of its ink (INK_HALO_EM) held in the paper's grain (grainMaskTile, one grain a
+    device pixel, as on the landing), barely blurred (INK_BLUR_PX). A wet front then runs
+    across it from the left (INK_FRONT, its soft width), filling the ink in solid while the
+    halo draws back into the letters. A settled line keeps no mask, shadow or filter. */
+const LINE_INK_MS = 1600;
+const LINE_STEP_MS = 260;
+const LINE_LEAD_MS = 150;
+const INK_HALO_EM = [0.32, 0.85] as const;
+const INK_BLUR_PX = 1.1;
+/** The front's solid share and its soft edge, as stops along a mask 2.2× the line's width. */
+const INK_FRONT = [50, 60] as const;
 /** One memory per 72px of wheel. A step spends the whole gesture: the surplus
     is not kept, so a slightly fast flick cannot pay for several more steps.
     The next step waits 350ms (was 140), so the fastest run is 40% of the old rate. */
@@ -181,10 +193,10 @@ const RIM_WHEEL_PX = 72;
 const RIM_STEP_GAP_MS = 350;
 const RIM_STEP_GAP_REDUCED_MS = 200;
 
-/** The words stop above `floorY`; when they would run past it, the last lines fade out.
-    They come in line by line, each sliding down out of its own mask; the lines are
-    found by setting the words once, unseen, at the same width and reading where
-    each one wraps. */
+/** The words stop above `floorY`; when they would run past it, the last lines fade out
+    (measured on an unseen copy at rest). They come in line by line as ink (LINE_* and
+    INK_* above); the lines are found by setting the words once, unseen, at the same
+    width and reading where each one wraps. */
 function CaptionTranscript({ text, visible, floorY }: { text: string; visible: boolean; floorY: number }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const measure = useRef<HTMLParagraphElement>(null);
@@ -216,61 +228,82 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
     if (!el) return;
     const top = el.getBoundingClientRect().top;
     const space = Math.max(0, floorY - top);
-    setRoom(el.scrollHeight > space + 1 ? space : null);
+    // the words' height at rest, from the unseen copy, untouched by their entrance
+    const height = measure.current?.offsetHeight ?? el.scrollHeight;
+    setRoom(height > space + 1 ? space : null);
   }, [lines, floorY, visible]);
   const fade = "linear-gradient(to bottom, #000 calc(100% - 3.2em), transparent)";
   const still = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const keyframes = useMemo(inkKeyframes, []);
   return (
     <div data-trail-ignore style={{ position: "relative" }}>
-      <style>{`
-        @keyframes transcriptLineIn {
-          from { transform: translateY(-105%); }
-          to { transform: translateY(0); }
-        }
-        @keyframes transcriptLineFade { from { opacity: 0; } }
-      `}</style>
-      {/* the same words, unseen, to find where the lines break */}
+      <style>{keyframes}</style>
+      {/* the same words, unseen and at rest, to find where the lines break and their height */}
       <p ref={measure} aria-hidden style={{ ...CAPTION_TRANSCRIPT_STYLE, position: "absolute", left: 0, right: 0, top: 0, visibility: "hidden", pointerEvents: "none" }}>
         {words.map((word, i) => <span key={i}>{word}{i < words.length - 1 ? " " : ""}</span>)}
       </p>
+      {/* flow-root, so the lines' negative margins (room for their halo inside the
+          mask) stay inside the paragraph rather than collapsing through it */}
       <p ref={ref} style={{
         ...CAPTION_TRANSCRIPT_STYLE,
+        display: "flow-root",
         opacity: visible ? 1 : 0,
         ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
       }}>
-        {lines.map((line, i, all) => {
-          const firstWords = all[0].split(" ").length;
-          const wordStep = Math.min(WORD_STAGGER_MS, FIRST_LINE_MAX_MS / firstWords);
-          // shown afresh each time: the lines come in again
-          const enter = (delay: number) => visible
-            ? `${still ? "transcriptLineFade" : "transcriptLineIn"} ${LINE_IN_MS}ms cubic-bezier(.2, .7, .2, 1) ${delay}ms both`
-            : "none";
-          if (i === 0) {
-            const first = line.split(" ");
-            return (
-              <span key={i} style={{ display: "block", textAlign: "center" }}>
-                {first.map((word, j) => (
-                  <Fragment key={j}>
-                    {/* each word slides down out of its own mask */}
-                    <span style={{ display: "inline-block", overflow: "hidden", verticalAlign: "top" }}>
-                      <span style={{ display: "inline-block", animation: enter(j * wordStep) }}>{word}</span>
-                    </span>
-                    {j < first.length - 1 ? " " : ""}
-                  </Fragment>
-                ))}
-              </span>
-            );
-          }
-          const after = firstWords * wordStep;
-          return (
-            <span key={i} style={{ display: "block", overflow: "hidden" }}>
-              <span style={{ display: "block", textAlign: "center", animation: enter(after + (i - 1) * LINE_STAGGER_MS) }}>{line}</span>
-            </span>
-          );
-        })}
+        {lines.map((line, i, all) => (
+          <span key={i} style={{
+            display: "block",
+            textAlign: "center",
+            // half an em of room above and below for the halo, taken back by the margins
+            padding: "0.5em 0",
+            marginTop: i === 0 ? "-0.5em" : "-1em",
+            marginBottom: i === all.length - 1 ? "-0.5em" : 0,
+            // shown afresh each time: the ink returns again
+            animation: visible && !still
+              ? `transcriptInkLine ${LINE_INK_MS}ms ease-in-out ${LINE_LEAD_MS + i * LINE_STEP_MS}ms backwards`
+              : "none",
+          }}>{line}</span>
+        ))}
       </p>
     </div>
   );
+}
+
+/** The transcript's ink entrance (see LINE_INK_MS). Its mask holds through the animation and
+    is gone once a line has settled (fill backwards), so a settled line is plain text. */
+function inkKeyframes() {
+  const ink = GALLERY_TRANSCRIPT.color;
+  const rgb = [1, 3, 5].map((i) => parseInt(ink.slice(i, i + 2), 16)).join(", ");
+  const grain = grainMaskTile();
+  const dpr = typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1);
+  const tile = `${(256 / dpr).toFixed(2)}px ${(256 / dpr).toFixed(2)}px`;
+  const front = `linear-gradient(90deg, #000 ${INK_FRONT[0]}%, transparent ${INK_FRONT[1]}%)`;
+  const mask = (x: string) => `
+    -webkit-mask-image: ${front}, url(${grain}); mask-image: ${front}, url(${grain});
+    -webkit-mask-size: 220% 100%, ${tile}; mask-size: 220% 100%, ${tile};
+    -webkit-mask-repeat: no-repeat, repeat; mask-repeat: no-repeat, repeat;
+    -webkit-mask-position: ${x} 0, 0 0; mask-position: ${x} 0, 0 0;
+    -webkit-mask-composite: source-over; mask-composite: add;`;
+  return `
+    @keyframes transcriptInkLine {
+      from {
+        opacity: 0; color: rgba(${rgb}, .45); filter: blur(${INK_BLUR_PX}px);
+        text-shadow: 0 0 ${INK_HALO_EM[0]}em rgba(${rgb}, .45), 0 0 ${INK_HALO_EM[1]}em rgba(${rgb}, .22);
+        ${mask("100%")}
+      }
+      35% { opacity: .9; }
+      /* the halo draws back into the letters ahead of the front, so the ink the front
+         fills reads as the word, not as a smudge round it */
+      55% {
+        color: rgba(${rgb}, .8); filter: blur(${(INK_BLUR_PX * 0.25).toFixed(2)}px);
+        text-shadow: 0 0 ${(INK_HALO_EM[0] * 0.35).toFixed(2)}em rgba(${rgb}, .18), 0 0 ${(INK_HALO_EM[1] * 0.35).toFixed(2)}em rgba(${rgb}, .06);
+      }
+      to {
+        opacity: 1; color: rgba(${rgb}, 1); filter: blur(0px);
+        text-shadow: 0 0 0 rgba(${rgb}, 0), 0 0 0 rgba(${rgb}, 0);
+        ${mask("0%")}
+      }
+    }`;
 }
 
 /** Gap between the title and the year, in the caption block's own em. */
@@ -429,11 +462,13 @@ export function PuddleDiveGallery({
   if (captionItem) lastCaptionRef.current = captionItem;
   const shownCaption = captionItem ?? lastCaptionRef.current;
   const rimSettled = Math.abs(rimAt - activeIdx) < 0.04;
+  /** The vessels the gallery opened on have drawn (see checkLoadedRef): the words may come. */
+  const [vesselsLoaded, setVesselsLoaded] = useState(arrival === "carried");
   /** The memory whose full transcript has opened after resting at the apex. */
   const [revealedId, setRevealedId] = useState<string | null>(null);
   // a phone shows only the name and year; the vessel opens the words (MemoryReadingPane)
   const compact = useCompact();
-  const transcriptReady = phase === "gallery" && growth >= 1 && pondDeparture === 0
+  const transcriptReady = phase === "gallery" && growth >= 1 && pondDeparture === 0 && vesselsLoaded
     && !inField && !caption && !compact && rimSettled;
   useEffect(() => {
     setRevealedId(null);
@@ -764,6 +799,25 @@ export function PuddleDiveGallery({
   const drawnAtRef = useRef(new Map<string, number>());
   const openingGoRef = useRef(false);
   const [openingEpoch, setOpeningEpoch] = useState(0);
+  /* The words wait for the vessels: every seat the gallery opens on (or, with
+     no such set, the one in hand) has drawn a first frame, capped so a slow
+     canvas can't hold them back. A carried arrival brings its vessel with it. */
+  const firstFramesRef = useRef(new Set<string>());
+  const loadedSoonRef = useRef(false);
+  const checkLoadedRef = useRef<() => void>(() => {});
+  checkLoadedRef.current = () => {
+    if (loadedSoonRef.current) return;
+    const want = openingIdsRef.current ?? (focusId ? new Set([focusId]) : null);
+    if (!want) return;
+    for (const id of want) if (!firstFramesRef.current.has(id)) return;
+    loadedSoonRef.current = true;
+    window.setTimeout(() => setVesselsLoaded(true), reducedMotion ? 0 : WORDS_AFTER_VESSELS_MS);
+  };
+  useEffect(() => { checkLoadedRef.current(); });
+  useEffect(() => {
+    const t = window.setTimeout(() => setVesselsLoaded(true), OPEN_READY_CAP_MS);
+    return () => window.clearTimeout(t);
+  }, []);
   const noteDrawnRef = useRef<(id: string) => void>(() => {});
   noteDrawnRef.current = (id: string) => {
     const ids = openingIdsRef.current;
@@ -861,6 +915,8 @@ export function PuddleDiveGallery({
       hook = (canvas) => {
         captureInkMask(id, canvas);
         noteDrawnRef.current(id);
+        firstFramesRef.current.add(id);
+        checkLoadedRef.current();
       };
       frameHooks.current.set(id, hook);
     }
@@ -1285,17 +1341,18 @@ export function PuddleDiveGallery({
       <div
         className="absolute left-0 right-0 text-center"
         style={{
-          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH + (caption ? 0 : 0.02)) * viewport.h,
+          // rises with the array (carouselLift), keeping to its vessel
+          top: (CAPTION_TOP_VH + CAPTION_DOWN_VH - carouselLift(viewport.w, viewport.h) + (caption ? 0 : 0.02)) * viewport.h,
           padding: "0 clamp(24px, 6vw, 80px)",
           fontFamily: SERIF,
           // in the field the words come only while a memory is under the pointer
-          opacity: chromeVisible && (field?.on ? !!captionItem : yearsChrome) ? 1 : 0,
+          opacity: chromeVisible && (vesselsLoaded || !!caption) && (field?.on ? !!captionItem : yearsChrome) ? 1 : 0,
           transition: field?.on ? "opacity 0.45s ease" : "opacity 0.8s ease",
           zIndex: 30,
           pointerEvents: caption ? "auto" : "none",
         }}
       >
-        {shownCaption && <div
+        {shownCaption && (vesselsLoaded || !!caption) && <div
           key={shownCaption.id}
           style={{
             /* first arrival waits for the vessel; later steps use the same

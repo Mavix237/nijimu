@@ -153,8 +153,8 @@ const BLOB_SPREAD = 1.3;
 const ENTRY = LANDING_MOTION.entry;
 /** How long a wash bound for the gallery takes to drift onto its seat, and the share of the seat box it gathers to (about the vessel's own size). */
 
-/** How far into its drift a wash begins to fill its cutout: just as it settles. */
-/* (closeMs, closeSpreadMs, seatDriftMs, seatGather, seatFillFrom: LANDING_MOTION.entry, live for the dev panel.) */
+/** How far into its drift a wash begins to take its vessel's shape: near the end of the way, while still moving. */
+/* (closeMs, closeSpreadMs, seatDriftMs, arriveAs, morphFrom, formMs, swellTo: LANDING_MOTION.entry, live for the dev panel.) */
 /** Nearest two wash centres may sit, in % of the field. */
 const BLOB_MIN_GAP = 12;
 /** Share of washes centred on the frame's edge, about half outside it, so the field reaches past the screen. */
@@ -334,17 +334,16 @@ const PAPER = "#ededee";
 /** Landing paper — a step below the raw token so isolation doesn't read as a flash. */
 /** The paper's mean tone (landingLook's #f4f5f5 → #ecebeb), for the ink's contrast over it. */
 const LANDING_PAPER = "#f0f0f0";
-const HEADER_INK = { mark: "#504A4A", desc: "#2A2018" };
+/** The landing's centre group — copy and Enter — in dark grey. */
+const LANDING_TEXT = "#45454a";
+const HEADER_INK = { mark: LANDING_TEXT, desc: LANDING_TEXT };
 const HEADER_LIGHT = { mark: "#e2e2e3", desc: "#D6DADB" };
 const HEADER_COLOR_FADE = "color 1.15s ease";
-/** Labels invert against the field; the saturation pass keeps that invert gray. */
+/** Labels sit on the field in a lighter grey than the centre's copy (they used
+    to invert against it, white in difference with a saturation pass). */
 const LANDING_INK = {
-  color: "rgba(255, 255, 255, 0.8)",
-  mixBlendMode: "difference" as const,
-};
-const LANDING_MONO = {
-  color: "#808080",
-  mixBlendMode: "saturation" as const,
+  color: CHROME_GRAY,
+  mixBlendMode: "normal" as const,
 };
 
 type Ink = { r: number; g: number; b: number; a: number };
@@ -457,7 +456,7 @@ export function BlobScene({
   /** How far each wash has arrived; its dot and caption come with it. */
   const washPresence = useRef<number[]>([]);
   /** The ink entry's hold on the washes: each becomes a flat cutout of its gallery vessel. */
-  const washCuts = useRef<WashCuts>({ on: false, boxes: [], fill: [], drain: [], fade: [], open: [], paint: [], tint: [], masks: [], spans: [] });
+  const washCuts = useRef<WashCuts>({ on: false, boxes: [], form: [], fill: [], drain: [], fade: [], open: [], paint: [], tint: [], masks: [], spans: [] });
   /** When (entry ms) each wash first had a gallery seat to go to; its drift is timed from there. */
   const cutSeen = useRef(new Map<number, number>());
   /** When (entry ms) each wash was first known to have no seat on screen; its close is timed from there. */
@@ -777,6 +776,7 @@ export function BlobScene({
         cuts.boxes[i * 3 + 2] = 0;
         cuts.masks[i] = null;
         cuts.spans[i] = null;
+        cuts.form[i] = 0;
         cuts.fill[i] = 0;
         cuts.drain[i] = 0;
         cuts.open[i] = 1;
@@ -802,12 +802,19 @@ export function BlobScene({
         if (!cutSeen.current.has(i)) cutSeen.current.set(i, entryTime);
         const from = Math.max(INK_ENTRY.headerEnd, cutSeen.current.get(i)!);
         const travel = flowProgress(entryTime, from, from + ENTRY.seatDriftMs);
-        // the fill begins as the wash settles onto its seat, with no pause between
-        const fill = flowProgress(entryTime, from + ENTRY.seatDriftMs * ENTRY.seatFillFrom, INK_ENTRY.unfoldEnd - 300);
+        // on the last stretch of its drift the wash spreads out to its vessel's
+        // outline; once that is drawn, the paint fills it from the foot,
+        // leaving openly (a sine out) and slowing as it climbs
+        const formFrom = from + ENTRY.seatDriftMs * ENTRY.morphFrom;
+        const formEnd = formFrom + ENTRY.formMs;
+        const form = flowProgress(entryTime, formFrom, formEnd);
+        const fillT = Math.max(0, Math.min(1, (entryTime - formEnd) / Math.max(1, INK_ENTRY.unfoldEnd - 300 - formEnd)));
+        const fill = Math.sin(fillT * Math.PI / 2);
         const box = cut.size * lerp(INK_CUT_SCALE, 1, growth);
-        // the wash drifts onto its seat, gathering to about its vessel's own size
+        // the wash drifts onto its seat, coming to a little inside its outline
+        // (never gathering to a small patch first), then grows out into it
         const cx = lerp(captured.x, cut.x, travel), cy = lerp(captured.y, cut.y, travel);
-        const side = lerp(captured.width, box * ENTRY.seatGather, travel);
+        const side = lerp(lerp(captured.width, box * ENTRY.arriveAs, travel), box * ENTRY.swellTo, form);
         el.style.animation = "none";
         el.style.scale = "1";
         el.style.left = `${cx - cr.left}px`; el.style.top = `${cy - cr.top}px`;
@@ -816,9 +823,10 @@ export function BlobScene({
         cuts.boxes[i * 3] = cut.x; cuts.boxes[i * 3 + 1] = cut.y; cuts.boxes[i * 3 + 2] = box / 2;
         cuts.masks[i] = cut.mask;
         cuts.spans[i] = cut.span;
+        cuts.form[i] = form;
         cuts.fill[i] = fill;
-        // spent by the time the paint is part way up, so no wash lingers over its cutout
-        cuts.drain[i] = flowProgress(fill, 0, 0.6);
+        // the wash runs out into the outline as it forms, spent once it is drawn
+        cuts.drain[i] = flowProgress(form, 0.25, 1);
         cuts.fade[i] = lerp(1, cut.opacity, travel) * letGo;
         // its colour runs into its vessel's on the way
         cuts.paint[i] = vesselPaint[i];
@@ -2077,32 +2085,6 @@ export function BlobScene({
         </div>
       )}
 
-      {classicChrome && onNewMemory && (
-        <div
-          aria-hidden
-          className="absolute inset-0 pointer-events-none"
-          style={{
-            ...LANDING_MONO,
-            ...(landingArrival ? { opacity: 1 } : morphVal > 0 ? {
-              opacity: clamp(1 - morphVal * 4, 0, 1),
-            } : {}),
-          }}
-        >
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              top: 0,
-              width: canvasWidth,
-              height: canvasHeight,
-              transform: labelShift,
-              ...(labelsFade < 1 ? { opacity: labelsFade } : {}),
-            }}
-          >
-            {renderAnnotationMarks(false)}
-          </div>
-        </div>
-      )}
       </div>
 
       {classicChrome && onNewMemory && (

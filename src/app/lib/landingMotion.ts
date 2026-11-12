@@ -23,6 +23,9 @@ export const LANDING_MOTION = {
     /** …grows this much longer, and fades this much longer. */
     freeGrowLonger: 0.35,
     freeFadeLonger: 0.9,
+    /** The share of the opening after which the centre copy and Enter come in, and the
+        captions after them (WatercolorField's onSettling). Was .8 (~6.8 s); 2026-11-11. */
+    copyAt: 0.45,
   },
   /** How the opening washes come in: their order, rhythm, curve and shape (WatercolorField). */
   opening: {
@@ -63,8 +66,16 @@ export const LANDING_MOTION = {
     closeMs: 1400,
     closeSpreadMs: 600,
     seatDriftMs: 1500,
-    seatGather: 0.55,
-    seatFillFrom: 0.85,
+    /** The share of its outline's box a wash arrives at: a little inside the
+     *  outline, so it grows out into it rather than shrinking to a patch first. */
+    arriveAs: 0.7,
+    /** How far into its drift a wash begins to take its vessel's shape: it
+     *  spreads out to the outline first (formMs), then the paint fills it. */
+    morphFrom: 0.7,
+    /** How long the wash takes to spread out and draw the outline (ms). */
+    formMs: 1000,
+    /** The share of the box the wash swells to as it spreads into the outline. */
+    swellTo: 1,
   },
   /** The captions' waves (captionWaves). */
   captions: {

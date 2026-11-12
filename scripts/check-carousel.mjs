@@ -14,7 +14,7 @@ function load(path) {
   runInNewContext(js, { module, exports: module.exports });
   return module.exports;
 }
-const { carouselSeat, carouselFrame, carouselContainsOffset, inkCurvePoint, inkUnfoldSeat, defaultCarouselIndex } = load("../src/app/lib/carouselLayout.ts");
+const { carouselSeat, carouselFrame, carouselLift, carouselContainsOffset, inkCurvePoint, inkUnfoldSeat, defaultCarouselIndex } = load("../src/app/lib/carouselLayout.ts");
 const { pickLandingGalleryIndex, INK_ENTRY, inkGrowth } = load("../src/app/lib/landingTransition.ts");
 
 for (const [width, height] of [[375, 812], [641, 647], [1366, 1032], [1920, 1080], [844, 390]]) {
@@ -22,10 +22,14 @@ for (const [width, height] of [[375, 812], [641, 647], [1366, 1032], [1920, 1080
   const focused = carouselSeat(width, height, 0);
   assert.equal(focused.x, width / 2);
   assert.equal(focused.y, frame.apexY);
-  assert.equal(focused.y, height * .47, "array sits slightly lower with its hand-off aligned");
+  const lift = carouselLift(width, height);
+  assert.ok(lift >= 0 && lift <= .02 + 1e-9, "the array rises up to two viewport percent");
+  assert.ok(Math.abs(focused.y - height * (.47 - lift)) < 1e-9, "array sits .47 of the height less its lift, its hand-off aligned");
+  // the memory in hand stays clear of the "keep scrolling" tip (14.5vh, ~40px tall)
+  assert.ok(lift === 0 || focused.y - focused.size / 2 >= height * .145 + 40 + 10 - 1e-6, "a raised apex keeps clear of the tip");
   const outerRight = carouselSeat(width, height, 2);
   const outerBend = (outerRight.x / width - .02 - .5) * 2;
-  const unliftedY = height * (.47 + .055 * outerBend + .28 * outerBend ** 3);
+  const unliftedY = height * (.47 - lift + .055 * outerBend + .28 * outerBend ** 3);
   assert.ok(Math.abs(unliftedY - outerRight.y - height * .08) < .00001, "outer right artifact is raised by eight viewport percent");
   assert.equal(focused.size, frame.size * 1.08, "current artifact has a modest size emphasis");
   assert.equal(focused.opacity, 1);

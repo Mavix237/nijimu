@@ -47,9 +47,13 @@ export const TRANSCRIPT = {
  * share it sets this width on a box in `TRANSCRIPT`'s family and size. */
 export const TRANSCRIPT_WIDTH = "min(80ch, 100%)";
 /** A memory's words in the gallery — the cursor's trail and the full transcript
-    under the year set alike. The size is 0.9vw between 12 and 14px; the trail
-    measures its words with these numbers. */
-export const GALLERY_TRANSCRIPT_SIZE = { vw: 0.9, min: 12, max: 14 } as const;
+    under the year set alike. The size is 0.9vw between 12 and 13px (was 14; the
+    gallery's scroll tip, 12px before, now wears the same size, so the two meet
+    at 13); the trail measures its words with these numbers. */
+export const GALLERY_TRANSCRIPT_SIZE = { vw: 0.9, min: 12, max: 13 } as const;
+/** Tracking shared by the gallery's transcript and its "keep scrolling" tip (the
+    transcript was +.012em, the tip untracked). */
+export const GALLERY_TEXT_TRACKING = "0.006em";
 export const GALLERY_TRANSCRIPT = {
   color: "#a4a4ab",
   fontFamily: SERIF,

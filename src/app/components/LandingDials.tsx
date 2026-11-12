@@ -37,6 +37,8 @@ const OPENING_CONFIG = {
     lastStart: [R.lastStart, 0, 10000, 50],
     pace: [O.pace, 0.2, 3, 0.05],
     jitter: [R.jitter, 0, 1500, 10],
+    /** share of the opening before the centre copy and Enter come in */
+    copyAt: [R.copyAt, 0, 1, 0.01],
   },
   growth: {
     ease: { type: "select" as const, options: EASES, default: O.ease },
@@ -130,8 +132,10 @@ const TIMING_RANGES: { [G in TimedGroup]: { [K in keyof LandingMotion[G]]: [numb
     closeMs: [100, 5000, 50],
     closeSpreadMs: [0, 3000, 50],
     seatDriftMs: [100, 5000, 50],
-    seatGather: [0.1, 1.5, 0.01],
-    seatFillFrom: [0, 1, 0.01],
+    arriveAs: [0.1, 1.5, 0.01],
+    morphFrom: [0, 1, 0.01],
+    formMs: [100, 4000, 50],
+    swellTo: [0.2, 1.5, 0.01],
   },
   captions: {
     firstAt: [0, 5000, 50],

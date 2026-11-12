@@ -8,7 +8,7 @@
  */
 
 /** Size of a cutout against its seat when it forms; it grows the rest of the way with the vessel. */
-export const INK_CUT_SCALE = 0.5;
+export const INK_CUT_SCALE = 0.7;
 
 /** Mask resolution, per side: the outline at the vessel's own detail. */
 const MASK_PX = 128;

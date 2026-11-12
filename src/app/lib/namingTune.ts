@@ -81,7 +81,7 @@ export function withNamingLights<T extends object>(tune: T): T & typeof NAMING_C
 
 export const NAMING_TUNE_DEFAULT: NamingTune = {
   // 2026-11-01: the vessel up 3vh more, so its crown stands over the horizon
-  layout: { artifactLift: 6, artifactScale: 1.25, textLift: 6, fieldGap: 28, passageGap: 28 },
+  layout: { artifactLift: 6, artifactScale: 1.25, textLift: 6, fieldGap: 20, passageGap: 28 },
   // 2026-11-02: the light above neutral (was #f3f3ee, which lit the glass's top a faint yellow-green;
   // the glass's other light leans a hair cool, so a touch less blue than #f3f3f3 lands neutral)
   room: { above: "#f3f3f1", below: "#e6e6e6" },

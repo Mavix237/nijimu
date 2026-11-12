@@ -4,8 +4,24 @@
 // Five visible older memories, plus one transparent guard for smooth scrolling.
 export const CAROUSEL_OLDER_SEATS = 6;
 export const CAROUSEL_NEWER_SEATS = 3;
-/** Shared vertical seat for the array and its landing hand-off. */
-const CAROUSEL_FOCUS_Y = 0.47;
+/** Where the array first sat (a share of the screen's height)… */
+const CAROUSEL_BASE_Y = 0.47;
+/** …and how far it rises from there where the screen has room (2026-11-11). */
+const CAROUSEL_LIFT_MAX = 0.02;
+/** The gallery's "keep scrolling" tip (GalleryOnboarding: top 14.5vh, two 13px lines at
+    1.5 leading) and the air kept under it: on a short window the memory in hand rises
+    only as far as keeps it clear of the tip. */
+const TIP_TOP = 0.145;
+const TIP_HEIGHT_PX = 40;
+const TIP_GAP_PX = 10;
+
+/** How far the array has risen on this screen, a share of its height (0…CAROUSEL_LIFT_MAX).
+    The caption under it (PuddleDiveGallery) rises by the same, so it keeps to its vessel. */
+export function carouselLift(width: number, height: number) {
+  const apexHalf = carouselSize(width, height) * 1.08 / 2;
+  const clearY = (height * TIP_TOP + TIP_HEIGHT_PX + TIP_GAP_PX + apexHalf) / Math.max(1, height);
+  return Math.max(0, Math.min(CAROUSEL_LIFT_MAX, CAROUSEL_BASE_Y - clearY));
+}
 
 /** A direct gallery visit should reveal the path, not start with its tail
  * entirely outside the archive. Explicit memory links still take priority. */
@@ -19,21 +35,25 @@ export function portraitTall(width: number, height: number) {
   return Math.min(1, Math.max(0, (1 - width / Math.max(1, height)) / 0.45));
 }
 
-export function carouselFrame(width: number, height: number) {
+function carouselSize(width: number, height: number) {
   // An upright phone has little width to share: the memory in hand takes a
   // larger part of it, reaching .42 of the width. Landscape is unchanged.
   const tall = portraitTall(width, height);
+  return Math.min(Math.max(120, width * (0.26 + 0.16 * tall)), 360, height * 0.48);
+}
+
+export function carouselFrame(width: number, height: number) {
   return {
     cx: width * 0.5,
-    apexY: height * CAROUSEL_FOCUS_Y,
-    size: Math.min(Math.max(120, width * (0.26 + 0.16 * tall)), 360, height * 0.48),
+    apexY: height * (CAROUSEL_BASE_Y - carouselLift(width, height)),
+    size: carouselSize(width, height),
   };
 }
 
 /** A shallow middle with two gently bending ends, not a sine-wave zigzag. */
-function curveY(x: number) {
+function curveY(x: number, focusY: number) {
   const bend = (x - 0.5) * 2;
-  return CAROUSEL_FOCUS_Y + 0.055 * bend + 0.28 * bend ** 3;
+  return focusY + 0.055 * bend + 0.28 * bend ** 3;
 }
 
 export function carouselSeat(width: number, height: number, offset: number) {
@@ -72,7 +92,7 @@ export function carouselSeat(width: number, height: number, offset: number) {
     // A small horizontal nudge for the outer right seat; retain its height.
     x: width * (x + foregroundPull * 0.2),
     // Lift the outer right seat, blending back into the path during scrolling.
-    y: height * (curveY(x) - foregroundPull * 0.8),
+    y: height * (curveY(x, frame.apexY / Math.max(1, height)) - foregroundPull * 0.8),
     size: frame.size * scale,
     scale,
     opacity,

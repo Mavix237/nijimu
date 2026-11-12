@@ -56,6 +56,30 @@ export function toothTile(): string {
   return (tooth = c.toDataURL("image/png"));
 }
 
+let grainMask: string | null = null;
+/**
+ * The paper's grain as an alpha mask: one grain a texel (laid at one per device
+ * pixel, like the landing's), skewed toward clear so ink held by it sits in the
+ * tooth as specks rather than as an even veil. The gallery transcript's entry
+ * shows its wet ink through this before it settles (PuddleDiveGallery).
+ */
+export function grainMaskTile(): string {
+  if (grainMask !== null) return grainMask;
+  if (typeof document === "undefined") return "";
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const ctx = c.getContext("2d");
+  if (!ctx) return (grainMask = "");
+  const img = ctx.createImageData(256, 256);
+  const rand = mulberry32(0x67726e6d);
+  for (let i = 0; i < img.data.length; i += 4) {
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = 0;
+    img.data[i + 3] = Math.round(255 * rand() ** 1.6);
+  }
+  ctx.putImageData(img, 0, 0);
+  return (grainMask = c.toDataURL("image/png"));
+}
+
 const FINE_TILE = 256;
 /** The ground the darker half is evened for (the grounds past Enter run ≈ .75–.96; .88 is their middle). */
 const FINE_GROUND = 0.88;

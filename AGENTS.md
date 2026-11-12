@@ -4,6 +4,113 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## The gallery's words wait for its vessels (2026-11-11)
+
+The caption (name, year) and the transcript under the apex no longer show over
+empty seats: `PuddleDiveGallery` holds them (`vesselsLoaded`) until every seat
+the gallery opens on (`openingIdsRef`, or the one in hand when there is no
+such set) has drawn its first frame (`onFrame`), then
+`WORDS_AFTER_VESSELS_MS` (450) more, so they follow the vessels' fade; capped
+at `OPEN_READY_CAP_MS` (5 s), as the seats' own fade is. The transcript's
+dwell starts only then. A carried arrival (from naming) and a caption handed
+in (`caption`) are not held.
+
+## The washes take their vessel's shape on the way (2026-11-11)
+
+On Enter a seated wash used to keep its own shape all the way to its seat and
+only then fill its cutout (`seatFillFrom` .85 of the drift, on a raised cosine
+whose slow start put the first visible paint after it had arrived). The fill
+now begins at `LANDING_MOTION.entry.morphFrom` (.7 of the drift, ~.8 of the
+way there) and leaves on a sine out, so the wash is visibly turning into its
+vessel over the last stretch of its move; the fill still ends at
+`unfoldEnd − 300`. Tuned in the "landing" panel's entry folder (`morphFrom`,
+a new key, so an old persisted `seatFillFrom` no longer applies).
+Then in two beats: from `morphFrom` the wash first spreads out from the
+middle of its seat to the vessel's outline over `entry.formMs` (1 s; a ragged
+wet edge running out, the wash swelling to `formSwell` .85 of the box and
+draining into it), pooling at the border so the outline is drawn with only a
+pale wash inside; once that is done the paint fills from the foot as before.
+`WashCuts.form` carries it; `uCut.w` runs 0 → 2 (form, then fill) so no
+uniform was added.
+No shrinking first (same day): a seated wash no longer gathers to a small
+patch (`seatGather` .55 of the box, then spreading out from .2); it comes to
+`entry.arriveAs` (.7 of its outline's box) on the way and grows out into the
+outline from its own extent (the spread runs .3 → .8), swelling to
+`swellTo` (1) of the box. Cutouts form larger too: `INK_CUT_SCALE` .7 (was
+.5) of the seat, so the vessel grows from .7. A wash bound for a far seat
+(~100 px) still has to come down from its landing size (~320–620 px) on the
+way; it does so as it travels, not as a separate step.
+The outline before the fill is a thin, faint line (same day): only the outer
+part of the border (`thin`, where the mask is under .25–.6) at about half the
+fill rim's weight over a .12 inside, and it takes only .35 of the cutout's
+firmer edge and a small share of its tide boost; the full rim and tide line
+come with the rising paint (`firm`, the fill's own share).
+
+## Cutouts fill from the edge in as they rise (2026-11-11)
+
+Enter's cutouts fill two ways at once (`WatercolorField`, the wash shader's
+cutout block). After the faint outline forms, over the whole fill the paint
+closes in from the outline's outer edge with a wet, ragged front until the
+outline's own band (the softened mask under `EDGE_FILL_TO` .72) is full,
+while it rises from the foot as before (briefly the band came first, over
+the fill's first .35, and the rise after it). The band's inner side is
+washed out: it thins over `EDGE_FILL_FEATHER` (.3) toward the middle, and only
+its outer part firms the wash's edge and tide line, so it draws no second,
+inner contour. The first outline is thicker (`OUTLINE_BAND`, the softened
+mask .4–.85, was .25–.6) and its inside holds a little more paint, evenly
+(`OUTLINE_INNER` .22, was .12; the look's paper tooth lies over it); until
+the fill starts that inside is one even tone top to bottom (`OUTLINE_SHOW`
+.6 of its colour), easing to the filled cutout's washed-out top (.08) as the
+paint comes.
+Before, the paint rose
+from the foot at once and the border was only the faint outline until the
+front passed it.
+
+## The gallery's caption a little lower (2026-11-11)
+
+The caption block under the vessel in hand (name, year, transcript) sits 1.5%
+of the screen's height lower: `CAPTION_DOWN_VH` .075 in `PuddleDiveGallery`
+(was .06). The transcript still stops above the timescale and fades there.
+
+## Naming: a wider name, the words closer (2026-11-11)
+
+The naming step's name field may grow to 40em (`--naming-field` in
+`PondNamingOverlay`, was 28em; still within 70vw and the screen less 40px),
+so a long name is not cut off. The air between the year and the transcript is
+20px (`NAMING_TUNE_DEFAULT.layout.fieldGap`, was 28).
+
+## The landing's text in dark grey (2026-11-11)
+
+The landing's centre copy and Enter (with its 滲む nijimu) are dark grey,
+`LANDING_TEXT` #45454a in `BlobScene`; the memories' captions and dots, outside
+that group, are a lighter grey, `CHROME_GRAY` #7e7e86 (`LANDING_INK`)
+(the copy was #2A2018, Enter #504A4A; the captions were white in
+`difference` with a `saturation` pass over them, an inverted grey that
+changed with the washes; both blend layers are gone, the captions now draw
+in normal blending). Enter's mark still eases to `CHROME_GRAY` through Enter.
+
+## The landing's copy sooner (2026-11-11)
+
+The centre copy and Enter were held until the washes' opening was 80% done
+(~6.8 s, then a 1.4 s fade). They now come in at `LANDING_MOTION.reveal.copyAt`
+(.45 of the opening, ~3.8 s; WatercolorField's `onSettling`), tunable in the
+"landing opening" panel's rhythm folder; the captions follow the copy as before.
+
+## The array a little higher (2026-11-11)
+
+The gallery's rim sits up to 2% of the screen's height higher (`carouselLift`
+in `lib/carouselLayout.ts`, `CAROUSEL_LIFT_MAX` .02 — briefly .03: the memory
+in hand at .47 − lift of the height, was .47). It rises the full lift where
+there is room; on a short window only as far as keeps the memory in hand (its
+seat × 1.08) clear of the "keep scrolling" tip (14.5vh, ~40 px, 10 px air), so
+a 1440×700 window stays as it was. Everything that reads `carouselFrame`/
+`carouselSeat` follows (the ink hand-off, arrows, wash, constellation), and
+the caption block (name, year, transcript) rises by the same lift so it keeps
+to its vessel. The block itself sits 2% of the height higher under the vessel
+than it did (`CAPTION_DOWN_VH` .06 in `PuddleDiveGallery`, briefly .08; .07
+before that): at 1440×900 the name is ~18 px nearer the vessel's foot. `check-carousel.mjs` asserts the lift and the tip clearance
+(it still stops later at its older "incoming dot depth scale" assertion).
+
 ## Far cutouts no longer boxy (2026-11-11)
 
 The ink entry's cutouts are drawn on the wash's paint grid (`dyeLong` 272,
@@ -438,7 +545,7 @@ field) apart, so fewer pool into one field. About a third
 Enter's ink entry no longer turns the washes into dots, and the washes keep
 living through it (flowing, joining, stirred by the cursor; the paint only
 returns faster, `ENTRY_RELAX_S`). Each memory the gallery shows on screen has
-a mask waiting at its seat — its vessel's outline at `INK_CUT_SCALE` (.5) of
+a mask waiting at its seat — its vessel's outline at `INK_CUT_SCALE` (.7) of
 the seat, softened and wandering like a wash's edge — and its wash drifts
 there and fills it with its own paint from the foot up, an uneven wet front,
 draining into it as it does, nearest the focus first; the other washes close
@@ -452,9 +559,10 @@ height, deepest toward the foot), washed out above it as the glass is; its borde
 fade, so the outline reads all the way round. A
 wash with no seat once the gallery has placed any (it seats only those near
 the focus) is one of these. A seated wash drifts there in `SEAT_DRIFT_MS`,
-gathering to `SEAT_GATHER` of its box; its fill begins as it settles
-(`SEAT_FILL_FROM` of the drift), and it is spent by the time its paint is .6
-of the way up. A cutout's edge is firmer than its wash's, with pigment pooled
+coming to `arriveAs` of its outline's box; while still moving (`entry.morphFrom`,
+.7 of the drift) it spreads out to draw its vessel's outline (`formMs`), then
+the paint fills it from the foot, the wash itself spent once the outline is
+drawn. A cutout's edge is firmer than its wash's, with pigment pooled
 at the border and a stronger tide line, so the outline reads. The fill pools
 deeper at the border in blotches, is denser low and clearer through its top
 half, as the vessels are (`WashCuts`, uCut/uCutB/uAtlas in the wash shader).
@@ -469,7 +577,7 @@ Reduced motion and the no-WebGL fallback keep the earlier dot entry.
 
 Gallery transcripts no longer follow the cursor. On wider screens,
 `PuddleDiveGallery` reveals the centered full transcript after the selected
-artifact has rested at the apex for `TRANSCRIPT_DWELL_MS` (3 seconds).
+artifact has rested at the apex for `timing.transcriptDwellMs` in `galleryTune.ts` (1 s; 3 s until 2026-11-11). The transcript and the "keep scrolling" tip share one size, `GALLERY_TRANSCRIPT_SIZE` (0.9vw, 12–13px; the transcript was up to 14, the tip a fixed 12). The tip's leading is 1.5, the transcript's 1.45 (was 1.4); they share tracking `GALLERY_TEXT_TRACKING` (.006em; the transcript was +.012em at 1.4, the tip untracked). The memory's name (`CAPTION_TITLE_STYLE`, shared with naming) is clamp(12.5px, 1.015vw, 15.5px), was clamp(13px, 1.05vw, 16px).
 Switching memories, entering constellation view, or leaving the gallery cancels
 and resets the delay. The existing word/line entrance remains; phones retain
 their tap-to-read pane. `TranscriptTrail.tsx` is no longer mounted by the gallery.
@@ -557,9 +665,20 @@ While recording, "recording · m:ss" is centred on the screen; the
 instructions are one paragraph at the transcript's width (`TRANSCRIPT_WIDTH`). The
 gallery trail still lets words fall behind the pointer without highlighted ink.
 When the trail opens a memory's whole transcript under its year
-(`CaptionTranscript`), the first line comes in word by word (`WORD_STAGGER_MS`
-70), each word sliding down out of its own mask; the rest follow line by line
-(`LINE_STAGGER_MS` 80), starting one step after the first line's last word.
+(`CaptionTranscript`), its ink returns line by line (2026-11-11; it was a
+line-by-line slide, then briefly a word-by-word blur): each line fades in,
+ease in and out over `LINE_INK_MS` (1.6 s), `LINE_STEP_MS` (260) after the one
+above, as a faint wash — a soft halo of its ink (`INK_HALO_EM`) held in the
+paper's grain (`grainMaskTile` in `paperFinish.ts`: one grain a device pixel,
+as on the landing, as an alpha mask), barely blurred (`INK_BLUR_PX` 1.1). A wet
+front (`INK_FRONT`, a gradient 2.2× the line's width) then runs across from the
+left, filling the ink in solid while the halo draws back into the letters
+ahead of it (a word still haloed but already dark reads as a smudge). The
+lines carry half an em of padding (taken back by margins; the paragraph is
+`flow-root` so they do not collapse through it) so the halo lies inside the
+mask. A settled line keeps no mask, shadow or filter (fill backwards).
+Reduced motion keeps only the paragraph's fade. The overflow fade measures an
+unseen copy at rest.
 
 ## Water surface continuity (2026-10-11)
 

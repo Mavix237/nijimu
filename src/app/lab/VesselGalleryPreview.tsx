@@ -16,7 +16,7 @@ import {
   DISTANCE_FADE, VESSEL_TUNE_DEFAULT, VesselPreview, buildGlass, fitSheetSize, smooth01,
   type Room, type VesselState, type VesselTune,
 } from "./VesselPreview";
-import { VesselArtifact, loadSeatPhoto, preloadSeatPhotos, vesselCanvasScale } from "./VesselArtifact";
+import { VesselArtifact, loadSeatPhoto, preloadSeatPhotos, setSeatBlur, vesselCanvasScale } from "./VesselArtifact";
 import { vesselParts } from "./vesselBuilds";
 import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "../components/HeaderMenu";
 import { MemoryReadingPane, type ReadableMemory } from "../components/MemoryReadingPane";
@@ -650,9 +650,13 @@ export function VesselGalleryProvider({
       };
       pickers.current.set(item.id, pick);
     }
+    const cacheKey = keyRef.current(item);
+    // softness changes on every frame of a moving rim; the canvas reads it
+    // from here instead of as a prop, so the seat does not re-render to take it
+    setSeatBlur(cacheKey, seat.blurPx ?? 0);
     return (
       <SeatVessel
-        cacheKey={keyRef.current(item)}
+        cacheKey={cacheKey}
         priority={Math.round(Math.abs(seat.offset ?? 1))}
         form={s.form}
         morph={s.tune.morph}
@@ -669,12 +673,13 @@ export function VesselGalleryProvider({
         viewToken={s.facing === undefined ? undefined : `${s.facing}|${s.viewPitch}`}
         holdView={s.viewLocked}
         focused={seat.focused}
-        // the seat at the apex is shown larger than its box (its canvas room × the apex swell):
-        // render it that much denser so it is not stretched; neighbours keep the plain density
-        pixelScale={seat.focused ? vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1) * APEX_SWELL * (1 + galleryTune().seats.focusBoost) : undefined}
+        // the apex is drawn denser than its box, because the seat stretches it.
+        // `sharp` lags the focus until the rim has stopped, so the resize does
+        // not land on a frame the row is moving.
+        pixelScale={(seat.sharp ?? seat.focused) ? vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1) * APEX_SWELL * (1 + galleryTune().seats.focusBoost) : undefined}
         still={seat.still}
+        rest={seat.rest}
         frameloop={field.busy ? "always" : seat.frameloop}
-        blurPx={seat.blurPx}
         maxViewportWidth={galleryTune().framing.maxWidth / (vesselCanvasScale(s.form, s.tune.morph) * (s.size ?? 1))}
         reflection={galleryTune().reflection}
         sheen={galleryTune().sheen}

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { formKey, type ArtifactForm } from "../lib/superformula";
@@ -60,6 +60,9 @@ export interface VesselArtifactProps {
   /** A settled neighbour: nothing moves, the canvas draws on demand. */
   still: boolean;
   frameloop: "always" | "demand";
+  /** The gallery sets this to the seat's rounded offset while the rim is
+      settled. A parked canvas draws once when it changes. */
+  rest?: number;
   /** Names this seat's memory and version. The glass and cloth themselves are
       cached by their contents (vesselBuilds.ts), so a seat that leaves and
       comes back, or the same memory elsewhere, does not rebuild its cloth. */
@@ -339,7 +342,7 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
 }
 
 function VesselObject({
-  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen, capture,
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, rest, cacheKey, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen, capture,
 }: VesselArtifactProps & { parts: VesselParts }) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // the film panel (lib/filmTune.ts) re-renders the seat, which rewrites its photo's look
@@ -428,7 +431,8 @@ function VesselObject({
       travelled += Math.hypot(e.clientX - last.x, e.clientY - last.y);
       if (!lockedRef.current) {
         yaw.current += (e.clientX - last.x) * 0.01;
-        pitch.current = Math.min(PITCH_MAX, Math.max(PITCH_MIN, pitch.current - (e.clientY - last.y) * 0.25));
+        // drag down tips the crown down (the eye rises). The lab's drag is the other way.
+        pitch.current = Math.min(PITCH_MAX, Math.max(PITCH_MIN, pitch.current + (e.clientY - last.y) * 0.25));
         onViewRef.current?.((-yaw.current * 180) / Math.PI, pitch.current);
         invalidate();
       }
@@ -487,7 +491,7 @@ function VesselObject({
   // Safari, so a neighbour is softened here, in the same pixels both browsers
   // composite. The apex stays sharp and never allocates the extra targets.
   const blurLive = useRef(blurPx);
-  blurLive.current = blurPx;
+  blurLive.current = seatBlurPx.get(cacheKey) ?? blurPx;
   const soften = useRef<Soften | null>(null);
   useEffect(() => () => {
     const s = soften.current;
@@ -612,8 +616,11 @@ function VesselObject({
     sheetM.uPhoto.value = sheetU.uPhoto.value;
     sheetM.uImageAspect.value = sheetU.uImageAspect.value;
   }
-  // a still seat draws on demand: a new tune or room (the gallery's dev panel) asks for a frame
-  useEffect(() => { invalidate(); }, [tune, room, reflection, sheen, film, invalidate]);
+  // a parked seat draws on demand. A new tune or room (the gallery's dev panel)
+  // asks for a frame, and so does arriving at a resting offset: the row holds
+  // the last frame while it moves, then draws the blur of the seat it stopped
+  // on. The pixel ratio too — leaving the apex resizes the buffer, which clears it.
+  useEffect(() => { invalidate(); }, [tune, room, reflection, sheen, film, rest, canvasDpr, invalidate]);
 
   // the picture, from the shared stock: already there if it was preloaded, else set as it arrives
   const photo = photoUrl ? peekSeatPhoto(photoUrl) : undefined;
@@ -670,7 +677,13 @@ function VesselObject({
     copy.getContext("2d")?.drawImage(gl.domElement, 0, 0);
     take(copy);
   };
-  useFrame(({ gl: renderer, scene, camera: view, clock }, dt) => {
+  // the catches of light and the sheen. A still seat holds its frame, so this
+  // only moves while the seat is actually drawing. Waking it continues from
+  // the angle it held: taking the wall clock would swing the light there in
+  // one frame, which is the jump as a vessel reaches the centre.
+  const lightTime = useRef(0);
+  useFrame(({ gl: renderer, scene, camera: view }, dt) => {
+    blurLive.current = seatBlurPx.get(cacheKey) ?? blurPx;
     if (compiledFor.current !== glassMode) return;
     const step = Math.min(dt, 0.1);
     if (focused && !still) yaw.current += tune.turn * step;
@@ -682,9 +695,10 @@ function VesselObject({
       if (!lockedRef.current && !holdViewRef.current) yaw.current -= HOVER_SPIN * h.amount * step;
       invalidate();
     }
-    // the glow's clock: it moves only while the seat's frameloop runs (focused or moving); a still seat holds its frame
-    glassU.uTime.value = clock.elapsedTime;
-    glassU.uSheenTime.value = glassM.uSheenTime.value = reducedMotion ? 0 : clock.elapsedTime;
+    if (!reducedMotion) lightTime.current += step;
+    const shown = reducedMotion ? 0 : lightTime.current;
+    glassU.uTime.value = glassM.uTime.value = shown;
+    glassU.uSheenTime.value = glassM.uSheenTime.value = shown;
     const y = yaw.current, p = (pitch.current * Math.PI) / 180, d = built.distance;
     const bob = HOVER_BOB * d * h.amount * Math.sin(h.phase);
     camera.position.set(-Math.sin(y) * Math.cos(p) * d, LOOK_Y - bob + Math.sin(p) * d, Math.cos(y) * Math.cos(p) * d);
@@ -861,6 +875,15 @@ function VesselObject({
   </>;
 }
 
+/** Live softness for a gallery seat, written each frame by the gallery and read
+    in the draw. Keeping it off the React props means a moving rim does not
+    re-render every canvas (each re-render walks that canvas's layout effects). */
+const seatBlurPx = new Map<string, number>();
+
+export function setSeatBlur(cacheKey: string, px: number) {
+  seatBlurPx.set(cacheKey, px);
+}
+
 /** How far past MAX_DPR a stretched seat may render (desktop 2 → 3.5; a phone's 1.75 → 2.45). */
 const SEAT_DPR_HEADROOM = LIGHT_TIER ? 1.4 : 1.75;
 
@@ -872,6 +895,26 @@ function seatDpr(pixelScale: number | undefined): number | [number, number] {
 }
 
 export function VesselArtifact(props: VesselArtifactProps) {
+  const glRef = useRef<THREE.WebGLRenderer | null>(null);
+  const mounted = useRef(false);
+  // A real unmount releases the context before the next frame, so a scrolling
+  // rim stays under the browser's limit. The check after a microtask skips the
+  // development double-invoke, which replays this cleanup without unmounting
+  // the canvas. dispose() drops Three's listener first, so a seat we closed
+  // on purpose is not reported as "Context Lost".
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      const gl = glRef.current;
+      queueMicrotask(() => {
+        if (mounted.current || !gl) return;
+        glRef.current = null;
+        gl.dispose();
+        gl.forceContextLoss();
+      });
+    };
+  }, []);
   // the canvas waits for its glass and cloth: the queue builds them a memory at a
   // time, nearest first, so neither the settle nor the context and its shaders
   // arrive for every seat on the same frame
@@ -888,6 +931,7 @@ export function VesselArtifact(props: VesselArtifactProps) {
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
       dpr={props.dpr ?? seatDpr(props.pixelScale)} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
+      onCreated={({ gl }) => { glRef.current = gl; }}
       style={extra > 0 ? { width: "100%", height: `${(1 + extra) * 100}%` } : { width: "100%", height: "100%" }}>
       <VesselObject {...props} parts={parts} />
     </Canvas>

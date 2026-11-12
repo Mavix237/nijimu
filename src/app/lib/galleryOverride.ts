@@ -30,6 +30,13 @@ export interface ArtifactSeat {
   blurPx?: number;
   /** Seats from the apex along the curve (0 at the apex): what to build first. */
   offset?: number;
+  /** Set while the rim is settled, to the seat's rounded offset. A parked
+      canvas draws once when this changes, so its blur matches where it
+      stopped. Absent while the row is moving: the last frame is held. */
+  rest?: number;
+  /** The seat that keeps the apex's pixel density. It follows the row only
+      once the row has stopped, so a step does not resize a canvas mid-move. */
+  sharp?: boolean;
   /** Called with the seat's canvas right after its first whole frame (the ink entry keeps its outline). */
   onFrame?: (canvas: HTMLCanvasElement) => void;
 }

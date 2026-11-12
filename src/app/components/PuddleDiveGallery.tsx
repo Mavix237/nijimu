@@ -47,6 +47,12 @@ const NEIGHBOR_OUT_MS = 950;
 /** Nearest memory leads the arrival; the outermost leads the departure. */
 const NEIGHBOR_IN_STAGGER_MS = 110;
 const NEIGHBOR_OUT_STAGGER_MS = 80;
+/** A fresh load holds the vessels already on screen until each has drawn,
+    then fades them in from the apex outward. Past this, a seat fades on its
+    own so one slow canvas cannot hold the row. */
+const OPEN_FADE_MS = 720;
+const OPEN_FADE_STAGGER_MS = 80;
+const OPEN_READY_CAP_MS = 5000;
 /** Caption block centre-ish, as a fraction of viewport height from the top —
     scales with the window instead of sitting a fixed px above the timescale. */
 export const CAPTION_TOP_VH = 0.62;
@@ -168,6 +174,12 @@ const LINE_IN_MS = 720;
 const LINE_STAGGER_MS = 80;
 const WORD_STAGGER_MS = 70;
 const FIRST_LINE_MAX_MS = 560;
+/** One memory per 72px of wheel. A step spends the whole gesture: the surplus
+    is not kept, so a slightly fast flick cannot pay for several more steps.
+    The next step waits 350ms (was 140), so the fastest run is 40% of the old rate. */
+const RIM_WHEEL_PX = 72;
+const RIM_STEP_GAP_MS = 350;
+const RIM_STEP_GAP_REDUCED_MS = 200;
 
 /** The words stop above `floorY`; when they would run past it, the last lines fade out.
     They come in line by line, each sliding down out of its own mask; the lines are
@@ -429,6 +441,43 @@ export function PuddleDiveGallery({
   useEffect(() => () => setApexHover(false), []);
   const rimSettledRef = useRef(rimSettled);
   rimSettledRef.current = rimSettled;
+  /* One seat past each end of the rim, built while the row is still. A step
+     then slides a canvas that already exists. Building it in the same commit
+     as the step compiles its shaders on the frame the rim is trying to move. */
+  const [builtAround, setBuiltAround] = useState<number | null>(null);
+  useEffect(() => {
+    if (!rimSettled || phase === "diving") return;
+    let live = true;
+    const apply = () => { if (live) setBuiltAround(activeIdx); };
+    const idle = window.requestIdleCallback;
+    if (typeof idle === "function") {
+      const id = idle(apply, { timeout: 500 });
+      return () => { live = false; window.cancelIdleCallback(id); };
+    }
+    const id = window.setTimeout(apply, 200);
+    return () => { live = false; window.clearTimeout(id); };
+  }, [rimSettled, activeIdx, phase]);
+  /* The apex canvas is the dense one. Switching that on the frame a seat
+     reaches the middle resizes its buffer while the rim is moving (a long
+     frame). The density follows a step later, once the row is still. */
+  const [sharpId, setSharpId] = useState(focusId);
+  useEffect(() => {
+    if (!rimSettled || !focusId) return;
+    let live = true;
+    const apply = () => { if (live) setSharpId(focusId); };
+    const idle = window.requestIdleCallback;
+    if (typeof idle === "function") {
+      const id = idle(apply, { timeout: 700 });
+      return () => { live = false; window.cancelIdleCallback(id); };
+    }
+    const id = window.setTimeout(apply, 280);
+    return () => { live = false; window.clearTimeout(id); };
+  }, [rimSettled, focusId]);
+  /* The step gap has to outlive the listener. A step re-renders the page and
+     the effect subscribes again; a lock kept in the effect would be dropped
+     and the next wheel event would step at once. */
+  const stepLockRef = useRef(0);
+  const wheelLeftRef = useRef(0);
   const pendingPondRef = useRef(false);
   const pondTargetRef = useRef<number | null>(null);
 
@@ -465,7 +514,6 @@ export function PuddleDiveGallery({
   /* arrows — keyboard. Paced like the wheel, so a held key steps rather than
      racing the rim; leaving for the pond takes a fresh press once the rim is still. */
   useEffect(() => {
-    let lockedUntil = 0;
     const handler = (e: KeyboardEvent) => {
       if (phase !== "gallery" || growth < 1 || pondDeparture > 0) return;
       const t = e.target as HTMLElement | null;
@@ -476,8 +524,8 @@ export function PuddleDiveGallery({
       if (inField) return;
       if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
       const now = performance.now();
-      if (now < lockedUntil) return;
-      lockedUntil = now + (reducedMotion ? 80 : 140);
+      if (now < stepLockRef.current) return;
+      stepLockRef.current = now + (reducedMotion ? RIM_STEP_GAP_REDUCED_MS : RIM_STEP_GAP_MS);
       if (e.key === "ArrowLeft") { if (hasOlder) onNavigate(-1); }
       else if (hasNewer) onNavigate(1);
       else if (!e.repeat && rimSettledRef.current) onOverscrollExit?.();
@@ -508,8 +556,6 @@ export function PuddleDiveGallery({
      The naming step has no arrows and must not steal the wheel. */
   useEffect(() => {
     if (!showArrows) return;
-    let leftover = 0;
-    let lockedUntil = 0;
     const leave = onOverscrollExit ?? onExit;
     const handler = (e: WheelEvent) => {
       if (phase !== "gallery" || growth < 1 || pondDeparture > 0 || inField) return;
@@ -519,19 +565,19 @@ export function PuddleDiveGallery({
       if (t?.closest('[role="dialog"]')) return;
       e.preventDefault();
       const now = performance.now();
-      if (now < lockedUntil) return;
+      if (now < stepLockRef.current) return;
       const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? window.innerHeight : 1;
       const primary = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit;
-      leftover += primary;
-      if (Math.abs(leftover) < 72) return;
-      const dir = leftover > 0 ? 1 : -1;
-      leftover -= dir * 72;
-      lockedUntil = now + (reducedMotion ? 80 : 140);
+      wheelLeftRef.current += primary;
+      if (Math.abs(wheelLeftRef.current) < RIM_WHEEL_PX) return;
+      const dir = wheelLeftRef.current > 0 ? 1 : -1;
+      wheelLeftRef.current = 0;
+      stepLockRef.current = now + (reducedMotion ? RIM_STEP_GAP_REDUCED_MS : RIM_STEP_GAP_MS);
       if (dir < 0 && !hasOlder) {
-        leftover = 0;
+        wheelLeftRef.current = 0;
       } else if (dir > 0 && !hasNewer) {
         if (rimSettledRef.current) leave?.();
-        leftover = 0;
+        wheelLeftRef.current = 0;
       } else onNavigate(dir);
     };
     window.addEventListener("wheel", handler, { passive: false });
@@ -702,6 +748,45 @@ export function PuddleDiveGallery({
     return () => clearTimeout(t);
   }, [phase, reducedMotion, !!inkArrival, growth < 1]);
 
+  // A direct visit mounts already in the gallery. Enter mounts this same
+  // gallery under the landing, so those seats wait on their first frame and
+  // then rise with the ink growth. A dive arrives through earlier phases and
+  // keeps its own entrance.
+  const freshOpen = useRef(phase === "gallery" && arrival === "resolve" && !inkArrival && !field?.on);
+  const inkOpen = useRef(!!inkArrival && !field?.on);
+  const growthRef = useRef(growth);
+  growthRef.current = growth;
+  const openingIdsRef = useRef<Set<string> | null>(null);
+  const drawnIdsRef = useRef(new Set<string>());
+  const drawnAtRef = useRef(new Map<string, number>());
+  const openingGoRef = useRef(false);
+  const [openingEpoch, setOpeningEpoch] = useState(0);
+  const noteDrawnRef = useRef<(id: string) => void>(() => {});
+  noteDrawnRef.current = (id: string) => {
+    const ids = openingIdsRef.current;
+    const tracking = freshOpen.current || inkOpen.current;
+    if (!tracking || !ids?.has(id) || drawnIdsRef.current.has(id)) return;
+    drawnIdsRef.current.add(id);
+    drawnAtRef.current.set(id, growthRef.current);
+    // the landing clock already re-renders; this covers a frame that lands
+    // after that clock has handed the gallery over
+    if (inkOpen.current) setOpeningEpoch((n) => n + 1);
+    if (!freshOpen.current) return;
+    let all = true;
+    for (const known of ids) if (!drawnIdsRef.current.has(known)) { all = false; break; }
+    if (!all && !openingGoRef.current) return;
+    openingGoRef.current = true;
+    setOpeningEpoch((n) => n + 1);
+  };
+  useEffect(() => {
+    if (!freshOpen.current) return;
+    const t = window.setTimeout(() => {
+      openingGoRef.current = true;
+      setOpeningEpoch((n) => n + 1);
+    }, OPEN_READY_CAP_MS);
+    return () => window.clearTimeout(t);
+  }, []);
+
   // read before the early return: hooks run on every render
   const headerMenu = useHeaderMenu();
   if (!item) return null;
@@ -770,7 +855,10 @@ export function PuddleDiveGallery({
   const onFrameFor = (id: string) => {
     let hook = frameHooks.current.get(id);
     if (!hook) {
-      hook = (canvas) => captureInkMask(id, canvas);
+      hook = (canvas) => {
+        captureInkMask(id, canvas);
+        noteDrawnRef.current(id);
+      };
       frameHooks.current.set(id, hook);
     }
     return hook;
@@ -797,14 +885,27 @@ export function PuddleDiveGallery({
     const offset = i - rimAt;
     if (phase === "diving" && Math.abs(offset) > 0.01) continue;
     if (!neighborsMounted && Math.abs(offset) > 0.01) continue;
-    /* Bounds include an invisible distant seat and an offscreen foreground
-       seat: scrolling never unmounts a visible model, even after settling.
-       A preview with a field keeps every memory mounted — a canvas made or
-       lost at the switch is a long frame — and hides the ones off the curve. */
-    if (!field && !carouselContainsOffset(offset)) continue;
+    /* A preview with a field keeps every memory mounted. Otherwise the rim
+       keeps the seats on the curve, plus one past each end once those have
+       been built while the row was still, so a step slides a canvas that
+       already exists. */
+    const prepared = builtAround !== null
+      && i >= builtAround - CAROUSEL_OLDER_SEATS - 1
+      && i <= builtAround + CAROUSEL_NEWER_SEATS + 1;
+    if (!field && !carouselContainsOffset(offset) && !prepared) continue;
     const slotItem = items[i];
     if (slotItem) slots.push({ offset, item: slotItem });
   }
+  if ((freshOpen.current || inkOpen.current) && openingIdsRef.current === null && override && slots.length) {
+    const ids = new Set<string>();
+    for (const { offset, item: slotItem } of slots) {
+      if (!carouselContainsOffset(offset)) continue;
+      if (carouselSeat(viewport.w, viewport.h, offset).opacity < 0.12) continue;
+      ids.add(slotItem.id);
+    }
+    if (ids.size) openingIdsRef.current = ids;
+  }
+  const openingLive = freshOpen.current && openingEpoch >= 0;
 
   /** The rim is letting go: still on screen, but on its way back down. */
   const neighborsLeaving = neighborsMounted && !neighborsVisible;
@@ -984,6 +1085,22 @@ export function PuddleDiveGallery({
             ? (ARC_NEIGHBOURS - gatherDist) * NEIGHBOR_OUT_STAGGER_MS
             : gatherDist * NEIGHBOR_IN_STAGGER_MS;
           const gatherMs = neighborsLeaving ? NEIGHBOR_OUT_MS : NEIGHBOR_IN_MS;
+          // the newer buffer hangs off the right, past the last visible seat,
+          // and fades in across the last step of its approach
+          const bufferFade = !field && offset > CAROUSEL_NEWER_SEATS
+            ? Math.max(0, CAROUSEL_NEWER_SEATS + 1 - offset)
+            : 1;
+          // held clear until this seat has a frame and the opening row may fade
+          const awaited = openingLive && !!openingIdsRef.current?.has(slotItem.id);
+          const revealed = awaited && openingGoRef.current && drawnIdsRef.current.has(slotItem.id);
+          const openDelay = reducedMotion ? 0 : Math.round(Math.abs(offset)) * OPEN_FADE_STAGGER_MS;
+          // Enter: the same seats stay clear until their frame exists, then
+          // follow the ink growth. A frame that lands after that fade has
+          // already begun eases in on its own, so it doesn't pop at full cover.
+          const inkHeld = inkOpen.current && !!openingIdsRef.current?.has(slotItem.id);
+          const inkDrawn = inkHeld && drawnIdsRef.current.has(slotItem.id);
+          const inkOpacity = inkEntering ? flowProgress(growth, 0, 0.75) : flowProgress(entryScale, 0.4, 0.72);
+          const inkLate = inkDrawn && (!inkEntering || flowProgress(drawnAtRef.current.get(slotItem.id) ?? 1, 0, 0.75) > 0.08);
           return (
             <div
               key={slotItem.id}
@@ -1013,7 +1130,7 @@ export function PuddleDiveGallery({
                 transform: `translate(-50%, -50%) translate(${seat.x.toFixed(2)}px, ${seat.y.toFixed(2)}px) scale(${depth.scale * seat.scale})${depth.rotate ? ` rotate(${depth.rotate.toFixed(2)}deg)` : ""}`,
                 zIndex: 100000 + Math.round((depth.order ?? offset * 100) + seat.z),
                 cursor: focused ? "default" : "pointer",
-                pointerEvents: chromeVisible && depth.opacity > 0.02 ? "auto" : "none",
+                pointerEvents: (!awaited || revealed) && chromeVisible && depth.opacity * bufferFade > 0.02 ? "auto" : "none",
               }}
             >
               {/* the arrival / departure, on its own layer so the depth
@@ -1022,27 +1139,35 @@ export function PuddleDiveGallery({
                 style={{
                   width: "100%",
                   height: "100%",
-                  opacity: gather
+                  opacity: inkHeld
+                    ? inkDrawn ? inkOpacity : 0
+                    : awaited
+                    ? revealed ? 1 : 0
+                    : gather
                     ? gatherHidden ? 0 : 1
                     : inkArrival
                       // The cutout is already here at half size: the vessel comes
                       // up through it over most of the growth, while the cutout
                       // lets go across all of it (BlobScene), so the two overlap
                       // rather than swap. Reduced motion keeps the old fade by size.
-                      ? inkEntering ? flowProgress(growth, 0, 0.75) : flowProgress(entryScale, 0.4, 0.72)
+                      ? inkOpacity
                       : phase === "diving" ? 0 : undefined,
                   filter: gather ? (gatherHidden ? "blur(24px)" : "blur(0px)") : undefined,
                   transform: gather
                     ? gatherHidden ? "translateY(22px) scale(0.94)" : "translateY(0) scale(1)"
                     : inkArrival ? `scale(${entryScale})` : undefined,
-                  transition: gather && !reducedMotion
+                  transition: inkLate
+                    ? `opacity ${reducedMotion ? 180 : OPEN_FADE_MS}ms ease ${openDelay}ms`
+                    : awaited
+                    ? `opacity ${reducedMotion ? 180 : OPEN_FADE_MS}ms ease ${openDelay}ms`
+                    : gather && !reducedMotion
                     ? `opacity ${gatherMs}ms ease ${gatherDelay}ms, filter ${gatherMs}ms ease ${gatherDelay}ms, transform ${gatherMs}ms ease ${gatherDelay}ms`
                     : undefined,
                   /* A carried neighbour keeps the very animation string the
                      naming step gave it: unchanged, the browser lets it run on
                      to its end, so a rim still gathering when it was handed
                      over finishes gathering instead of snapping into place. */
-                  animation: pondDeparture > 0 || gather || inkArrival || (phase === "gallery" && waterEffect && navigationPoseRef.current.moved) ? "none" : carried
+                  animation: awaited || pondDeparture > 0 || gather || inkArrival || (phase === "gallery" && waterEffect && navigationPoseRef.current.moved) ? "none" : carried
                     ? focused
                       ? "none"
                       : neighborAnimation(offset)
@@ -1062,7 +1187,7 @@ export function PuddleDiveGallery({
                   style={{
                     width: "100%",
                     height: "100%",
-                    opacity: depth.opacity,
+                    opacity: depth.opacity * bufferFade,
                     filter:
                       [
                         !override && depth.blurPx ? `blur(${depth.blurPx}px)` : "",
@@ -1076,7 +1201,12 @@ export function PuddleDiveGallery({
                   {override ? override.renderArtifact(slotItem, {
                     focused,
                     still: !focused && rimSettled,
-                    frameloop: focused || !rimSettled || pondDeparture > 0 ? "always" : "demand",
+                    /* Every canvas holds its last frame while the rim moves,
+                       including the one in hand. Redrawing it on those frames
+                       is what drops the row. It draws again once the row stops. */
+                    frameloop: focused && rimSettled ? "always" : "demand",
+                    rest: rimSettled ? Math.round(offset) : undefined,
+                    sharp: slotItem.id === sharpId,
                     haze: depth.haze,
                     blurPx: depth.blurPx,
                     offset,
@@ -1095,11 +1225,9 @@ export function PuddleDiveGallery({
                     // tight framing — the artifact is the screen here, so it
                     // fills its box instead of floating in the middle of it
                     frameMargin={1.12}
-                    /* Park only once the rim has stopped. Mid-scroll the CSS
-                       scale is still changing; a demand canvas resizes, clears,
-                       and never redraws — the mesh just vanishes. offsetSize
-                       (measureUnscaled) also keeps the buffer off that scale. */
-                    frameloop={focused || !rimSettled || pondDeparture > 0 ? "always" : "demand"}
+                    /* The row holds every canvas while it moves, including the
+                       one in hand, and that one draws again once the row stops. */
+                    frameloop={focused && rimSettled ? "always" : "demand"}
                     still={!focused && rimSettled}
                     // the apex artifact turns on the page's clock rather than
                     // its canvas's, so the same memory on two screens reads as

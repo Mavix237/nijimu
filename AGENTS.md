@@ -4,6 +4,63 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## English / Chinese (2026-11-25)
+
+The interface reads in English or Simplified Chinese (Traditional at first,
+the same day; switched on request). A toggle sits in the
+header beside the music, at `--chrome-r1`: the language it switches to as a
+word in `CHROME_GRAY` — "中" while the page is English, "EN" while it is
+Chinese — in a sans of its own (`LANG_GLYPH_FONT` in `App.tsx`: Switzer, then
+the system's Chinese sans, never GenRyuMin2 TW, so the "中" costs an English
+visit no font download; it was Lucide's "languages" glyph at first). Its hover
+name is "中文" / "english"; on a phone (≤600px) it is a row of the burger menu
+(`HEADER_MENU_ORDER.lang`, above music). The gallery's plus and view toggle
+moved one seat left to make room (`--chrome-r2`, the field's toggle
+`--chrome-r3`); the gallery's arrows stay where they were (`--chrome-r1`). The
+choice is kept per device (localStorage `nijimu.lang`; `?lang=zh|en` sets it),
+switches live without a reload, and sets `<html lang>` (`en` / `zh-Hans`).
+With no choice kept and no `?lang=`, a first visit follows the browser's own
+languages (`browserLang`): the first of `navigator.languages` that is Chinese
+(any `zh-*`, Traditional tags included) or English, in its order; English when
+it names neither. That guess is not kept — only the header toggle or `?lang=`
+is — so a later change of the browser's language still counts until the
+visitor picks one. (Location was considered and not used: it guesses language
+less well than the browser does, and would cost a request before the first
+words.)
+- **Dictionary** `src/app/lib/i18n.ts`: one typed table, `en` (the shape) and
+  `zh` (`Messages`, so a missing key is a type error); strings, or functions
+  for the ones with numbers or names in them. Components read `useT()` (named
+  `ui` in the big files, where `t` is time); code outside render reads
+  `messages()` (the phone hand-off's errors). Errors kept in state are kinds,
+  not English sentences, so they follow a switch; the transcription service's
+  own English reasons still show in English, Chinese says it plainly instead.
+- **Translated:** the header and burger menu, the landing's line and Enter,
+  the gallery's intro lines, tips and labels, the pond (heading, hold, the
+  floating questions), "Before you begin" and recording, the transcript screen,
+  the photo step and the descent's steps (headings under 形律間染,
+  instructions, sliders, follow tip, camera), the camera dialog, naming (fields,
+  year hints, save), "Keep a copy" and Save to your phone, the `/keep/:id` page
+  (the QR link carries `?lang=zh` when made in Chinese, so the phone opens it
+  so), the reading pane and the profile. Chinese is set in a quiet register;
+  English keeps its lowercase, Chinese has none. The landing's line breaks in
+  two at a written `\n` (it is only as wide as the Enter row);
+  `ParticleText` now lets a Chinese line break between characters.
+- **Left in its own language:** the memories themselves — the curated names,
+  years and transcripts in `data/`, the landing's floating captions, the
+  vessels' and cards' names, a visitor's own words — and the 滲む nijimu
+  wordmark. The labs' knobs and dev panels stay English.
+- **Fonts:** `SANS` and `SANS_UI` fall back to GenRyuMin2 TW, so Chinese in a
+  sans line is the site's Ming; `html:lang(zh)` turns off font synthesis
+  (no faux italic or bold on CJK). A third face, `GenRyuMin2TW-Regular-zh.woff`
+  (~90 KB, the 387 characters of the dictionary), is fetched only when Chinese
+  copy is shown; an English visit still fetches only the 8 KB `-ui` subset (the
+  toggle's "中文" is written only once hovered or the menu opened, for that
+  reason). It is a WOFF cut from the family's OTF; after changing the `zh` table
+  rebuild it with `scripts/zh-ui-chars.mjs` (README, "Fonts"). The family is
+  a TW one but its OTF carries the simplified characters, drawn in its TW
+  forms; the 2.2 MB full face is a TW subset without most of them, so a
+  character missing from the `-zh` subset falls to the system's font.
+
 ## Save to phone, by QR code (2026-11-25)
 
 On a desktop (wider than 600px with a mouse: `useCompact()` false and
@@ -37,6 +94,14 @@ option; they download.
   is open on localhost the answer names this machine's LAN address
   (`origin`), so a phone on the same Wi-Fi can open the code (the dev server
   already listens on all interfaces).
+
+## The recording dialog's demo picks hidden (2026-11-25)
+
+The small 1 2 3 beside "skip to a sample story" in the recording dialog (each
+begins the flow with one of `DEMO_MEMORIES`) no longer show. `?demo` in the
+address brings them back for presenting (`DEMO_PICKS` in
+`PondRecordingOverlay`, which passes `onMemory` only then; the dialog draws the
+picks only when it has it).
 
 ## The landing's centre a little larger, its washes closer together (2026-11-25)
 

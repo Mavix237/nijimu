@@ -1,4 +1,5 @@
 import { useNavigate } from "react-router";
+import { useT } from "../lib/i18n";
 
 interface BackButtonProps {
   onClick?: () => void;
@@ -10,6 +11,7 @@ const BACK_SIZE = 32;
 
 export function BackButton({ onClick }: BackButtonProps) {
   const navigate = useNavigate();
+  const t = useT();
 
   const handleClick = () => {
     if (onClick) {
@@ -22,7 +24,7 @@ export function BackButton({ onClick }: BackButtonProps) {
   return (
     <button
       onClick={handleClick}
-      aria-label="back"
+      aria-label={t.back}
       className="nijimu-press-icon"
       style={{
         position: "absolute",

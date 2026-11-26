@@ -12,6 +12,10 @@ import { TranscriptEditHint } from "./GalleryOnboarding";
 import { TextButton } from "./TextButton";
 import { transcriptCharacters, transcriptTypingDelay, transcriptTypingPace } from "../lib/transcriptTyping";
 import type { VoiceRippleSpot } from "../lib/voicePeaks";
+import { useLang, useT } from "../lib/i18n";
+
+/** What went wrong with the words: lost on the way, or not heard (the service's own reason, in English). */
+type TranscribeTrouble = { kind: "lost" } | { kind: "failed"; detail: string | null };
 
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
 /** The foot of a long transcript, thinned to nothing over the last 72–120px (20% of it already clear). */
@@ -46,6 +50,8 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
   reducedMotion?: boolean;
   onTranscribingPulse?: (at: VoiceRippleSpot) => void;
 }) {
+  const ui = useT();
+  const lang = useLang();
   const location = useLocation();
   const navigate = useNavigate();
   const state = (location.state as PuddleTranscriptState | null) ?? null;
@@ -61,11 +67,11 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     if (pending?.result?.transcript?.trim()) return pending.result.transcript;
     return transcriptionId ? "" : SAMPLE_TRANSCRIPT;
   });
-  const [transcribeError, setTranscribeError] = useState<string | null>(() => {
+  const [transcribeError, setTranscribeError] = useState<TranscribeTrouble | null>(() => {
     if (state?.transcript?.trim()) return null;
-    if (pending?.result && !pending.result.transcript?.trim()) return pending.result.error ?? "The transcription didn’t come through — try recording again.";
+    if (pending?.result && !pending.result.transcript?.trim()) return { kind: "failed", detail: pending.result.error };
     if (transcriptionId && !pending && !state?.transcript?.trim()) {
-      return "The transcription was lost — try recording again.";
+      return { kind: "lost" };
     }
     return null;
   });
@@ -140,7 +146,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
       if (result.transcript?.trim()) {
         setTranscript(result.transcript);
       } else {
-        setTranscribeError(result.error ?? "The transcription didn’t come through — try recording again.");
+        setTranscribeError({ kind: "failed", detail: result.error });
       }
       setAwaitingTranscript(false);
     });
@@ -335,7 +341,9 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             }}
           >
             {transcribeError
-              ? `couldn't hear that — ${transcribeError.toLowerCase()}`
+              ? ui.couldntHear(transcribeError.kind === "lost" ? ui.transcriptLost
+                // the service's reason is English: Chinese says it plainly instead
+                : lang === "en" && transcribeError.detail ? transcribeError.detail : ui.transcriptFailed)
               : ""}
           </p>
           <div
@@ -378,7 +386,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                   suppressContentEditableWarning
                   role="textbox"
                   aria-multiline="true"
-                  aria-label="your memory, in words"
+                  aria-label={ui.transcriptBox}
                   spellCheck={false}
                   autoCorrect="off"
                   autoCapitalize="off"
@@ -458,16 +466,16 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             }}
           >
             {transcribeError ? (
-              <TextButton label="record again" onClick={goToRecord} style={{ width: "9em", justifyContent: "center", mixBlendMode: "multiply" }} />
+              <TextButton label={ui.recordAgain} onClick={goToRecord} style={{ width: "9em", justifyContent: "center", mixBlendMode: "multiply" }} />
             ) : (
               <>
                 <TextButton
-                  label="record again"
+                  label={ui.recordAgain}
                   onClick={goToRecord}
                   style={{ width: "9em", justifyContent: "center", mixBlendMode: "multiply", visibility: transcriptionId || pairReady ? "visible" : "hidden" }}
                 />
                 <PillButton
-                  label="continue"
+                  label={ui.continue}
                   trailing="›"
                   surface="glass"
                   textBlend="multiply"

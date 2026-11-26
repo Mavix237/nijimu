@@ -7,6 +7,7 @@
 import { GlassPane } from "./GlassPane";
 import { PaneOption, PaneOptions } from "./PaneOption";
 import { useLandingReturn } from "../lib/landingReturn";
+import { useT } from "../lib/i18n";
 import { NOTE_SIZE, SANS, SERIF, SERIF_EXPOSURE, TITLE, META } from "../lib/theme";
 
 interface ProfilePanelProps {
@@ -16,7 +17,8 @@ interface ProfilePanelProps {
 
 const userData = {
   name: "Alex Chen",
-  accountCreated: "March 2026",
+  /** year, month */
+  accountCreated: [2026, 3] as const,
   memoriesCount: 12,
   oneLiner: "cataloging moments that shape the quiet architecture of a life",
 };
@@ -41,9 +43,10 @@ const detailValueStyle = {
 
 export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
   const { beginReturn } = useLandingReturn();
+  const ui = useT();
 
   return (
-    <GlassPane open={open} onClose={onClose} label="profile">
+    <GlassPane open={open} onClose={onClose} label={ui.profile}>
       <div
         style={{
           display: "flex",
@@ -137,8 +140,8 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
             width: "100%",
           }}
         >
-          <label style={detailLabelStyle}>Member Since</label>
-          <p style={detailValueStyle}>{userData.accountCreated}</p>
+          <label style={detailLabelStyle}>{ui.memberSince}</label>
+          <p style={detailValueStyle}>{ui.monthYear(...userData.accountCreated)}</p>
         </div>
 
         <div
@@ -150,16 +153,15 @@ export function ProfilePanel({ open, onClose }: ProfilePanelProps) {
             width: "100%",
           }}
         >
-          <label style={detailLabelStyle}>Memories Archived</label>
+          <label style={detailLabelStyle}>{ui.memoriesArchived}</label>
           <p style={detailValueStyle}>
-            {userData.memoriesCount}{" "}
-            {userData.memoriesCount === 1 ? "memory" : "memories"}
+            {ui.memoriesCount(userData.memoriesCount)}
           </p>
         </div>
       </div>
 
       <PaneOptions>
-        <PaneOption label="exit to landing page" onClick={beginReturn} />
+        <PaneOption label={ui.exitToLanding} onClick={beginReturn} />
       </PaneOptions>
     </GlassPane>
   );

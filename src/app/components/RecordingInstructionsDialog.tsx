@@ -4,6 +4,7 @@ import { DEMO_MEMORIES } from "../data/demoMemories";
 import { useState } from "react";
 import { GlassPane } from "./GlassPane";
 import { ArrowIcon, MicIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
+import { useT } from "../lib/i18n";
 
 /** Intentionally shown on every recording attempt, regardless of past visits
  * or whether the browser already remembers microphone permission.
@@ -17,6 +18,7 @@ export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onMe
   onClose: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  const ui = useT();
 
   return (
     <GlassPane
@@ -28,24 +30,24 @@ export function RecordingInstructionsDialog({ busy, error, onStart, onSkip, onMe
       align="start"
     >
       <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
-        <h2 id="recording-instructions-title" style={PANE_TITLE}>To hear your voice</h2>
+        <h2 id="recording-instructions-title" style={PANE_TITLE}>{ui.hearTitle}</h2>
         <div id="recording-instructions-body" className="nijimuPaneBody" style={PANE_BODY}>
-          <p>If you’d like to speak about a memory, please allow microphone access in your browser.</p>
-          <p>Or, skip to a sample story to experience the full flow without recording yourself.</p>
+          <p>{ui.hearBody1}</p>
+          <p>{ui.hearBody2}</p>
         </div>
         {error && <p role="alert" style={PANE_BODY}>{error}</p>}
       </div>
 
       <PaneOptions>
-        <PaneOption primary mark={<MicIcon />} label={busy ? "Opening microphone…" : "Allow microphone & record my story"}
+        <PaneOption primary mark={<MicIcon />} label={busy ? ui.openingMic : ui.allowMic}
           onClick={onStart} disabled={busy} />
         <div style={{ position: "relative" }}>
-          <PaneOption mark={<ArrowIcon />} label="Skip to a sample story" onClick={() => onSkip()} disabled={busy} />
+          <PaneOption mark={<ArrowIcon />} label={ui.skipToSample} onClick={() => onSkip()} disabled={busy} />
           {onMemory && (
             <span style={{ position: "absolute", right: 30, top: "50%", transform: "translateY(-50%)", display: "flex", gap: 2 }}>
               {DEMO_MEMORIES.map((memory, i) => (
                 <button key={i} type="button" className="nijimuDemoPick" disabled={busy}
-                  aria-label={`Begin with “${memory.title}”`} title={memory.title}
+                  aria-label={ui.beginWith(memory.title)} title={memory.title}
                   onClick={() => onMemory(i)}>{i + 1}</button>
               ))}
             </span>

@@ -8,6 +8,10 @@ import { FLOW_PAGE, SERIF, NOTE_SIZE, INSTRUCTION_SIZE, TRANSCRIPT, TRANSCRIPT_W
 import { PAGE_HEADER_MARK } from "./PageHeader";
 import { beginTranscription } from "../lib/transcribe";
 import { DEMO_MEMORIES, demoVessel, type DemoMemory } from "../data/demoMemories";
+
+/** The recording dialog's small 1 2 3 picks (a demo memory each) are hidden; `?demo` in the address shows
+    them, for presenting. Without them the dialog offers only the microphone and the sample. */
+const DEMO_PICKS = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("demo");
 import { PARTICLE_TEXT_KEYFRAMES, ParticleText } from "./ParticleText";
 import { PillButton } from "./PillButton";
 import { TextButton } from "./TextButton";
@@ -15,6 +19,7 @@ import { RecordingInstructionsDialog } from "./RecordingInstructionsDialog";
 import { TRANSCRIPT_PATH, MEMORY_POND_PATH } from "../lib/routes";
 import { ArtifactForm, createArtifactForm, formFromState } from "../lib/superformula";
 import { createVoiceRippleBurstPlanner, pickVoiceRippleSpot, type VoiceRippleSpot } from "../lib/voicePeaks";
+import { useT } from "../lib/i18n";
 
 const QUESTION_DELAY_S = 0.35;
 const QUESTION_SWEEP_S = 0.5;
@@ -49,6 +54,7 @@ export function PondRecordingOverlay({
   reducedMotion?: boolean;
   onVoicePulse?: (at: VoiceRippleSpot) => void;
 }) {
+  const ui = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const compact = useCompact();
@@ -121,13 +127,13 @@ export function PondRecordingOverlay({
   useEffect(() => cancelRipples, [cancelRipples]);
 
   const troubleMessage = captureFailed
-    ? "The recording didn't come through — try again"
+    ? ui.recordFailed
     : recorder.error === "not-allowed"
-      ? "microphone access is off. allow it in your browser’s site settings, then try again—or explore with a sample memory."
+      ? ui.micOff
       : recorder.error === "unsupported"
-        ? "This browser can't record — try chrome"
+        ? ui.micUnsupported
         : recorder.error === "failed"
-          ? "The microphone couldn't be opened — try again"
+          ? ui.micFailed
           : null;
 
   useEffect(() => {
@@ -184,7 +190,7 @@ export function PondRecordingOverlay({
     style={{ opacity: leaving ? 0 : 1, transition: `opacity ${CHROME_OUT_MS}ms ease`, pointerEvents: leaving ? "none" : undefined }}>
     <RecordingInstructionsDialog
     busy={openingMicrophone} error={troubleMessage} onStart={startRecording}
-    onSkip={() => goToSampleTranscript()} onMemory={(i) => goToSampleTranscript(DEMO_MEMORIES[i])} onClose={() => navigate(MEMORY_POND_PATH, { state: arrival })} />
+    onSkip={() => goToSampleTranscript()} onMemory={DEMO_PICKS ? (i) => goToSampleTranscript(DEMO_MEMORIES[i]) : undefined} onClose={() => navigate(MEMORY_POND_PATH, { state: arrival })} />
   </div>;
 
   return (
@@ -202,7 +208,8 @@ export function PondRecordingOverlay({
           <div style={{ margin: 0, width: "100%", textAlign: "center", color: CHROME_GRAY, fontFamily: SERIF,
             fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45 }}>
             <ParticleText
-              text="Speak about a memory."
+              key={ui.speakAboutMemory}
+              text={ui.speakAboutMemory}
               seed={41}
               animate={!reducedMotion}
               delay={QUESTION_DELAY_S}
@@ -215,7 +222,8 @@ export function PondRecordingOverlay({
           <div style={{ fontFamily: TRANSCRIPT.fontFamily, fontSize: TRANSCRIPT.fontSize, width: TRANSCRIPT_WIDTH }}>
             <div style={{ ...noteStyle, fontSize: INSTRUCTION_SIZE, lineHeight: 1.6, textAlign: "center" }}>
               <ParticleText
-                text="Think of a memory in your mind, and talk about it freely."
+                key={ui.recordNote1}
+                text={ui.recordNote1}
                 seed={53}
                 animate={!reducedMotion}
                 delay={NOTE_1_DELAY_S}
@@ -224,7 +232,8 @@ export function PondRecordingOverlay({
                 soft
               />
               <ParticleText
-                text="Stop when the story feels complete."
+                key={ui.recordNote2}
+                text={ui.recordNote2}
                 seed={59}
                 animate={!reducedMotion}
                 delay={NOTE_1_DELAY_S + NOTE_SWEEP_S}
@@ -243,20 +252,20 @@ export function PondRecordingOverlay({
         !recorder.isRecording && !leaving ? (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 22 }}>
             <TextButton
-              label={captureFailed ? "record again" : "record"}
+              label={captureFailed ? ui.recordAgain : ui.record}
               onClick={startRecording}
               style={{ width: "9em", justifyContent: "center" }}
             />
             <span aria-hidden style={{ width: 1, height: "1em", background: "rgba(123, 123, 135, 0.45)", flexShrink: 0 }} />
             <TextButton
-              label="sample story"
+              label={ui.sampleStory}
               onClick={() => goToSampleTranscript()}
               style={{ width: "9em", justifyContent: "center" }}
             />
           </div>
         ) : (
           <PillButton
-            label="stop"
+            label={ui.stop}
             icon={<svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden><rect x="4" y="4" width="12" height="12" rx="2" fill={CHROME_GRAY} /></svg>}
             onClick={() => { cancelRipples(); recorder.stop(); }}
           />
@@ -264,13 +273,13 @@ export function PondRecordingOverlay({
       } />
       {/* the timer, or what went wrong, in the middle of the water */}
       {(recorder.isRecording || troubleMessage) && (
-        <p role={troubleMessage ? "alert" : "timer"} aria-label={troubleMessage ? undefined : "recording duration"}
+        <p role={troubleMessage ? "alert" : "timer"} aria-label={troubleMessage ? undefined : ui.recordingDuration}
           style={{ ...noteStyle, position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
             width: "min(28em, calc(100% - 40px))", textAlign: "center", fontVariantNumeric: "tabular-nums",
             opacity: !buttonIn || leaving ? 0 : 1,
             transition: "opacity 0.4s ease", pointerEvents: "none",
             animation: reducedMotion ? "none" : "puddleRecIn 700ms ease backwards" }}>
-          {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}${recorder.secondsLeft !== null ? ` · ${recorder.secondsLeft}s left` : ""}`}
+          {troubleMessage ?? ui.recordingTimer(`${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`, recorder.secondsLeft)}
         </p>
       )}
     </div>

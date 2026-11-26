@@ -42,6 +42,10 @@ const SCATTER_SPREAD_S = 0.4;
 /** Ordered timing: a touch of slop so a swept line still breathes. */
 const SWEEP_JITTER_S = 0.05;
 
+const CJK = /[\u3400-\u9fff\uf900-\ufaff]/;
+/** One character with any closing punctuation after it, or a run of anything else. */
+const CJK_UNITS = /[\u3400-\u9fff\uf900-\ufaff][，。、？！：；」』）…—]*|[^\u3400-\u9fff\uf900-\ufaff]+/g;
+
 export function ParticleText({
   text,
   seed,
@@ -76,8 +80,12 @@ export function ParticleText({
   return (
     <>
       {text.split("\n").map((line, li) => {
-        const words = line.split(" ");
-        const total = wrap ? words.reduce((n, w) => n + w.length, 0) : line.length;
+        // Chinese has no spaces: each character is a unit a line may break after (closing punctuation stays with it)
+        const words = line.split(" ").flatMap((word, wi) => {
+          const units = CJK.test(word) ? word.match(CJK_UNITS) ?? [word] : [word];
+          return units.map((unit, ui) => ({ unit, spaced: wi > 0 && ui === 0 }));
+        });
+        const total = wrap ? words.reduce((n, w) => n + w.unit.length, 0) : line.length;
         let emitted = 0;
 
         const letter = (ch: string, key: number) => {
@@ -112,11 +120,11 @@ export function ParticleText({
         return (
           <Line key={li} style={{ whiteSpace: wrap ? "normal" : "nowrap" }}>
             {wrap
-              ? words.map((word, wi) => (
+              ? words.map(({ unit, spaced }, wi) => (
                   <span key={wi}>
-                    {wi > 0 && " "}
+                    {spaced && " "}
                     <span style={{ display: "inline-block", whiteSpace: "nowrap" }}>
-                      {word.split("").map((ch, i) => letter(ch, i))}
+                      {unit.split("").map((ch, i) => letter(ch, i))}
                     </span>
                   </span>
                 ))

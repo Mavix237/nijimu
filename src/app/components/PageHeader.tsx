@@ -4,6 +4,7 @@ import { CHROME_GRAY } from "../lib/colors";
 import { CAROUSEL_PATH, NAMING_PATH } from "../lib/routes";
 import { FLOW_PAGE, SERIF_CJK } from "../lib/theme";
 import { GalleryViewToggle } from "./GalleryViewToggle";
+import { useT } from "../lib/i18n";
 
 /** Target seat the landing wordmark flies to. Keep the mark in sync. */
 export const PAGE_HEADER_MARK = {
@@ -39,6 +40,7 @@ export function PageHeader({
 }: PageHeaderProps) {
   const navigate = useNavigate();
   const { pathname } = useLocation();
+  const t = useT();
 
   const layoutStyle: CSSProperties =
     layout === "absolute"
@@ -105,7 +107,7 @@ export function PageHeader({
       {showCarousel && (
         <GalleryViewToggle
           view="carousel"
-          label="gallery view"
+          label={t.galleryView}
           onToggle={onCarousel ?? (() => navigate(CAROUSEL_PATH))}
         />
       )}

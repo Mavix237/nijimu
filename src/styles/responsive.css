@@ -8,8 +8,9 @@
 :root {
   --chrome-top: 22px;
   --chrome-icon: 36px;
-  /* Corner icons, counted from the right edge: music, create / gallery
-     view, the vessel field's "in the air". */
+  /* Corner icons, counted from the right edge: music, language, create /
+     gallery view, the vessel field's "in the air" (the language took r1 on
+     2026-11-25; create and the field's toggle moved one seat left). */
   --chrome-r0: calc(22px + env(safe-area-inset-right, 0px));
   --chrome-r1: calc(68px + env(safe-area-inset-right, 0px));
   --chrome-r2: calc(114px + env(safe-area-inset-right, 0px));
@@ -20,8 +21,9 @@
      from the screen's edge to the back arrow's glyph and to the burger's
      (the buttons' seats plus the air inside them). The flow's side columns. */
   --chrome-inset: 20px;
-  /* Share the create button's width and horizontal anchor so their glyphs
-     sit on the same centerline; mirror that anchor for the left arrow. */
+  /* The width and horizontal anchor of the header's second seat (create's
+     until the language toggle took it), so the right arrow's glyph keeps the
+     centerline of the icon above it; mirrored for the left arrow. */
   --gallery-arrow-inset: var(--chrome-r1);
   --gallery-arrow-width: var(--chrome-icon);
   /* Their triangle's size; the button around it does not change. */
@@ -98,4 +100,11 @@ body {
   .lab-dock {
     display: none !important;
   }
+}
+
+/* The Chinese interface (lib/i18n.ts sets html[lang]): GenRyuMin2 TW has no
+   italic or bold, so its glyphs are not slanted or thickened to fake them
+   where a style asks (the captions' italic, a pane option's weight). */
+html:lang(zh) {
+  font-synthesis: none;
 }

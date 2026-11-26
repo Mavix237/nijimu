@@ -7,8 +7,10 @@ export const SERIF_ITALIC_TRACKING = "0.012em";
 export const SERIF_CJK = "'GenRyuMin2 TW', Rowan, Georgia, serif";
 export const SERIF_DISPLAY = "'Exposure Trial Plus', Rowan, 'GenRyuMin2 TW', Georgia, serif";
 export const SERIF_EXPOSURE = "'Exposure Trial', Rowan, 'GenRyuMin2 TW', Georgia, serif";
-export const SANS = "Switzer, sans-serif";
-export const SANS_UI = "'SF Pro', system-ui, sans-serif";
+/* The sans stacks fall to the site's own CJK face, not the system's sans, so
+   Chinese interface copy (lib/i18n.ts) reads in the same Ming as the wordmark. */
+export const SANS = "Switzer, 'GenRyuMin2 TW', sans-serif";
+export const SANS_UI = "'SF Pro', system-ui, 'GenRyuMin2 TW', sans-serif";
 /** Quiet captions — transcribing, recording notes, pane asides. */
 export const NOTE_SIZE = "clamp(11px, 2.4vw, 12px)";
 /** Uppercase meta labels. */

@@ -1,6 +1,7 @@
 import { PANE_CONTENT_GAP } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
 import { CameraIcon, ClockIcon, PANE_BODY, PANE_TITLE, PaneOption, PaneOptions } from "./PaneOption";
+import { useT } from "../lib/i18n";
 
 export function HandTrackingDialog({ open, busy, error, onAllow, onManual, entrance }: {
   open: boolean;
@@ -11,22 +12,23 @@ export function HandTrackingDialog({ open, busy, error, onAllow, onManual, entra
   onAllow: () => void;
   onManual: () => void;
 }) {
+  const ui = useT();
   return <GlassPane open={open} onClose={onManual} closeDisabled={busy} labelledBy="hand-tracking-title" align="start" entrance={entrance}>
     <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
       <h2 id="hand-tracking-title" style={PANE_TITLE}>
-        Enable camera access
+        {ui.cameraTitle}
       </h2>
       <div className="nijimuPaneBody" style={PANE_BODY}>
-        <p>We use camera to access hand-tracking, which allows you to sculpt this memory by hand. Please allow camera access from your browser.</p>
+        <p>{ui.cameraBody}</p>
       </div>
       {error && <p role="alert" style={PANE_BODY}>
-        We couldn’t start hand tracking. Allow camera access in your browser’s site settings and try again, or continue with the mouse.
+        {ui.cameraError}
       </p>}
     </div>
     <PaneOptions>
       <PaneOption primary mark={<CameraIcon />} disabled={busy} onClick={onAllow}
-        label={busy ? "Starting hand tracking…" : error ? "Try camera again" : "Allow camera & Begin"} />
-      <PaneOption mark={<ClockIcon />} ring label="Maybe later" disabled={busy} onClick={onManual} />
+        label={busy ? ui.startingTracking : error ? ui.tryCameraAgain : ui.allowCamera} />
+      <PaneOption mark={<ClockIcon />} ring label={ui.maybeLater} disabled={busy} onClick={onManual} />
     </PaneOptions>
   </GlassPane>;
 }

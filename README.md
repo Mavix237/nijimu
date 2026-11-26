@@ -107,6 +107,25 @@ CJK characters to the source, rebuild the subset with fontTools and update the
 pyftsubset src/assets/fonts/GenRyuMin2TW-Regular.woff2 --text="滲む形律間间染…" --unicodes="U+3000-3002,U+300C-300F,U+30FB-30FC,U+FF01,U+FF08-FF09,U+FF0B-FF0C,U+FF1A-FF1B,U+FF1F" --flavor=woff2 --layout-features='*' --output-file=src/assets/fonts/GenRyuMin2TW-Regular-ui.woff2
 ```
 
+The Chinese interface (the header's language toggle, `src/app/lib/i18n.ts`)
+has a third face, `GenRyuMin2TW-Regular-zh.woff` (~90 KB): only the
+characters the dictionary uses (the `zh` table and the toggle's "中文"), downloaded only when that copy is shown —
+an English visit never fetches it. It is a WOFF, not a WOFF2, because it is cut
+from the family's OTF (`GenRyuMin2TW-R.otf`, v2.100, from the font's release)
+with a fontTools that has no brotli. After changing the `zh` table, rebuild it
+and paste the new range into the `-zh` face in `fonts.css`:
+
+```bash
+pyftsubset GenRyuMin2TW-R.otf --text="$(node scripts/zh-ui-chars.mjs)" --flavor=woff --layout-features='*' --output-file=src/assets/fonts/GenRyuMin2TW-Regular-zh.woff
+node scripts/zh-ui-chars.mjs --range
+```
+
+The interface is Simplified Chinese: the OTF carries those characters (in
+its TW forms), the 2.2 MB full face mostly does not, so a character missing
+from the `-zh` subset falls to the system's font — rebuild after every change. `SANS` and
+`SANS_UI` fall back to GenRyuMin2 TW too, so Chinese in a sans line is the
+site's Ming rather than the system's sans.
+
 Named but not loaded: **SF Pro** (`SANS_UI` — Apple system font on dark buttons, then `system-ui`).
 
 System / leftover fallbacks: **Georgia** (serif fallback; also hardcoded in a few pages), **Helvetica Neue / Helvetica / Arial** (`RecordingProcessPage`), and **SF Mono / Monaco / monospace** (timer on `/record/click` and shape-editor numeric readouts).

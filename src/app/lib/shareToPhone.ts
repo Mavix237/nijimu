@@ -4,6 +4,8 @@
  * save it to its photos. Never throws: a failure comes back as `error`.
  */
 
+import { getLang, messages } from "./i18n";
+
 /** Under the endpoint's 4 MB cap, with room to spare. */
 const MAX_BYTES = 3.6 * 1024 * 1024;
 
@@ -37,18 +39,20 @@ export async function keepForPhone(card: Blob, signal?: AbortSignal): Promise<Ph
   try {
     body = await jpegOf(card);
   } catch {
-    return { error: "The image couldn’t be prepared for your phone." };
+    return { error: messages().phonePrepareFailed };
   }
   try {
     const res = await fetch("/api/share", { method: "POST", headers: { "Content-Type": "image/jpeg" }, body, signal });
     const data = await res.json().catch(() => ({})) as { id?: string; expiresAt?: string; origin?: string; error?: string };
-    if (!res.ok || !data.id) return { error: data.error ?? "The image couldn’t be sent. Please try again." };
+    // the server's reasons are English; the dictionary says the one a guest can act on
+    if (!res.ok || !data.id) return { error: res.status === 503 ? messages().phoneNotSetUp : messages().phoneSendFailed };
     // the dev server names an address a phone on the same network can reach
     const origin = data.origin ?? window.location.origin;
-    return { link: `${origin}/keep/${data.id}`, expiresAt: data.expiresAt ?? "" };
+    // the phone opens it in the language chosen here
+    return { link: `${origin}/keep/${data.id}${getLang() === "zh" ? "?lang=zh" : ""}`, expiresAt: data.expiresAt ?? "" };
   } catch {
     if (signal?.aborted) return { error: "" };
-    return { error: "The image couldn’t be sent. Check your connection and try again." };
+    return { error: messages().phoneOffline };
   }
 }
 

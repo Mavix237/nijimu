@@ -5,6 +5,7 @@ import { SceneViewer } from "./SceneViewer";
 import { GalleryOverrideContext, type SeatPlace } from "../lib/galleryOverride";
 import { warmArtifactMeshes } from "../hooks/useArtifactGeometry";
 import { BackButton } from "./BackButton";
+import { useT } from "../lib/i18n";
 import { GalleryScrollHint } from "./GalleryOnboarding";
 import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
@@ -362,6 +363,7 @@ export function PuddleDiveGallery({
   pondDeparture?: number;
   hideHeader?: boolean;
 }) {
+  const ui = useT();
   // a preview may seat something other than the crystal; the live routes provide nothing
   const override = useContext(GalleryOverrideContext);
   /* The preview's field: while the seats are asked for there, or still on their
@@ -1351,7 +1353,7 @@ export function PuddleDiveGallery({
       {/* ═══ ARROWS ═══ */}
       {showArrows && hasOlder && (
         <button
-          aria-label="older memory"
+          aria-label={ui.olderMemory}
           style={arrowStyle("left")}
           onClick={(e) => {
             e.stopPropagation();
@@ -1368,7 +1370,7 @@ export function PuddleDiveGallery({
       )}
       {showArrows && hasNewer && (
         <button
-          aria-label="newer memory"
+          aria-label={ui.newerMemory}
           style={arrowStyle("right")}
           onClick={(e) => {
             e.stopPropagation();
@@ -1395,7 +1397,7 @@ export function PuddleDiveGallery({
         {onExit && <BackButton onClick={onExit} />}
         {/* a way into the vessel preview (/lab/gallery), beside the arrow; not shown inside the preview itself */}
         {!override && (
-          <Link to="/lab/gallery" aria-label="see the memories as vessels"
+          <Link to="/lab/gallery" aria-label={ui.seeAsVessels}
             style={{ position: "absolute", top: 36, left: 70, zIndex: 100, fontFamily: SANS, fontSize: 12, letterSpacing: "0.04em",
               color: CHROME_GRAY, opacity: 0.55, textDecoration: "none" }}>
             vessels
@@ -1648,6 +1650,7 @@ function TimeScale({
   enterAnimation?: string;
   onSeek?: (index: number) => void;
 }) {
+  const ui = useT();
   /** Memory places + the five-year ticks that frame them. */
   const { positions, yearTicks } = useMemo(() => {
     const parsed = items.map((it) => parseInt(it.year) || 0);
@@ -1849,7 +1852,7 @@ function TimeScale({
         height={68}
         fill="transparent"
         role="slider"
-        aria-label="memories in time"
+        aria-label={ui.memoriesInTime}
         aria-valuemin={0}
         aria-valuemax={Math.max(0, items.length - 1)}
         aria-valuenow={selected}

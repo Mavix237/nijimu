@@ -1,5 +1,6 @@
 import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
 import { galleryVesselTones, useGalleryTuneVersion } from "../lib/galleryTune";
+import { useT } from "../lib/i18n";
 import svgPaths from "../../imports/svg-t19vgojqiy";
 import NewMomoryIdle from "../../imports/NewMomoryIdle";
 import { LIFE_EVENTS, COLORS as MEMORY_COLORS, MemoryEvent } from "../data/memoryData";
@@ -432,6 +433,7 @@ export function BlobScene({
   /** Chronological seat the ink unfolds onto — a middle memory, not an end. */
   landingFocusSlot?: number;
 }) {
+  const ui = useT();
   // Curated life events plus whatever the user has saved, so their memories
   // blend into the same field.
   const [savedMemories] = useState<SavedMemory[]>(() => loadMemories());
@@ -2133,6 +2135,8 @@ export function BlobScene({
                   fontSize: HEADER_DESC_SIZE,
                   letterSpacing: "0.24px",
                   lineHeight: 1.5,
+                  // a line break written into the copy (the Chinese) is kept
+                  whiteSpace: "pre-line",
                   margin: 0,
                   padding: 0,
                   textAlign: "center",
@@ -2145,7 +2149,7 @@ export function BlobScene({
                     : HEADER_COLOR_FADE,
                 }}
               >
-                An interactive memory sculpting tool to trace how memory evolves.
+                {ui.landingDesc}
               </p>
               <button
                 type="button"

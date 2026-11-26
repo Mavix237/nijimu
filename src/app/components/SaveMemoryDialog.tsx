@@ -13,6 +13,7 @@ import { withNamingLights } from "../lib/namingTune";
 import { CARD_SCALE, copyArtifactFrame, downloadMemoryImage, memoryImage } from "../lib/memoryImage";
 import { useCompact } from "../hooks/useCompact";
 import { askCardFrame } from "../lib/cardFrame";
+import { messages, useT } from "../lib/i18n";
 
 /* The card photographs the vessel as the gallery wears it: its lighter stain
    (strength, foot band, flash), its glass and its room, with naming's two lights. */
@@ -63,13 +64,15 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
   onClose: () => void; onContinue: () => void;
   storageError?: string | null;
 }) {
+  const ui = useT();
   const compact = useCompact();
   /** The card, once made: the PNG a download keeps, and a URL to show it by. */
   const [card, setCard] = useState<{ blob: Blob; url: string } | null>(null);
   const [failed, setFailed] = useState(false);
   /** A download asked for before the card was ready: it goes as soon as the card is made. */
   const [waiting, setWaiting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  /** The card could not be made. */
+  const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const captured = useRef(false);
   const live = useRef(true);
@@ -127,13 +130,13 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
         const qr = await qrCodeOf(kept.link, QR_INK);
         if (run === phoneRun.current && live.current) setPhone({ status: "ready", link: kept.link, qr });
       } catch {
-        if (run === phoneRun.current && live.current) setPhone({ status: "failed", error: "The code couldn’t be drawn. Please try again." });
+        if (run === phoneRun.current && live.current) setPhone({ status: "failed", error: messages().codeUndrawn });
       }
     })();
     return () => abort.abort();
   }, [phone?.status, card]);
   useEffect(() => {
-    if (failed && phone?.status === "waiting") setPhone({ status: "failed", error: "The image couldn’t be prepared. Please try again." });
+    if (failed && phone?.status === "waiting") setPhone({ status: "failed", error: messages().imageUnpreparedShort });
   }, [failed, phone?.status]);
   // a card that never comes: say so, and let the guest try again or go on
   useEffect(() => {
@@ -144,7 +147,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
   useEffect(() => {
     if (!failed) return;
     setWaiting(false);
-    setError("The image couldn’t be prepared. Please try again, or continue without downloading.");
+    setError(true);
   }, [failed]);
   // a download asked for early goes once the card is there
   useEffect(() => {
@@ -173,7 +176,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
   const download = () => {
     if (waiting) return;
     if (card) { downloadMemoryImage(card.blob, title); onContinue(); return; }
-    setError(null);
+    setError(false);
     if (failed) {
       // try again from the start: a fresh frame of the vessel, borrowed first
       setFailed(false);
@@ -186,7 +189,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
 
   const saveToPhone = () => {
     if (waiting) return;
-    setError(null);
+    setError(false);
     if (failed) {
       setFailed(false);
       setOwnRender(false);
@@ -228,7 +231,7 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
       .nijimuSaveCopy > p + p { margin-top: .4em; }
     `}</style>
     {/* the card: its paper first, its picture fading in over it once made */}
-    <div onClick={event => event.stopPropagation()} aria-label={`the memory's card: ${title}, ${year}`} role="img"
+    <div onClick={event => event.stopPropagation()} aria-label={ui.cardAria(title, year)} role="img"
       style={{ position: "relative", flex: "none", height: cardHeight, aspectRatio: `${CARD_ASPECT}`, maxWidth: "100%",
         // no shadow: the card lies in the scene, the pond showing round it
         background: CARD_PAPER,
@@ -245,18 +248,18 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
         gap: PANE_CONTENT_GAP * 1.5, textAlign: "left", ...appear(120) }}>
       {phone ? <PhoneHandoff phone={phone} onDone={onContinue} onBack={leavePhone} onRetry={saveToPhone} /> : <>
       <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
-        <h2 id="save-memory-title" style={{ ...PANE_TITLE, margin: 0 }}>Keep a copy of your memory</h2>
+        <h2 id="save-memory-title" style={{ ...PANE_TITLE, margin: 0 }}>{ui.keepTitle}</h2>
         <div className="nijimuSaveCopy" style={PANE_BODY}>
-          <p>You’re exploring nijimu as a guest. Your memory will remain in the gallery during this visit, but won’t be saved or shared publicly.</p>
-          <p>Download an image to take a piece of it with you.</p>
+          <p>{ui.keepBody1}</p>
+          <p>{ui.keepBody2}</p>
         </div>
-        {(error || storageError) && <p role="alert" style={{ ...PANE_BODY, margin: 0 }}>{error || storageError}</p>}
+        {(error || storageError) && <p role="alert" style={{ ...PANE_BODY, margin: 0 }}>{error ? ui.imageUnprepared : storageError}</p>}
       </div>
       <PaneOptions>
-        <PaneOption primary mark={<DownloadIcon />} label={waiting ? "Preparing your memory…" : "Download as image"} disabled={waiting}
+        <PaneOption primary mark={<DownloadIcon />} label={waiting ? ui.preparingMemory : ui.downloadImage} disabled={waiting}
           onClick={download} />
-        {toPhone && <PaneOption mark={<PhoneIcon />} label="Save to your phone" disabled={waiting} onClick={saveToPhone} />}
-        <PaneOption mark={<ArrowIcon />} label="Continue without download" disabled={waiting} onClick={onContinue} />
+        {toPhone && <PaneOption mark={<PhoneIcon />} label={ui.saveToPhone} disabled={waiting} onClick={saveToPhone} />}
+        <PaneOption mark={<ArrowIcon />} label={ui.continueWithoutDownload} disabled={waiting} onClick={onContinue} />
       </PaneOptions>
       </>}
     </div>
@@ -274,29 +277,30 @@ export function SaveMemoryDialog({ session, title, year, onClose, onContinue, st
 function PhoneHandoff({ phone, onDone, onBack, onRetry }: {
   phone: PhoneState; onDone: () => void; onBack: () => void; onRetry: () => void;
 }) {
+  const ui = useT();
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { box.current?.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus({ preventScroll: true }); }, [phone.status]);
   return <div ref={box} style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP * 1.5 }}>
     <div style={{ display: "flex", flexDirection: "column", gap: PANE_CONTENT_GAP }}>
-      <h2 id="save-memory-title" style={{ ...PANE_TITLE, margin: 0 }}>Save it to your phone</h2>
+      <h2 id="save-memory-title" style={{ ...PANE_TITLE, margin: 0 }}>{ui.phoneTitle}</h2>
       <div className="nijimuSaveCopy" style={PANE_BODY}>
-        <p>Scan the code with your phone’s camera to open and save your image. The following link will be valid for a day.</p>
+        <p>{ui.phoneBody}</p>
       </div>
     </div>
     <div aria-live="polite" style={{ width: QR_PX, height: QR_PX, position: "relative" }}>
       {phone.status === "ready"
-        ? <img src={phone.qr} width={QR_PX} height={QR_PX} alt={`QR code for ${phone.link}`} draggable={false}
+        ? <img src={phone.qr} width={QR_PX} height={QR_PX} alt={ui.qrAlt(phone.link)} draggable={false}
             style={{ display: "block", width: QR_PX, height: QR_PX, animation: `nijimuCardIn ${PICTURE_IN_MS}ms ease both` }} />
         : <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "flex-start",
             ...PANE_BODY, opacity: phone.status === "failed" ? 1 : .7 }}>
-            {phone.status === "failed" ? <span role="alert">{phone.error}</span> : "Preparing the code…"}
+            {phone.status === "failed" ? <span role="alert">{phone.error}</span> : ui.preparingCode}
           </div>}
     </div>
     <PaneOptions>
       {phone.status === "failed"
-        ? <PaneOption primary mark={<PhoneIcon />} label="Try again" onClick={onRetry} />
-        : <PaneOption primary mark={<ArrowIcon />} label="Done" disabled={phone.status !== "ready"} onClick={onDone} />}
-      <PaneOption label="Back" onClick={onBack} />
+        ? <PaneOption primary mark={<PhoneIcon />} label={ui.tryAgain} onClick={onRetry} />
+        : <PaneOption primary mark={<ArrowIcon />} label={ui.done} disabled={phone.status !== "ready"} onClick={onDone} />}
+      <PaneOption label={ui.backPane} onClick={onBack} />
     </PaneOptions>
   </div>;
 }

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CHROME_GRAY } from "../lib/colors";
 import { HEADER_ICON_LABEL_PAD, HeaderIconLabel } from "./HeaderIconLabel";
 import { HEADER_MENU_ORDER, HeaderMenuRow, useHeaderMenu } from "./HeaderMenu";
+import { useT } from "../lib/i18n";
 
 /** Top-right switch between the G-key carousel and the card grid.
  *  Sits left of the music control (see --chrome-r* in responsive.css).
@@ -26,13 +27,16 @@ export function GalleryViewToggle({
 }) {
   const [nameShown, setNameShown] = useState(false);
   const { list } = useHeaderMenu();
+  const t = useT();
   if (!visible) return null;
 
   const toGrid = view === "carousel";
   const title = label ?? (icon === "plus"
-    ? "create a new memory"
-    : toGrid ? "grid view" : "gallery view");
-  const name = icon === "plus" ? "create" : title.split(" ")[0]?.toLowerCase() || "gallery";
+    ? t.createTitle
+    : toGrid ? t.gridView : t.galleryView);
+  const name = icon === "plus" ? t.createName
+    : label ? label.split(" ")[0]?.toLowerCase() || t.galleryName
+    : toGrid ? t.gridName : t.galleryName;
   const glyph = (
     icon === "plus" ? (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
@@ -59,7 +63,7 @@ export function GalleryViewToggle({
   if (list) {
     return (
       <HeaderMenuRow order={icon === "plus" ? HEADER_MENU_ORDER.create : HEADER_MENU_ORDER.view}
-        icon={glyph} label={icon === "plus" ? "new memory" : title} ariaLabel={title} onClick={onToggle} />
+        icon={glyph} label={icon === "plus" ? t.createRow : title} ariaLabel={title} onClick={onToggle} />
     );
   }
 
@@ -79,7 +83,7 @@ export function GalleryViewToggle({
       style={{
         position: "fixed",
         top: "var(--chrome-top)",
-        right: "var(--chrome-r1)",
+        right: "var(--chrome-r2)",
         zIndex: 99999,
         boxSizing: "border-box",
         width: "var(--chrome-icon)",

@@ -31,6 +31,7 @@ import photoA from "../../assets/memory-photo.jpg";
 import photoB from "../../assets/memory-photo-02.jpg";
 import constellationIcon from "../../../constellation icon.svg";
 import timelineIcon from "../../../timeline icon.svg";
+import { useT } from "../lib/i18n";
 
 /*
  * Lab: the dive gallery with the vessel on every seat. The gallery itself —
@@ -357,11 +358,12 @@ class FieldDriver {
   }
 }
 
-/** The switch between the years and the field, beside the gallery's own chrome (the plus sits at right 114). */
+/** The switch between the years and the field, beside the gallery's own chrome (the plus sits at right 114, this at 156). */
 function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
   const [nameShown, setNameShown] = useState(false);
-  const title = on ? "back along the years" : "see them in the air";
-  const name = on ? "timeline\nview" : "constellation\nview";
+  const ui = useT();
+  const title = on ? ui.fieldToTimeline : ui.fieldToAir;
+  const name = on ? ui.timelineName : ui.constellationName;
   const { list } = useHeaderMenu();
   const glyph = (
     // The create icon's visible square is 13px plus its 1.2px stroke.
@@ -369,7 +371,7 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       style={{ objectFit: "contain" }} />
   );
   // folded into the header menu on a phone
-  if (list) return <HeaderMenuRow order={HEADER_MENU_ORDER.field} icon={glyph} label={on ? "timeline view" : "constellation view"}
+  if (list) return <HeaderMenuRow order={HEADER_MENU_ORDER.field} icon={glyph} label={on ? ui.timelineRow : ui.constellationRow}
     ariaLabel={title} onClick={onToggle} />;
   return (
     <button
@@ -381,7 +383,7 @@ function FieldToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
       onFocus={() => setNameShown(true)}
       onBlur={() => setNameShown(false)}
       style={{
-        position: "fixed", top: "var(--chrome-top)", right: "var(--chrome-r2)", zIndex: 99999, boxSizing: "border-box",
+        position: "fixed", top: "var(--chrome-top)", right: "var(--chrome-r3)", zIndex: 99999, boxSizing: "border-box",
         width: "var(--chrome-icon)", height: 36 + HEADER_ICON_LABEL_PAD, padding: `0 0 ${HEADER_ICON_LABEL_PAD}px`,
         border: "none", background: "transparent", cursor: "pointer",
         display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.85,

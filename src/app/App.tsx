@@ -25,6 +25,11 @@ import { HEADER_MENU_ORDER, HeaderMenu, HeaderMenuContext, HeaderMenuRow, useHea
 import { useCompact } from "./hooks/useCompact";
 import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
 import { startFinishWatchdog } from "./lib/paperFinish";
+import { setLang, useLang, useT } from "./lib/i18n";
+
+/** The language toggle's word (中 / EN): Switzer for the Latin, the system's
+    Chinese sans for 中 — never GenRyuMin2 TW. */
+const LANG_GLYPH_FONT = "Switzer, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', 'Noto Sans CJK SC', sans-serif";
 
 /** GitHub Pages subpath: Vite sets BASE_URL from vite.config base (e.g. /repo/). */
 const routerBasename =
@@ -189,7 +194,16 @@ function GlobalControls({
   }, [pathname, onMenuOpenChange]);
   const { list: menuList } = useHeaderMenu();
 
-  const [nameShown, setNameShown] = useState<"music" | null>(null);
+  const [nameShown, setNameShown] = useState<"music" | "lang" | null>(null);
+  const t = useT();
+  const lang = useLang();
+  const switchLang = () => setLang(lang === "en" ? "zh" : "en");
+  /* The language's name (under its icon, or its row in the folded menu) is
+     written only once it is first asked for — hovered, or the menu opened:
+     "中文", laid out from the start even unseen, would fetch the Chinese font
+     subset on every English visit. */
+  const [langNamed, setLangNamed] = useState(false);
+  if ((nameShown === "lang" || menu?.open) && !langNamed) setLangNamed(true);
 
   const iconButtonStyle = {
     position: "fixed" as const,
@@ -221,6 +235,24 @@ function GlobalControls({
       <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
     </svg>
   );
+  /* The language: the one it switches to, as a word — 中 while the page is
+     English, EN while it is Chinese — in a sans at the icons' size. Its own
+     stack, without the site's Ming: the system's Chinese sans draws 中, so an
+     English visit never fetches the Chinese font subset for it. */
+  const langGlyph = (
+    <span key={lang} className="nijimu-glyph-in" aria-hidden style={{
+      fontFamily: LANG_GLYPH_FONT,
+      fontSize: lang === "en" ? 14 : 12,
+      fontWeight: 400,
+      letterSpacing: lang === "en" ? 0 : "0.04em",
+      lineHeight: 1,
+      // the folded menu's rows lowercase their words; this one keeps its capitals
+      textTransform: "none",
+      color: iconStroke,
+    }}>
+      {lang === "en" ? "中" : "EN"}
+    </span>
+  );
 
   if (menu) {
     return (
@@ -228,8 +260,12 @@ function GlobalControls({
         <HeaderMenu open={menu.open} onOpenChange={menu.onOpenChange} listRef={menu.listRef}
           hidden={leavingScene} />
         {menuList && (
-          <HeaderMenuRow order={HEADER_MENU_ORDER.music} icon={musicGlyph} label={muted ? "music off" : "music on"}
-            ariaLabel={muted ? "unmute" : "mute"} onClick={() => setSoundtrackMuted(!muted)} />
+          <HeaderMenuRow order={HEADER_MENU_ORDER.music} icon={musicGlyph} label={muted ? t.musicOff : t.musicOn}
+            ariaLabel={muted ? t.unmute : t.mute} onClick={() => setSoundtrackMuted(!muted)} />
+        )}
+        {menuList && (
+          <HeaderMenuRow order={HEADER_MENU_ORDER.lang} icon={langGlyph} label={langNamed ? t.langName : ""}
+            ariaLabel={t.langAria} onClick={switchLang} />
         )}
         <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />
       </>
@@ -240,7 +276,7 @@ function GlobalControls({
     <>
       <button
         onClick={() => setSoundtrackMuted(!muted)}
-        aria-label={muted ? "unmute" : "mute"}
+        aria-label={muted ? t.unmute : t.mute}
         className="nijimu-press-icon"
         onMouseEnter={() => setNameShown("music")}
         onMouseLeave={() => setNameShown(null)}
@@ -248,8 +284,23 @@ function GlobalControls({
         onBlur={() => setNameShown(null)}
         style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r0)", opacity: 0.85 }}
       >
-        <HeaderIconLabel name="music" shown={nameShown === "music"} />
+        <HeaderIconLabel name={t.musicName} shown={nameShown === "music"} />
         {musicGlyph}
+      </button>
+
+      {/* the language, beside the music (the gallery's plus and view toggle sit beyond it) */}
+      <button
+        onClick={switchLang}
+        aria-label={t.langAria}
+        className="nijimu-press-icon"
+        onMouseEnter={() => setNameShown("lang")}
+        onMouseLeave={() => setNameShown(null)}
+        onFocus={() => setNameShown("lang")}
+        onBlur={() => setNameShown(null)}
+        style={{ ...iconButtonStyle, top: "var(--chrome-top)", right: "var(--chrome-r1)", opacity: 0.85 }}
+      >
+        <HeaderIconLabel name={langNamed ? t.langName : ""} shown={nameShown === "lang"} />
+        {langGlyph}
       </button>
 
       <ProfilePanel open={profileOpen} onClose={() => onProfileOpenChange(false)} />

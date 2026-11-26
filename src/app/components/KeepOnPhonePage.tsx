@@ -4,6 +4,7 @@ import { CHROME_GRAY } from "../lib/colors";
 import { BODY_SIZE, SERIF } from "../lib/theme";
 import { TextButton } from "./TextButton";
 import { PaperFinish } from "./PaperFinish";
+import { useT } from "../lib/i18n";
 
 /** The paper the card is shown on (the gallery's ground, a shade lighter). */
 const PAPER = "#f0efee";
@@ -25,16 +26,17 @@ type Kept =
 export function KeepOnPhonePage() {
   const { id = "" } = useParams();
   const [kept, setKept] = useState<Kept>({ status: "loading" });
+  const ui = useT();
   const urlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    document.title = "nijimu — your memory";
+    document.title = ui.keepPageTitle;
     const meta = document.createElement("meta");
     meta.name = "robots";
     meta.content = "noindex, nofollow";
     document.head.appendChild(meta);
     return () => meta.remove();
-  }, []);
+  }, [ui.keepPageTitle]);
 
   useEffect(() => {
     const abort = new AbortController();
@@ -83,20 +85,20 @@ export function KeepOnPhonePage() {
       boxSizing: "border-box" }}>
       <PaperFinish fine zIndex={0} />
       {kept.status === "ready" && <>
-        <img src={kept.url} alt="your memory's card" draggable={false}
+        <img src={kept.url} alt={ui.keepCardAlt} draggable={false}
           style={{ position: "relative", zIndex: 1, display: "block", maxWidth: "100%", maxHeight: "68dvh", width: "auto", height: "auto",
             boxShadow: "0 1px 2px rgba(60, 60, 70, 0.05), 0 18px 48px rgba(60, 60, 70, 0.08)",
             // a long press keeps the image (iOS: "Save to Photos")
             WebkitTouchCallout: "default" } as CSSProperties} />
         {/* the image and one way to keep it, nothing else (2026-11-25: no wordmark, no notes) */}
-        <TextButton label="save to your photos" onClick={() => { void save(); }} style={{ position: "relative", zIndex: 1 }} />
+        <TextButton label={ui.saveToPhotos} onClick={() => { void save(); }} style={{ position: "relative", zIndex: 1 }} />
       </>}
-      {kept.status === "loading" && <p style={{ ...NOTE, position: "relative", zIndex: 1, opacity: .7 }}>opening your memory…</p>}
+      {kept.status === "loading" && <p style={{ ...NOTE, position: "relative", zIndex: 1, opacity: .7 }}>{ui.openingMemory}</p>}
       {kept.status === "gone" && <p style={{ ...NOTE, position: "relative", zIndex: 1, maxWidth: "28em" }}>
-        This image is no longer kept here. Memories saved to a phone are held for a day, then deleted.
+        {ui.keepGone}
       </p>}
       {kept.status === "failed" && <p style={{ ...NOTE, position: "relative", zIndex: 1, maxWidth: "28em" }}>
-        The image couldn’t be opened. Check your connection and scan the code again.
+        {ui.keepFailed}
       </p>}
     </main>
   );

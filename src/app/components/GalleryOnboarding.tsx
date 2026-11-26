@@ -3,8 +3,7 @@ import { CHROME_GRAY } from "../lib/colors";
 import { GALLERY_TEXT_TRACKING, GALLERY_TRANSCRIPT, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { INK_ENTRY, flowProgress } from "../lib/landingTransition";
 import { PAGE_HEADER_MARK } from "./PageHeader";
-
-const INTRO_LINES = ["some memories are never spoken.", "this is a place to let them settle."] as const;
+import { useT } from "../lib/i18n";
 
 /** Each opening line holds the seat under the wordmark for half of the time
     between the wordmark landing there and the vessels finishing their growth. */
@@ -45,10 +44,11 @@ function lineOpacity(t: number, from: number, to: number) {
 export function GalleryIntroLines({ elapsed }: { elapsed: number }) {
   const first = lineOpacity(elapsed, INTRO_FROM, INTRO_SPLIT);
   const second = lineOpacity(elapsed, INTRO_SPLIT, INTRO_TO);
+  const ui = useT();
   return (
     <div aria-live="polite" style={{ position: "absolute", inset: 0, zIndex: 45, pointerEvents: "none" }}>
-      <p style={{ ...LINE_STYLE, opacity: first, filter: `blur(${(1 - first) * 4}px)` }}>{INTRO_LINES[0]}</p>
-      <p style={{ ...LINE_STYLE, opacity: second, filter: `blur(${(1 - second) * 4}px)` }}>{INTRO_LINES[1]}</p>
+      <p style={{ ...LINE_STYLE, opacity: first, filter: `blur(${(1 - first) * 4}px)` }}>{ui.introLine1}</p>
+      <p style={{ ...LINE_STYLE, opacity: second, filter: `blur(${(1 - second) * 4}px)` }}>{ui.introLine2}</p>
     </div>
   );
 }
@@ -162,16 +162,16 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
   leaving: boolean;
 }) {
   const touch = useTouchFirst();
+  const ui = useT();
   const kind = atNewest
     ? touch ? "swipe-end" : "scroll-end"
     : touch ? "swipe-mid" : "scroll-mid";
   const { ref, on } = useQuietTip(visible && settled && !leaving);
   const [shown, setShown] = useState(kind);
   if (on && kind !== shown) setShown(kind);
-  const copy = shown === "swipe-end" ? "swipe once more to begin yours"
-    : shown === "scroll-end" ? "scroll once more to begin yours"
-    : shown === "swipe-mid" ? <>keep swiping or tap <PlusMark /><br />to leave a memory of your own</>
-    : <>keep scrolling or click <PlusMark /><br />to leave a memory of your own</>;
+  const copy = shown === "swipe-end" ? ui.tipSwipeEnd
+    : shown === "scroll-end" ? ui.tipScrollEnd
+    : <>{shown === "swipe-mid" ? ui.tipSwipeMid : ui.tipScrollMid} <PlusMark /><br />{ui.tipMidTail}</>;
   return <QuietTip on={on} tipRef={ref}>{copy}</QuietTip>;
 }
 
@@ -179,6 +179,7 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
     for good once the words have been clicked into (`ready` false). */
 export function TranscriptEditHint({ ready, top }: { ready: boolean; top?: string }) {
   const touch = useTouchFirst();
+  const ui = useT();
   const { ref, on } = useQuietTip(ready);
-  return <QuietTip on={on} tipRef={ref} top={top}>{touch ? "tap on the transcript to edit" : "click on the transcript to edit"}</QuietTip>;
+  return <QuietTip on={on} tipRef={ref} top={top}>{touch ? ui.editTipTap : ui.editTipClick}</QuietTip>;
 }

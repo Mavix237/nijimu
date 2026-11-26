@@ -4,6 +4,7 @@ import { CHROME_GRAY } from "../lib/colors";
 import { SANS } from "../lib/theme";
 import { onLanding, useFinishMode } from "../lib/paperFinish";
 import { PaperFinish } from "./PaperFinish";
+import { useT } from "../lib/i18n";
 
 /*
  * On a phone the header's corner icons fold into one: a burger in the
@@ -28,7 +29,7 @@ export function useHeaderMenu(): HeaderMenuValue {
 }
 
 /** Rows top to bottom: what the page offers first, the sound last. */
-export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, music: 3 } as const;
+export const HEADER_MENU_ORDER = { create: 0, view: 1, field: 2, lang: 3, music: 4 } as const;
 
 const ROW_ICON = 16;
 
@@ -120,6 +121,7 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
   /** Faded out with the rest of the chrome while the scene leaves for the landing. */
   hidden?: boolean;
 }) {
+  const t = useT();
   const burgerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const finishOff = useFinishMode() === "off";
@@ -151,7 +153,7 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
       <button
         ref={burgerRef}
         type="button"
-        aria-label={open ? "close menu" : "menu"}
+        aria-label={open ? t.closeMenu : t.menu}
         aria-expanded={open}
         aria-controls="header-menu"
         aria-haspopup="menu"
@@ -203,7 +205,7 @@ export function HeaderMenu({ open, onOpenChange, listRef, hidden = false }: {
         }}
         id="header-menu"
         role="menu"
-        aria-label="menu"
+        aria-label={t.menu}
         inert={!open}
         style={{
           position: "fixed",

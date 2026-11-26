@@ -79,6 +79,7 @@ import { readPhoto } from "../lib/photoSize";
 import { MAX_DPR, RT_SAMPLES } from "../lib/deviceTier";
 import { SINK_WASH_GLSL, UNDERWATER, UNDERWATER_GLSL } from "../lib/atmosphere";
 import { SHADER_CHECKS } from "../lib/deviceTier";
+import { useLang, useT, type Lang, type Messages } from "../lib/i18n";
 
 /*
  * Lab: the whole shot from the photo to the named memory, in one canvas.
@@ -2119,35 +2120,37 @@ const hintRowScale = (kind: "shape" | "rhythm" | "distance" | "color") =>
 
 /* The gesture ranges, as ShapeGrowPage reads them. */
 /* On desktop each of the two lines starts on its own line; a phone runs them together as one paragraph. */
-const STEP_COPY: Record<Step, { mark: string; name: string; lines: [string, string] }> = {
+/* Words from the dictionary (lib/i18n.ts); the mark is the same in both languages. */
+const STEP_COPY: Record<Step, { mark: string; name: (ui: Messages) => string; lines: (ui: Messages) => [string, string] }> = {
   shape: {
     mark: "形",
-    name: "shape",
-    lines: ["Based on your words, this memory has been given a vessel.", "Bring your hands together, then slowly open them to reveal its shape."],
+    name: ui => ui.stepShape,
+    lines: ui => [ui.shapeLine1, ui.shapeLine2],
   },
   rhythm: {
     mark: "律",
-    name: "rhythm",
-    lines: ["Does this memory stir complex feelings, like a jagged ballad, or soothe you like a steady hum?", "Pinch your thumb and index finger to compose its form and texture."],
+    name: ui => ui.stepRhythm,
+    lines: ui => [ui.rhythmLine1, ui.rhythmLine2],
   },
   distance: {
     mark: "間",
-    name: "distance",
-    lines: ["Is this a vivid memory that still feels close to you, or is it deeply buried in the back of your mind?", "Push your open palm toward the camera to place it in your archive."],
+    name: ui => ui.stepDistance,
+    lines: ui => [ui.distanceLine1, ui.distanceLine2],
   },
   color: {
     mark: "染",
-    name: "color",
-    lines: ["What color does this memory feel like?", "Point at the screen to move through the spectrum."],
+    name: ui => ui.stepColor,
+    lines: ui => [ui.colorLine1, ui.colorLine2],
   },
 };
 
-/** The shape step's first line when the memory is the built-in sample, not the visitor's own words. */
-const SHAPE_SAMPLE_LINE = "Based on the transcript, this memory has been given a vessel.";
-const stepLines = (step: Step, transcript: string): [string, string] =>
+/** The shape step's first line is another when the memory is the built-in sample, not the visitor's own words. */
+const stepLines = (step: Step, transcript: string, ui: Messages): [string, string] =>
   step === "shape" && transcript.trim() === SAMPLE_TRANSCRIPT
-    ? [SHAPE_SAMPLE_LINE, STEP_COPY.shape.lines[1]]
-    : STEP_COPY[step].lines;
+    ? [ui.shapeLine1Sample, ui.shapeLine2]
+    : STEP_COPY[step].lines(ui);
+/** A phone runs the two lines together: a space between English sentences, none between Chinese ones. */
+const stepParagraph = (lines: [string, string], lang: Lang) => lines.join(lang === "zh" ? "" : " ");
 
 /** Two palms together → sphere; apart → the settled form. */
 function distanceToMorph(distance: number): number {
@@ -2457,6 +2460,8 @@ function Timeline({ transport, tune, onChange, onFocus }: {
 interface PondEntryProps { arrival?: number; active?: boolean; onReady?: () => void; onLeave?: () => void }
 
 function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean; onAgain: () => void; tune: RefObject<WrapTune>; transport: RefObject<Transport>; pondEntry?: PondEntryProps }) {
+  const ui = useT();
+  const lang = useLang();
   const compact = useCompact();
   const pondSky = usePondTune().sky;
   // a phone's slider spans the side margins its wrapper keeps
@@ -2482,14 +2487,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const transcriptionId = !lab && typeof location.state?.transcriptionId === "string" ? location.state.transcriptionId : "";
   const [fallbackId] = useState(() => crypto.randomUUID());
   const memoryId = typeof location.state?.memoryId === "string" ? location.state.memoryId : fallbackId;
-  const [heard, setHeard] = useState<{ id: string; transcript: string; error: string | null } | null>(null);
+  /** Lost on the way, or not heard (the service's own reason, in English). */
+  const [heard, setHeard] = useState<{ id: string; transcript: string; error: string | null; lost?: boolean } | null>(null);
   const hearId = useRef(transcriptionId);
   hearId.current = transcriptionId;
   useEffect(() => {
     if (prelude || !transcriptionId || carriedTranscript || heard?.id === transcriptionId) return;
     const pending = getTranscription(transcriptionId);
     if (!pending) {
-      setHeard({ id: transcriptionId, transcript: "", error: "The transcription was lost — try recording again." });
+      setHeard({ id: transcriptionId, transcript: "", error: null, lost: true });
       return;
     }
     let alive = true;
@@ -2503,7 +2509,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           state: { ...location.state, memoryId, transcript: words },
         });
       } else {
-        setHeard({ id: transcriptionId, transcript: "", error: result.error ?? "The transcription didn't come through — try recording again." });
+        setHeard({ id: transcriptionId, transcript: "", error: result.error });
       }
     };
     if (pending.result) take(pending.result);
@@ -2512,7 +2518,9 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   }, [prelude, transcriptionId, carriedTranscript, heard?.id, memoryId, navigate, location.pathname, location.search, location.state]);
   const heardNow = heard?.id === transcriptionId ? heard : null;
   const awaitingTranscript = !!transcriptionId && !carriedTranscript && !heardNow;
-  const hearError = heardNow && !heardNow.transcript ? heardNow.error : null;
+  const hearError = heardNow && !heardNow.transcript
+    ? heardNow.lost ? ui.transcriptLost : lang === "en" && heardNow.error ? heardNow.error : ui.transcriptFailed
+    : null;
   const transcript = carriedTranscript || heardNow?.transcript || (transcriptionId ? "" : SAMPLE_TRANSCRIPT);
   const highlightedWords = Array.isArray(location.state?.highlightedWords) ? location.state.highlightedWords.filter((word: unknown) => typeof word === "string") : [];
   const highlightedIndices = Array.isArray(location.state?.highlightedWordIndices) ? location.state.highlightedWordIndices.filter((index: unknown) => typeof index === "number") : [];
@@ -3194,10 +3202,10 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         })} />
       )}
       {(phase === "choose" || phase === "floating") && (lab || hearError || (assessmentPending && phase !== "choose") || assessmentError) && <div style={{ ...META, position: "absolute", top: lab ? 52 : 72, left: 28, zIndex: 20, maxWidth: 280 }}>
-        {lab && <Link to="/lab/meaning" state={{ transcript }} style={{ color: "inherit" }}>{transcript ? "read this memory again" : "begin with a recorded memory"}</Link>}
-        {hearError && <p role="alert">{`couldn't hear that — ${hearError.toLowerCase()}`}</p>}
-        {hearError && <TextButton label="record again" onClick={() => navigate(RECORD_START_PATH, { state: location.state?.shape ? { shape: location.state.shape, ...(location.state.focus ? { focus: location.state.focus } : {}) } : location.state })} />}
-        {assessmentPending && phase !== "choose" && <p role="status">finding the form of this memory… you can descend when it is ready.</p>}
+        {lab && <Link to="/lab/meaning" state={{ transcript }} style={{ color: "inherit" }}>{transcript ? ui.readThisAgain : ui.beginWithRecorded}</Link>}
+        {hearError && <p role="alert">{ui.couldntHear(hearError)}</p>}
+        {hearError && <TextButton label={ui.recordAgain} onClick={() => navigate(RECORD_START_PATH, { state: location.state?.shape ? { shape: location.state.shape, ...(location.state.focus ? { focus: location.state.focus } : {}) } : location.state })} />}
+        {assessmentPending && phase !== "choose" && <p role="status">{ui.findingFormWait}</p>}
         {assessmentError && <p>{assessmentError}</p>}
       </div>}
 
@@ -3216,7 +3224,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {/* over it, the camera's switch: the window itself while on, a pale pane with a struck-through camera while off */}
       {!compact && CAMERA_ENABLED && step && !cameraDialogOpen && (
         <button type="button" onClick={toggleCamera} className="nijimu-press"
-          aria-label={cameraLive ? "turn the camera off" : "turn the camera on"} aria-pressed={cameraLive}
+          aria-label={cameraLive ? ui.cameraOff : ui.cameraOn} aria-pressed={cameraLive}
           style={{ position: "absolute", right: DESKTOP_CAMERA.right, bottom: DESKTOP_CAMERA.bottom,
             width: DESKTOP_CAMERA.width, height: DESKTOP_CAMERA.height, borderRadius: 10, zIndex: 22,
             border: "none", padding: 0, cursor: "pointer",
@@ -3231,21 +3239,21 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
 
       {/* the photo has landed: the pond's heading, in its place and manner */}
       <PondHeading visible={!routeStep && phase === "floating"} reducedMotion={reducedMotion}>
-        Begin building a vessel for your memory.
+        {ui.vesselHeading}
       </PondHeading>
 
       <div data-descent-photo-controls hidden={!surfaceControlsVisible}
         style={{ display: surfaceControlsVisible ? "contents" : "none" }}>
       <FlowPageGrid heading={
         <p style={{ margin: 0, fontFamily: SERIF, fontSize: INSTRUCTION_SIZE, lineHeight: 1.45, color: UNDER_INK }}>
-          click the film frame to upload a photo for this memory
+          {ui.photoHeading}
         </p>
       } headingStyle={{ opacity: choosing ? 1 : 0, transition: "opacity 700ms ease",
         animation: choosing && !from ? "descentFadeIn 1400ms ease 900ms backwards" : "none" }} />
 
       {/* The strip itself is the picker: a button kept over it by the stage.
           A thin plus sits in the empty window so the frame reads as addable. */}
-      <button ref={pickRef} type="button" aria-label="choose a photo for the film"
+      <button ref={pickRef} type="button" aria-label={ui.choosePhotoForFilm}
         onClick={() => inputRef.current?.click()} disabled={!choosing}
         style={{ position: "absolute", top: 0, left: 0, border: "none", padding: 0, background: "transparent",
           display: "flex", alignItems: "center", justifyContent: "center",
@@ -3257,7 +3265,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           </svg>
         )}
       </button>
-      <input ref={inputRef} type="file" accept="image/*" aria-label="choose a photo" style={{ display: "none" }}
+      <input ref={inputRef} type="file" accept="image/*" aria-label={ui.choosePhoto} style={{ display: "none" }}
         onChange={(e) => {
           const file = e.target.files?.[0];
           e.target.value = "";
@@ -3265,13 +3273,13 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         }} />
 
       {/* The bundled stills, small and to one side, so the lab can run without a photo of one's own. */}
-      <div role="listbox" aria-label="photo library" style={{ position: "absolute", left: 0, right: 0, bottom: 34,
+      <div role="listbox" aria-label={ui.photoLibrary} style={{ position: "absolute", left: 0, right: 0, bottom: 34,
         display: "flex", justifyContent: "center", alignItems: "center", gap: 14,
         opacity: choosing ? 1 : 0, transition: "opacity 500ms ease 150ms", animation: choosing && !from ? "descentFadeIn 1400ms ease 1500ms backwards" : "none",
         pointerEvents: choosing ? "auto" : "none", zIndex: 10 }}>
-        <span style={{ fontFamily: SANS, fontSize: NOTE_SIZE, color: CHROME_GRAY, opacity: 0.6, marginRight: 6 }}>or one of these</span>
+        <span style={{ fontFamily: SANS, fontSize: NOTE_SIZE, color: CHROME_GRAY, opacity: 0.6, marginRight: 6 }}>{ui.orOneOfThese}</span>
         {PHOTOS.map((url) => (
-          <button key={url} type="button" role="option" aria-selected={lifted === url} aria-label="select photo"
+          <button key={url} type="button" role="option" aria-selected={lifted === url} aria-label={ui.selectPhoto}
             onClick={() => void pick(url)}
             style={{ width: 48, height: 48, flex: "0 0 48px", padding: 0, overflow: "hidden",
               borderRadius: "50%", border: "1px solid rgba(123, 123, 135, 0.25)", background: "#e7e7e8",
@@ -3282,7 +3290,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       </div>
 
       {phase === "floating" && (
-        <button type="button" aria-label="press and hold to pass through" aria-describedby="descent-hint"
+        <button type="button" aria-label={ui.passThrough} aria-describedby="descent-hint"
           disabled={assessmentPending}
           onPointerDown={(e) => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setHolding(true); }}
           onPointerUp={() => setHolding(false)}
@@ -3303,15 +3311,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         fontSize: INSTRUCTION_SIZE, lineHeight: 1.45,
         opacity: phase === "floating" ? 1 : 0, filter: phase === "floating" ? "none" : "blur(6px)",
         transition: "opacity 720ms ease, filter 720ms ease" }}>
-        {assessmentPending ? "finding your memory’s form…" : "press and hold to pass through"}
+        {assessmentPending ? ui.findingForm : ui.passThrough}
       </p>
       </div>
 
       {/* ── the four steps, under the water ── */}
       {step && step !== "color" && (
-        <div role="slider" tabIndex={0} aria-label={`${step} — drag across`} aria-valuemin={0} aria-valuemax={100}
+        <div role="slider" tabIndex={0} aria-label={ui.dragAcross(STEP_COPY[step].name(ui))} aria-valuemin={0} aria-valuemax={100}
           aria-valuenow={Math.round((step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : distanceShare) * 100)}
-          aria-valuetext={step === "distance" ? `${Math.round(distanceShare * 100)}% distant` : undefined}
+          aria-valuetext={step === "distance" ? ui.distanceValue(Math.round(distanceShare * 100)) : undefined}
           onKeyDown={(e) => {
             const value = step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : distanceShare;
             const next = e.key === "Home" ? 0 : e.key === "End" ? 1
@@ -3344,11 +3352,11 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
               bottom: `calc(${UNDERWATER_PHONE.rowBottom} + ${UNDERWATER_PHONE.rowHeight + UNDERWATER_PHONE.sliderGap}px)` }
             : { top: "78%", left: "50%", transform: "translate(-50%, -50%)" }) }}>
           {step === "shape" && <SpectrumSlider value={morph} onChange={setSignal} from="circle" to="flower"
-            label="memory shape" valueText={`${Math.round(morph * 100)}% shaped`} style={sliderFill} />}
+            label={ui.shapeSlider} valueText={ui.shapeValue(Math.round(morph * 100))} style={sliderFill} />}
           {step === "rhythm" && <SpectrumSlider value={m2 / RHYTHM_MAX} onChange={setSignal} from="petals" to="bloom"
-            label="shape rhythm" valueText={`${Math.round(m2 * 4) / 4} folds`} keyStep={1 / RHYTHM_MAX} style={sliderFill} />}
+            label={ui.rhythmSlider} valueText={ui.rhythmValue(Math.round(m2 * 4) / 4)} keyStep={1 / RHYTHM_MAX} style={sliderFill} />}
           {step === "distance" && <SpectrumSlider value={distanceShare} onChange={setSignal} from="circle" to="haze"
-            label="memory distance" valueText={`${Math.round(distanceShare * 100)}% distant`} style={sliderFill} />}
+            label={ui.distanceSlider} valueText={ui.distanceValue(Math.round(distanceShare * 100))} style={sliderFill} />}
         </div>
       )}
       {step === "color" && (
@@ -3374,12 +3382,12 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           heading={<div key={step} className="nijimu-text-in" style={{ animation: textEnter() }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
-              {STEP_COPY[step].name}
+              {STEP_COPY[step].name(ui)}
             </p>
             {/* desktop: the two lines reach past the heading's column to the side margins, so each sentence keeps a line of its own;
                 a phone runs the two lines together as one paragraph, balanced, no word left alone. Inked in as the gallery's
                 transcript is, a beat after the rest of the step has come (StepInstruction). */}
-            <StepInstruction lines={compact ? [stepLines(step, transcript).join(" ")] : stepLines(step, transcript)}
+            <StepInstruction lines={compact ? [stepParagraph(stepLines(step, transcript, ui), lang)] : stepLines(step, transcript, ui)}
               chromeEnd={chromeIn ? chromeInAt.current + CHROME_IN_MS : null}
               style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`,
               ...(compact ? { maxWidth: UNDERWATER_PHONE.instructionWidth } : { marginInline: "calc(50% - 50vw + var(--chrome-inset))" }),
@@ -3388,7 +3396,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           actions={compact ? undefined : <span ref={continueWrapRef} style={{ display: "inline-flex" }}>
             {/* held on the first step until the camera has moved the form: it looks unavailable, and a press
                 draws the way to the tip beside the camera (showContinueGuide) instead of going on */}
-            <PillButton label="continue" trailing="›" variant={step === "color" ? "dark" : "light"}
+            <PillButton label={ui.continue} trailing="›" variant={step === "color" ? "dark" : "light"}
               looksDisabled={continueHeld} onClick={continueHeld ? showContinueGuide : continueStep} />
           </span>} />
         {/* the way from a held continue to the follow tip: drawn in, then trimmed away from its start */}
@@ -3430,7 +3438,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           color: UNDER_INK,
           opacity: followTipDue ? 1 : 0, filter: followTipDue ? "none" : "blur(4px)",
           transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease` }}>
-          <span>follow the animation with your hands</span>
+          <span>{ui.followTip}</span>
           <svg width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flex: "none", marginBottom: "-0.12em" }}>
             <path d="M4 12h15M14 7l5 5-5 5" />
@@ -3452,7 +3460,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           </div>
           {/* the capsule keeps its place with the camera off: a pale fill and a struck-through camera */}
           <button type="button" onClick={CAMERA_ENABLED && !cameraDialogOpen ? toggleCamera : undefined}
-            aria-label={cameraLive ? "turn the camera off" : "turn the camera on"} aria-pressed={cameraLive}
+            aria-label={cameraLive ? ui.cameraOff : ui.cameraOn} aria-pressed={cameraLive}
             className="nijimu-press"
             style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight, borderRadius: UNDERWATER_PHONE.rowHeight / 2,
             overflow: "hidden", background: "rgba(123, 123, 135, 0.1)", border: "none", padding: 0, width: "100%",
@@ -3465,7 +3473,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
                 opacity: tracking.isTracking ? 1 : 0, transition: "opacity 700ms ease" }} />
           </button>
           {/* held as the desktop pill is: an unavailable look (a press does nothing here: a phone has no tip to point to) */}
-          <button type="button" aria-label="continue" aria-disabled={continueHeld || undefined}
+          <button type="button" aria-label={ui.continue} aria-disabled={continueHeld || undefined}
             onClick={continueHeld ? undefined : continueStep} className="nijimu-press"
             style={{ width: UNDERWATER_PHONE.rowHeight, height: UNDERWATER_PHONE.rowHeight, borderRadius: "50%",
               border: "none", padding: 0, background: continueHeld ? "rgba(123, 123, 135, 0.08)" : "rgba(123, 123, 135, 0.16)",
@@ -3487,23 +3495,23 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         pointerEvents: phase === "naming" ? "auto" : "none" }}>
         <div style={{ marginBottom: CAPTION_TITLE_GAP }}>
           {phase === "saved" ? <p style={CAPTION_TITLE_STYLE}>{memoryName}</p> : (
-            <input ref={nameRef} value={memoryName} onChange={(e) => setMemoryName(e.target.value)} placeholder="name this memory..."
-              aria-label="memory name" className="descent-field" style={{ ...CAPTION_TITLE_STYLE, width: "16em" }} />
+            <input ref={nameRef} value={memoryName} onChange={(e) => setMemoryName(e.target.value)} placeholder={ui.namePlaceholder}
+              aria-label={ui.nameAria} className="descent-field" style={{ ...CAPTION_TITLE_STYLE, width: "16em" }} />
           )}
         </div>
         {phase === "saved" ? <p style={CAPTION_YEAR_STYLE}>{year}</p> : (
-          <input value={year} onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder="year"
-            inputMode="numeric" maxLength={4} aria-label="year" className="descent-field"
+          <input value={year} onChange={(e) => setYear(e.target.value.replace(/\D/g, "").slice(0, 4))} placeholder={ui.yearPlaceholder}
+            inputMode="numeric" maxLength={4} aria-label={ui.yearAria} className="descent-field"
             onKeyDown={(e) => { if (e.key === "Enter") save(); }}
             style={{ ...CAPTION_YEAR_STYLE, width: "6em" }} />
         )}
         {saveError && <p role="alert" style={{ ...CAPTION_YEAR_STYLE, maxWidth: 300 }}>{saveError}</p>}
-        <TextButton label="save memory" onClick={save} disabled={!canSave}
+        <TextButton label={ui.saveMemory} onClick={save} disabled={!canSave}
           style={{ position: "absolute", top: "100%", marginTop: 48, opacity: canSave ? 1 : 0, transition: "opacity 400ms ease" }} />
       </div>
       {/* once kept, the gallery opens on it — the way the naming rim hands over */}
       {phase === "saved" && (
-        <TextButton label="see it among the others"
+        <TextButton label={ui.seeAmongOthers}
           onClick={() => navigate(CAROUSEL_PATH, { replace: true, state: { galleryOpen: true, galleryFocusId: memoryId, galleryCarried: true } })}
           style={{ position: "absolute", left: "50%", bottom: 40, transform: "translateX(-50%)", zIndex: 20,
             animation: "descentFadeIn 900ms ease 600ms backwards" }} />

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { BODY_SIZE, NOTE_SIZE, SANS, SERIF, SERIF_CJK } from "../lib/theme";
 import { GlassPane } from "./GlassPane";
 import { PaneOption, PaneOptions } from "./PaneOption";
+import { useT } from "../lib/i18n";
 
 /** The space GlassPane keeps between its rows when centred (its `gap`). */
 const PANE_GAP = "clamp(20px, 4vh, 30px)";
@@ -28,10 +29,11 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
   if (memory && memory !== shown) setShown(memory);
   const words = shown?.transcript.trim() ?? "";
   const titled = !!(shown?.event || shown?.year);
+  const ui = useT();
 
   return (
     <GlassPane open={!!memory} onClose={onClose} onExited={() => setShown(null)}
-      labelledBy={titled ? "memory-reading-title" : undefined} label="the words of this memory" tall>
+      labelledBy={titled ? "memory-reading-title" : undefined} label={ui.readingLabel} tall>
       {shown && (
         <>
           {titled && <header style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, width: "100%" }}>
@@ -87,12 +89,12 @@ export function MemoryReadingPane({ memory, onClose }: { memory: ReadableMemory 
               whiteSpace: "pre-line",
             }}
           >
-            {words || "no words were kept with this memory."}
+            {words || ui.readingEmpty}
           </p>
 
           {/* at the foot of the pane when the words are short, after them when they run on */}
           <PaneOptions atFoot>
-            <PaneOption label="close" onClick={onClose} />
+            <PaneOption label={ui.close} onClick={onClose} />
           </PaneOptions>
         </>
       )}

@@ -21,6 +21,7 @@ import { useNamingTune, withNamingLights, type NamingLightTune } from "../lib/na
 import { cardFrameWanted, giveCardFrame, onCardFrame } from "../lib/cardFrame";
 import { CARD_FRAME_PX, cardVesselOf } from "./SaveMemoryDialog";
 import { CARD_SCALE } from "../lib/memoryImage";
+import { useT } from "../lib/i18n";
 
 const NamingDials = import.meta.env.DEV ? lazy(() => import("./NamingDials")) : null;
 const FilmDials = import.meta.env.DEV ? lazy(() => import("./FilmDials")) : null;
@@ -102,6 +103,7 @@ export function PondNamingOverlay({
   /** The host's back control calls this: the eye sinks back down to the feeling step. */
   backRef?: RefObject<(() => void) | null>;
 }) {
+  const ui = useT();
   const navigate = useNavigate();
   const tune = useNamingTune();
   const { artifactLift, artifactScale, textLift, fieldGap, passageGap } = tune.layout;
@@ -393,11 +395,11 @@ export function PondNamingOverlay({
         <div
         ref={artifactRef}
         {...(openWords ? {
-          role: "button", tabIndex: 0, "aria-label": "the memory being made — read its words",
+          role: "button", tabIndex: 0, "aria-label": ui.beingMadeRead,
           onKeyDown: (e: KeyboardEvent) => {
             if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openWords(); }
           },
-        } : { role: "img", "aria-label": "the memory being made" })}
+        } : { role: "img", "aria-label": ui.beingMade })}
         style={{
           position: "relative",
           height: "100%",

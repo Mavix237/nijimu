@@ -9,7 +9,8 @@
    the gallery's titles, punctuation) come from the ~8 KB "-ui" subset, and
    the 2.2 MB full font loads only if other CJK text appears — a transcript
    spoken in Chinese or Japanese. After adding CJK characters to the source,
-   rebuild the subset (README, "Fonts"). */
+   rebuild the subset (README, "Fonts"). The Chinese interface has a third,
+   "-zh" subset of its own (below). */
 @font-face {
   font-family: "GenRyuMin2 TW";
   src: url("../assets/fonts/GenRyuMin2TW-Regular.woff2") format("woff2");
@@ -17,6 +18,50 @@
   font-style: normal;
   font-display: swap;
   unicode-range: U+3000-FF60;
+}
+/* The Chinese interface (lib/i18n.ts, chosen in the header): only the
+   characters its dictionary uses (Simplified), ~90 KB, fetched only when that copy is
+   shown. Built from the same family's OTF as a WOFF (fontTools without
+   brotli); rebuild with scripts/zh-ui-chars.mjs after changing the zh table
+   (README, "Fonts"). Declared between the two: the -ui subset is still
+   checked first, the full font last. */
+@font-face {
+  font-family: "GenRyuMin2 TW";
+  src: url("../assets/fonts/GenRyuMin2TW-Regular-zh.woff") format("woff");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  unicode-range: U+3002, U+4E00, U+4E0A-4E0B, U+4E0D-4E0E, U+4E22, U+4E24, U+4E2A, U+4E2D, U+4E3A, U+4E48, U+4E4B,
+    U+4E50, U+4E5F, U+4E86, U+4E8B-4E8C, U+4E8E, U+4E92, U+4E9B, U+4EAB, U+4EB2, U+4EBA, U+4EC0,
+    U+4ECD-4ECE, U+4ED6, U+4EE5, U+4EEC, U+4EF6, U+4EFD, U+4EFF, U+4F1A, U+4F46, U+4F4D-4F4F, U+4F53,
+    U+4F55, U+4F5B-4F5C, U+4F60, U+4F7F, U+4F8B, U+4F9D, U+4FBF, U+4FDD, U+5019, U+505A, U+505C, U+50A8,
+    U+50CF, U+5141, U+514B, U+5165, U+516C, U+5173, U+5176-5177, U+518C-518D, U+51C6, U+51E0-51E1,
+    U+51FA-51FB, U+5206-5207, U+521B, U+5220, U+5230, U+523B, U+5269, U+526F, U+529F-52A0, U+52A8,
+    U+52BF, U+5316, U+5355, U+5361, U+5373, U+53BB, U+53C2, U+53CC, U+53D1, U+53D6, U+53D8, U+53E3,
+    U+53EA, U+53EF, U+53F3, U+5408, U+540C-540E, U+5411, U+541F, U+542C, U+542F, U+547D, U+54EA, U+5668,
+    U+56DB, U+56DE, U+56FE, U+5728, U+5730, U+57CB, U+57DF, U+5851, U+58F0, U+5907, U+590D, U+5929,
+    U+5931, U+5934, U+597D, U+5982, U+59CB, U+5B57-5B58, U+5B83, U+5B89, U+5B8C, U+5BA2, U+5BB9, U+5BFB,
+    U+5C06, U+5C0F, U+5C1A, U+5C31, U+5C4F, U+5C5E, U+5C81, U+5DE5-5DE6, U+5DEE, U+5DF2, U+5E0C, U+5E26,
+    U+5E55, U+5E73-5E74, U+5E76, U+5E93, U+5E95, U+5ECA, U+5EFA, U+5F00, U+5F20, U+5F53, U+5F55, U+5F62,
+    U+5F69, U+5F8B, U+5F97, U+5FAE, U+5FC3, U+5FC5-5FC6, U+6001, U+60AC, U+60F3, U+611F, U+6162,
+    U+6210-6211, U+6216, U+624B, U+6253, U+626B, U+627E, U+628A, U+62C7, U+62D6, U+62E2, U+62E9, U+6307,
+    U+6309, U+634F, U+6362, U+638C, U+63A2, U+63A5, U+63A8, U+63CF, U+6405, U+6444, U+6536, U+6539,
+    U+653E, U+6545, U+6548, U+6570, U+6574, U+6587, U+6599, U+65B0, U+65B9, U+65C1, U+65E0, U+65E9,
+    U+65F6, U+660E, U+661F, U+662F, U+663E, U+6708-6709, U+671B, U+671F, U+672A, U+672C, U+673A,
+    U+6742-6743, U+6765, U+677E, U+679C, U+67E5, U+6807, U+683C, U+6846, U+68C0, U+695A, U+6B21, U+6B4C,
+    U+6B62-6B64, U+6BB5, U+6C34, U+6C60, U+6C89, U+6CA1, U+6CBF, U+6CD5, U+6D41, U+6D4F, U+6D88, U+6DC0,
+    U+6DF1, U+6E05, U+6EAF, U+6ED1, U+6EDA, U+6EE1, U+6F5C, U+70B9, U+7136, U+7167, U+7247-7248, U+7269,
+    U+72B6, U+73B0, U+7406, U+751F, U+7528, U+753B, U+7559, U+7684, U+76BF, U+76F4, U+76F8, U+770B,
+    U+7740, U+7801, U+793A, U+7981, U+79BB, U+79D2, U+79FB, U+7A0B, U+7A0D, U+7A33, U+7A7A, U+7A7F,
+    U+7AD9, U+7D22, U+7EB9, U+7EDC, U+7EE7, U+7EEA, U+7EED, U+7EF4, U+7F16, U+7F51, U+7F6E, U+7FA4,
+    U+8005, U+800C, U+8046, U+80F6, U+80FD, U+81EA, U+8272, U+82E5, U+82F1, U+83DC, U+85CF, U+884C,
+    U+88AB, U+8936, U+8981, U+89C6, U+89C8-89C9, U+89E6, U+8BA9, U+8BB0, U+8BB2, U+8BB8, U+8BBE-8BBF,
+    U+8BD5, U+8BDD, U+8BED, U+8BF4, U+8BF7, U+8BFB, U+8C01, U+8C23, U+8C31, U+8D44, U+8D70, U+8D77,
+    U+8DDD, U+8DDF, U+8DF3, U+8E2A, U+8EAB, U+8F66, U+8F6C, U+8F7B, U+8F7D, U+8F83, U+8F91, U+8F93,
+    U+8FC7, U+8FD1, U+8FD4, U+8FD8-8FD9, U+8FDB-8FDC, U+8FDE, U+8FF0, U+8FFD, U+9001, U+9009, U+901A,
+    U+9020, U+90A3, U+90E8, U+91CC-91CD, U+94FE, U+952E, U+955C, U+957F, U+95ED-95EE, U+95F4, U+9605,
+    U+9650, U+9664, U+96D5, U+9759, U+9762, U+97F3, U+97F5, U+9875, U+989C, U+98CE, U+98DF, U+9996,
+    U+9A8C, U+9C9C, U+9EA6, U+9F20, U+FF0C, U+FF1A-FF1B, U+FF1F;
 }
 @font-face {
   font-family: "GenRyuMin2 TW";

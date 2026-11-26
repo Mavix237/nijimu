@@ -25,6 +25,7 @@ import {
 import { SERIF } from "../lib/theme";
 import { PillButton } from "./PillButton";
 import { SaveMemoryDialog } from "./SaveMemoryDialog";
+import { useT } from "../lib/i18n";
 import {
   CAPTION_TITLE_GAP,
   CAPTION_TITLE_STYLE,
@@ -255,6 +256,7 @@ export function useNamingRim(
   reducedMotion: boolean,
   handlers: NamingRimHandlers = {},
 ): NamingRim | null {
+  const ui = useT();
   const navigate = useNavigate();
   const handlersRef = useRef(handlers);
   handlersRef.current = handlers;
@@ -267,12 +269,14 @@ export function useNamingRim(
     if (suggestedTitle) setMemoryName((name) => name || suggestedTitle);
     if (suggestedYear) setYear((y) => y || suggestedYear);
   }, [draftId, suggestedTitle, suggestedYear]);
-  const [yearHint, setYearHint] = useState<string | null>(null);
+  const [yearHintKey, setYearHint] = useState<"yearDigits" | "yearFuture" | null>(null);
+  const yearHint = yearHintKey && ui[yearHintKey];
   const [focusedField, setFocusedField] = useState<"name" | "year" | null>(null);
   const [fieldsVisible, setFieldsVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveDialog, setSaveDialog] = useState(false);
-  const [storageError, setStorageError] = useState<string | null>(null);
+  const [storageFailed, setStorageFailed] = useState(false);
+  const storageError = storageFailed ? ui.storageFailed : null;
   const nameInputRef = useRef<HTMLInputElement>(null);
   const yearInputRef = useRef<HTMLInputElement>(null);
   const [archive] = useState(() => (session ? buildArchive() : []));
@@ -391,10 +395,10 @@ export function useNamingRim(
       createdAt: new Date().toISOString(),
     });
     if (!stored) {
-      setStorageError("Your browser couldn’t save this memory for the session. Storage may be full or disabled. You can still download an image to keep it.");
+      setStorageFailed(true);
       return;
     }
-    setStorageError(null);
+    setStorageFailed(false);
     setSaveDialog(false);
     setSaving(true);
 
@@ -419,11 +423,11 @@ export function useNamingRim(
 
   const handleYearChange = (next: string) => {
     if (/\D/.test(next)) {
-      setYearHint("use a four-digit year");
+      setYearHint("yearDigits");
     }
     const digits = next.replace(/\D/g, "").slice(0, 4);
     if (digits.length === 4 && Number(digits) > currentYear) {
-      setYearHint("that year hasn't happened yet");
+      setYearHint("yearFuture");
       return;
     }
     if (!/\D/.test(next)) setYearHint(null);
@@ -438,7 +442,7 @@ export function useNamingRim(
   const actions = fieldsVisible && memoryName.trim() !== "" && yearSettled && (
         <><PillButton
           // the transcript's continue: the dialogs' glass, a trailing ›, its words multiplied into the glass
-          label="save memory"
+          label={ui.saveMemory}
           trailing="›"
           surface="glass"
           textBlend="multiply"
@@ -477,8 +481,8 @@ export function useNamingRim(
         <CaptionField
           value={memoryName}
           onChange={setMemoryName}
-          placeholder="name this memory..."
-          ariaLabel="memory name"
+          placeholder={ui.namePlaceholder}
+          ariaLabel={ui.nameAria}
           autoFocus={focusOnArrival}
           inputRef={nameInputRef}
           focused={fieldsVisible && focusedField === "name"}
@@ -502,8 +506,8 @@ export function useNamingRim(
       <CaptionField
         value={year}
         onChange={handleYearChange}
-        placeholder="year"
-        ariaLabel="year"
+        placeholder={ui.yearPlaceholder}
+        ariaLabel={ui.yearAria}
         maxLength={4}
         inputMode="numeric"
         className="nijimu-year-field"

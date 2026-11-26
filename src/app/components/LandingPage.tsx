@@ -1,5 +1,6 @@
 import { FLOW_PAGE } from "../lib/theme";
 import { resumeColorState } from "../lib/namingDraft";
+import { useT } from "../lib/i18n";
 import { Suspense, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { BlobScene } from "./BlobScene";
@@ -77,6 +78,7 @@ const POND_LOAD_FADE_MS = 1400;
 const POND_LOAD_WAIT_MS = 2500;
 
 export function LandingPage() {
+  const ui = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const { pathname } = location;
@@ -293,7 +295,7 @@ export function LandingPage() {
   return (
     <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: GROUND }}>
       {showGallery && (
-        <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
+        <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label={ui.memoryGallery} inert={pondElapsed !== null || !inGallery}
           // settled in the pond, the gallery behind it is not seen (nor through the pond's load fade)
           style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : inPond ? 0 : 1 }}>
           <GalleryBehindInk
@@ -345,7 +347,7 @@ export function LandingPage() {
       )}
       {!inGallery && !inNaming && !inPond && (
         <div style={{ position: "absolute", inset: 0, zIndex: 40 }}>
-          <BlobScene classicChrome ctaLabel="Enter" showPlus={false}
+          <BlobScene classicChrome ctaLabel={ui.enter} showPlus={false}
             onNewMemory={enter} landingArrival={arrival}
             landingFocusSlot={entryFocus?.slot ?? 0} />
         </div>

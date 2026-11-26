@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPaletteWater, type PaletteWater } from "../lib/paletteWater";
 import { Oklch, oklchToHex, sampleField } from "../lib/oklch";
 import { useCompact } from "../hooks/useCompact";
+import { useT } from "../lib/i18n";
 
 const COLS = 196;
 const ROWS = 72;
@@ -173,6 +174,7 @@ type Props = {
  * color is computed from UV, not from the blurred pixels.
  */
 export function OklchColorField({ u, v, held = false, onPick, sample = sampleField, opacity = 0.6 }: Props) {
+  const ui = useT();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const waterRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -317,7 +319,7 @@ export function OklchColorField({ u, v, held = false, onPick, sample = sampleFie
     <div
       ref={wrapRef}
       role="slider"
-      aria-label="color field"
+      aria-label={ui.colorField}
       aria-valuetext="oklch wash"
       onPointerDown={(e) => {
         dragging.current = true;

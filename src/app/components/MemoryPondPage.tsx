@@ -12,6 +12,7 @@ import { PondRecordingOverlay } from "./PondRecordingOverlay";
 import { PondNamingOverlay } from "./PondNamingOverlay";
 import type { NamingSession } from "./NamingRim";
 import { useNamingTune } from "../lib/namingTune";
+import { useT } from "../lib/i18n";
 
 /** The pond's dev panel (DialKit), development only. */
 const PondDials = import.meta.env.DEV ? lazy(() => import("./PondDials")) : null;
@@ -30,6 +31,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
   /** Filled by the naming step with its way back down to the feeling step. */
   namingBackRef?: RefObject<(() => void) | null>;
 }) {
+  const ui = useT();
   const navigate = useNavigate();
   const location = useLocation();
   const tune = usePondTune();
@@ -177,7 +179,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
     // and the view tilts up, so the pond sits lower on the screen than the vessel does
     lookLift: naming ? namingLayout.lookLift : 0 };
 
-  return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
+  return <section aria-label={naming ? ui.pondNaming : recording ? ui.pondRecording : ui.pondPlain} data-pond-page data-pond-ready={enabled}
     style={{ position: "absolute", inset: 0, overflow: "hidden", background: pondBackdropCss(tune.sky), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
     {renderScene ? renderScene(pondProps) : <PerspectivePond {...pondProps} />}
     {/* naming (no renderScene) used to lay a white light over the top of the
@@ -186,12 +188,12 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
 
     {POND_THOUGHTS.map((thought, i) => <div key={thought.text} ref={el => { promptRefs.current[i] = el; }} data-pond-prompt={i} aria-hidden="true"
       style={{ position: "absolute", top: 0, left: 0, width: "min(148px, 42vw)", textAlign: "center", pointerEvents: "none", opacity: 0, transform: "translate(-50%, -100%) translate(50vw, 58vh)", transformOrigin: "center bottom", color: CHROME_GRAY, fontFamily: SANS, fontWeight: 400, fontSynthesis: "none", fontSize: POND_PROMPT_SIZE, lineHeight: 1.45, textShadow: "0 1px 16px #f3f4ece6", paddingBottom: 52 }}>
-      {thought.text}
+      {ui.pondThoughts[i] ?? thought.text}
     </div>)}
     <PondHeading visible={enabled} reducedMotion={reducedMotion}>
-      To create a new memory artifact, record yourself talking about a particular memory.
+      {ui.pondHeading}
     </PondHeading>
-    {!overlaid && <button ref={buttonRef} aria-label="Hold to begin" aria-describedby="pond-hold-help" disabled={!enabled}
+    {!overlaid && <button ref={buttonRef} aria-label={ui.holdToBegin} aria-describedby="pond-hold-help" disabled={!enabled}
       onPointerDown={e => {
         if (e.button !== 0) return;
         e.currentTarget.setPointerCapture(e.pointerId);
@@ -222,15 +224,15 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
       onKeyDown={e => { if ((e.key === " " || e.key === "Enter") && !e.repeat) { e.preventDefault(); hold.start(); } }}
       onKeyUp={e => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); hold.cancel(); } }}
       style={{ position: "absolute", inset: 0, width: "100%", height: "100%", border: "none", outline: "none", background: "transparent", touchAction: "none", cursor: "default", zIndex: 10, WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>
-      <span className="sr-only">Hold for two seconds, or hold Space or Enter. Release to cancel.</span>
+      <span className="sr-only">{ui.holdHelp}</span>
     </button>}
     <div ref={hintRef} id="pond-hold-help" aria-hidden
       style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 20, opacity: 0, filter: "blur(6px)", whiteSpace: "nowrap", fontFamily: SANS, fontSize: INSTRUCTION_SIZE, letterSpacing: "0.01em", color: CHROME_GRAY, transformOrigin: "left top" }}>
-      Hold to begin
+      {ui.holdToBegin}
     </div>
     {recording && <PondRecordingOverlay reducedMotion={reducedMotion} onVoicePulse={pulseWater} />}
     {naming && onNamingSaved && <PondNamingOverlay key={naming.draftId} session={naming} reducedMotion={reducedMotion} sinkRef={sinkRef} onSaved={onNamingSaved} backRef={namingBackRef} />}
-    <span className="sr-only" role="status">{recording ? "ready to record" : ""}</span>
+    <span className="sr-only" role="status">{recording ? ui.readyToRecord : ""}</span>
     {PondDials && active && !naming && <Suspense fallback={null}><PondDials /></Suspense>}
   </section>;
 }

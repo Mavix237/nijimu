@@ -360,7 +360,7 @@ export function PuddleScene({
   onGalleryExit?: () => void;
   /** Scroll past the first or last memory. The dedicated carousel uses this
       to open the perspective pond; unset, overscroll uses onGalleryExit. */
-  onOverscrollExit?: () => void;
+  onOverscrollExit?: (fromId?: string) => void;
   /** Switch from the G-key carousel to the card grid. */
   onToggleGrid?: () => void;
   toggleIcon?: "view" | "plus";

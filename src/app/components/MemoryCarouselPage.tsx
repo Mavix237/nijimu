@@ -27,7 +27,8 @@ export function MemoryCarouselPage({
   /** The naming step handed its rim over — open at depth, don't dive. */
   galleryCarried?: boolean;
   naming?: NamingSession | null;
-  onPondEnter?: () => void;
+  /** `fromId`: the memory the gallery was left from, for the way back. */
+  onPondEnter?: (fromId?: string) => void;
   pondDeparture?: number;
   hideHeader?: boolean;
 }) {

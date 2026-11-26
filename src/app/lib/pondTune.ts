@@ -61,7 +61,9 @@ export interface PondTune {
     slowPace: number; press: number;
   };
   rings: { glow: number; shade: number; glints: number; bloom: number };
-  sphere: { radius: number; sit: number; pressed: number; glow: number; halo: number; reach: number; pressedGlow: number };
+  /** soft: how blurred the dot is — up to 1, how far in from its silhouette it thins (0 a cut edge, 1 to
+      its middle); past 1 (to 3) the fall-off flattens further. */
+  sphere: { radius: number; sit: number; pressed: number; glow: number; halo: number; haloWidth: number; reach: number; pressedGlow: number; soft: number };
   /** `show` off: no drop falls (the prompt's ripple still comes on its own clock).
    *  The drop, its ink and the water's stain are off by default (2026-11-01). */
   drops: { show: boolean; angle: number; radius: number; opacity: number; length: number; shutter: number; sinkS: number };
@@ -102,7 +104,10 @@ export const POND_TUNE_DEFAULT: PondTune = {
     slowPace: .65, press: .7,
   },
   rings: { glow: .76, shade: .16, glints: .6, bloom: .5 },
-  sphere: { radius: .045, sit: .62, pressed: -.4, glow: .3, halo: .12, reach: 6, pressedGlow: .55 },
+  // a brighter, closer glow round the dot (2026-11-25, later; briefly glow .42, halo .3 at 5 radii, reach 10 —
+  // before that glow .3, halo .12 at 3.6 radii, reach 6)
+  // blurred (soft 1.6, briefly .7) and a touch larger so it does not read smaller for it (radius .05, was .045)
+  sphere: { radius: .05, sit: .62, pressed: -.4, glow: .7, halo: .45, haloWidth: 3.2, reach: 7, pressedGlow: .55, soft: 1.6 },
   drops: { show: false, angle: -18, radius: .085, opacity: .94, length: 2.6, shutter: .025, sinkS: 1.1 },
   ink: {
     show: false, scale: 2.5, hang: 1.6, lifeS: 20, fadeFrom: 1.3, fadeTo: 2.15,

@@ -429,8 +429,8 @@ const HOLD_PIN = .06;
 // round it; a press pushes it down into the water and holds it there until
 // it is let go.
 // uSphere: radius, how far it sits into the water at rest and pressed (in
-// radii), the glow's reach (in radii). uGlow: the glow's core and halo, and
-// what is left of it pressed. All from pondTune().sphere.
+// radii), the glow's reach (in radii). uGlow: the glow's core and halo, what
+// is left of it pressed, and the halo's width (radii). All from pondTune().sphere.
 const sphereVertex = /* glsl */ `
   ${POND_WAVES_GLSL}
   uniform vec4 uSphere;
@@ -454,13 +454,20 @@ const sphereVertex = /* glsl */ `
 `;
 const sphereFragment = /* glsl */ `
   uniform float uOpacity;
+  uniform float uSphereSoft;
   varying vec3 vNormal;
   varying vec3 vWorld;
   void main() {
     vec3 n = normalize(vNormal);
     vec3 v = normalize(cameraPosition - vWorld);
-    // its own light: evenly white, no shading on it
-    gl_FragColor = vec4(vec3(1.0), uOpacity);
+    // its own light: evenly white, no shading on it. Out of focus: it thins toward its silhouette as
+    // the surface turns from the eye — up to 1, uSphereSoft is how much of the way in that reaches;
+    // past 1 the fall-off itself flattens (raised to uSphereSoft), so the dot reads as a blurred light
+    float facing = clamp(dot(n, v), 0.0, 1.0);
+    float soft = uSphereSoft <= 0.0 ? 1.0
+      : uSphereSoft <= 1.0 ? smoothstep(0.0, uSphereSoft, facing)
+      : pow(smoothstep(0.0, 1.0, facing), uSphereSoft);
+    gl_FragColor = vec4(vec3(1.0), uOpacity * soft);
   }
 `;
 // The sphere's glow: a soft light round it, faced to the eye, dimming as a
@@ -493,7 +500,8 @@ const glowFragment = /* glsl */ `
   void main() {
     float r = length(vLocal);
     float radius = uSphere.x, reach = uSphere.x * uSphere.w;
-    float glow = exp(-pow(r / (radius * 1.7), 2.0)) * uGlow.x + exp(-pow(r / (radius * 3.6), 2.0)) * uGlow.y;
+    float haloWidth = uGlow.w > 0.0 ? uGlow.w : 3.6;
+    float glow = exp(-pow(r / (radius * 1.7), 2.0)) * uGlow.x + exp(-pow(r / (radius * haloWidth), 2.0)) * uGlow.y;
     float edge = 1.0 - smoothstep(reach * .7, reach, r);
     float breath = .94 + .06 * sin(uTime * 1.4);
     gl_FragColor = vec4(vec3(1.0), glow * edge * breath * mix(1.0, uGlow.z, uTap) * uOpacity);
@@ -527,11 +535,15 @@ export interface PondProps {
   /** 0 stands at the pond; 1 is under the surface. The naming rise writes this. */
   sinkRef?: RefObject<number>;
   sinkTargetRef?: RefObject<PondSinkTarget | null>;
+  /** The eye this much higher than the pond's own (naming: its vessel floats higher, and the eye rises with it). */
+  cameraLift?: number;
+  /** The eye's look point this much higher (naming: the view tilts up, so the pond sits lower on the screen). */
+  lookLift?: number;
 }
 
 /** The invitation's halo and ripples can inhabit the descent's existing scene.
  * With shared waves, the host owns the clock, camera, and water surface. */
-export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hintRevealRef, promptRefs, cueRef, onReady, lifeReady = true, promptRipples = true, sinkRef, sinkTargetRef, sharedWaves }: PondProps & { sharedWaves?: PondWaveUniforms }) {
+export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, hintRef, hintRevealRef, promptRefs, cueRef, onReady, lifeReady = true, promptRipples = true, sinkRef, sinkTargetRef, cameraLift = 0, lookLift = 0, sharedWaves }: PondProps & { sharedWaves?: PondWaveUniforms }) {
   const { camera, size, gl } = useThree();
   const time = useRef(0);
   const ready = useRef(false);
@@ -576,6 +588,7 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     uHold: uniforms.uHold,
     uCenter: { value: new THREE.Vector3() },
     uTap: { value: 0 },
+    uSphereSoft: { value: 0 },
     uSphere: { value: new THREE.Vector4() },
     uGlow: { value: new THREE.Vector4() },
     ...POND_TUNE_UNIFORMS,
@@ -603,7 +616,7 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     // This is a perspective camera, never a CSS-flattened overhead texture.
     const cameraArrival = reducedMotion ? 1 : arrival;
     if (!sharedWaves) {
-      pondCameraPose(cameraArrival, sinkRef?.current ?? 0, sinkTargetRef?.current ?? null, camera.position, look);
+      pondCameraPose(cameraArrival, sinkRef?.current ?? 0, sinkTargetRef?.current ?? null, camera.position, look, cameraLift, lookLift);
       camera.lookAt(look);
       camera.updateMatrixWorld();
     }
@@ -644,7 +657,8 @@ export function PondWater({ arrival, reducedMotion, touch, cursorRef, holdRef, h
     });
     const sphere = pondTune().sphere;
     ringUniforms.uSphere.value.set(sphere.radius, sphere.sit, sphere.pressed, sphere.reach);
-    ringUniforms.uGlow.value.set(sphere.glow, sphere.halo, sphere.pressedGlow, 0);
+    ringUniforms.uGlow.value.set(sphere.glow, sphere.halo, sphere.pressedGlow, sphere.haloWidth ?? 3.6);
+    ringUniforms.uSphereSoft.value = sphere.soft ?? 0;
     const cursor = cursorRef?.current;
     const hint = hintRef?.current;
     const progress = holdRef?.current ?? 0;

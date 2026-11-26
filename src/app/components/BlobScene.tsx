@@ -38,7 +38,9 @@ const BLOB_LABEL_OPACITY = 0.9;
 /** Filled dots invert harder than the antialiased label, so they use less ink. */
 const BLOB_DOT_OPACITY = 0.55;
 /** Landing description. */
-const HEADER_DESC_SIZE = 12;
+const HEADER_DESC_SIZE = 13;
+/** The landing centre's air (description → Enter, and around the block). */
+const HEADER_GAP = 30;
 /** Blob year + title — restored clamp, a step above the header description. */
 const BLOB_CAPTION_SIZE =
   "clamp(13px, calc(13px + 2 * ((100vw - 390px) / (1024 - 390))), 15px)";
@@ -2107,7 +2109,7 @@ export function BlobScene({
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
-              gap: 28,
+              gap: HEADER_GAP,
             }}
           >
             <div
@@ -2116,7 +2118,7 @@ export function BlobScene({
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "stretch",
-                gap: 28,
+                gap: HEADER_GAP,
                 width: "fit-content",
                 opacity: introWaiting ? 0 : undefined,
                 animation: landingIntro && !introWaiting
@@ -2157,7 +2159,7 @@ export function BlobScene({
                   display: "inline-flex",
                   alignItems: "center",
                   justifyContent: "center",
-                  gap: 16,
+                  gap: 17,
                   margin: 0,
                   padding: 0,
                   border: "none",
@@ -2167,7 +2169,8 @@ export function BlobScene({
                   cursor: "pointer",
                   pointerEvents: landingArrival || introWaiting || (returnReveal && !headerShown) ? "none" : "auto",
                   color: headerOnDark ? HEADER_LIGHT.mark : HEADER_INK.mark,
-                  fontSize: "clamp(12px, calc(12px + (16 - 12) * ((100vw - 390px) / (1024 - 390))), 16px)",
+                  // the Enter row reads at the floating captions' size
+                  fontSize: BLOB_CAPTION_SIZE,
                   lineHeight: 1.5,
                   transition: HEADER_COLOR_FADE,
                 }}
@@ -2175,7 +2178,6 @@ export function BlobScene({
                 <span
                   style={{
                     fontFamily: SANS,
-                    fontSize: HEADER_DESC_SIZE + 1,
                     letterSpacing: "0.01em",
                     whiteSpace: "nowrap",
                     marginRight: -4,
@@ -2317,6 +2319,7 @@ export function BlobScene({
         }
         .landing-enter-arrow {
           position: relative;
+          font-size: 1.1em;
           display: block;
           width: 0.42em;
           height: 0.7em;

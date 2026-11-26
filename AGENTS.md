@@ -4,6 +4,412 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Save to phone, by QR code (2026-11-25)
+
+On a desktop (wider than 600px with a mouse: `useCompact()` false and
+`(hover: hover) and (pointer: fine)`), "Keep a copy" offers **Save to your
+phone** between the download and continue. Pressing it (the consent) sends the
+card — the same image the download keeps, re-encoded as a JPEG under 3.6 MB by
+`keepForPhone` in `lib/shareToPhone.ts` — to `POST /api/share`; the words'
+column then shows a QR code of `/keep/<id>` (`qrcode`, lazily imported, drawn
+in the header's `CHROME_GRAY`), "Done" (continues) and "Back" (Escape too). Phones never see the
+option; they download.
+- **Server** (`server/share.mjs`, plain JS): a 22-character random id
+  (16 bytes, base64url); the image is stored in Vercel Blob as
+  `keep/<id>.jpg`, **private** by default (`SHARE_BLOB_ACCESS=public` only for
+  a public store), and only ever served back through `GET /api/share?id=…`,
+  which refuses anything older than `SHARE_TTL_MS` (24 h) with 410. Each upload
+  also sweeps what has expired; `api/share-sweep.mjs` is a daily Vercel cron
+  (`vercel.json` "crons", 04:00 UTC) that needs `CRON_SECRET`. So an image is
+  unreadable after a day and deleted within about two at most.
+- **Phone page** `/keep/:id` (`components/KeepOnPhonePage.tsx`, outside
+  `RootLayout`: no music, gallery or header controls; noindex,
+  no-referrer): only the card and one text button, "save to your photos"
+  (no wordmark or notes). It fetches the image once on arrival, then the button
+  opens the share sheet with the file (Safari drops a gesture across a fetch,
+  hence the prefetch), else downloads; a long press on the image works too.
+  An expired or unknown id says so.
+- **Setup on Vercel:** create a Blob store set to Private and connect it to the
+  project (sets `BLOB_READ_WRITE_TOKEN`), and add `CRON_SECRET`. Without the
+  token production answers 503 and the dialog says it isn't set up.
+- **Dev:** `server/vite-plugin-share.mjs` mounts the same endpoint; with no
+  token it keeps cards in memory until the dev server restarts. When the page
+  is open on localhost the answer names this machine's LAN address
+  (`origin`), so a phone on the same Wi-Fi can open the code (the dev server
+  already listens on all interfaces).
+
+## The landing's centre a little larger, its washes closer together (2026-11-25)
+
+The landing's description is 13px (`HEADER_DESC_SIZE`, was 12) and the centre
+block's gaps 30px (`HEADER_GAP`, were 28). The Enter row (label, 滲む nijimu)
+takes the floating captions' size, `BLOB_CAPTION_SIZE` (13–15px; the label
+was 13, the mark 12–16), its arrow 1.1em of it. The opening's first washes
+are followed sooner by the rest: `LANDING_MOTION.reveal.second` 500 (was 650),
+`restFrom` 950 (was 1500), and the copy waits longer after them:
+`copyAt` .58 of the opening (~4.9 s, was .45, ~3.8 s). The "landing opening"
+panel's key is now `nijimu-landing-opening-3`, so a panel kept before no longer
+covers these.
+The gallery transcript under one memory, "Started designing seriously" (id 6),
+is a little wider, 64ch (`CAPTION_TRANSCRIPT_WIDTH` in `PuddleDiveGallery`; the
+rest keep 60ch), so it sets as four lines without "where it started." alone.
+The gallery's create (plus) leaves for the pond from the memory in hand: it no
+longer scrolls the rim to the newest first (`openPondFromPlus` passes that
+memory's id through `onOverscrollExit(fromId)` → `onPondEnter` → `openPond`), and
+back from the pond (`closePond`) opens the gallery on it (`pondFromId`; the
+newest when the pond was reached by scrolling past the end, or loaded directly).
+The transcript screen's "continue" pill wears the dialogs' glass: `PillButton`
+`surface="glass"` — `GLASS_FILL`/`GLASS_BLUR` (exported from `GlassPane`, the
+phone's denser pair under 600px) and the paper finish's fine grain
+(`PaperFinish fine`), in place of the flat grey tint.
+Naming's "save memory" wears the same pill (it was a text button): `PillButton`
+with `trailing="›"`, `surface="glass"`, `textBlend="multiply"` (`NamingRim`).
+Its words and "record again"'s are drawn in multiply (`PillButton` `textBlend`,
+TextButton's `mixBlendMode`), so they darken into the water and the glass. For
+that to reach the pond nothing between them and the stage may isolate: the
+actions' row is centred by its margins (no transform) and the transcript
+screen's root has no z-index (was 30; it follows the water in the stage). While
+the screen fades out (opacity < 1) the words briefly draw in normal blending.
+
+## "Keep a copy" shows the card (2026-11-25)
+
+After "save memory", `SaveMemoryDialog` no longer opens a glass pane over the
+vessel. It makes the memory's card as it opens — the same offscreen vessel
+render and `memoryImage` composition the download uses (wordmark, vessel,
+title, year, transcript; 2400 × 3500) — and shows it in the vessel's place,
+its paper (`CARD_PAPER`) first and the picture fading in over it, with the
+dialog's title, copy and options to its right, centred on it and set from the
+left (on a phone, under it). Naming fades its whole grid (fields, vessel,
+save) away while it is open (`NamingRim`'s new `saveDialogOpen`, read by
+`PondNamingOverlay`). "Download as image" keeps the card already made (a press
+before it is ready waits for it, "Preparing your memory…"); a card that never
+comes says so after 30 s and a press tries again. Escape or a press off the card
+and words goes back to naming. Card and words come in with a short rise
+(`ENTER_MS` 700, the words 120 ms after). The card casts no shadow; the pond
+shows round it.
+The card's frame is borrowed, not rendered in a context of its own
+(`lib/cardFrame.ts`): one more WebGL context was enough, on a full visit (the
+hidden gallery's seats, the pond, the naming vessel), for the browser to drop
+the oldest — seen dropping the pond's — so the water vanished behind the card
+and only the page's ground and grain showed. Now the dialog asks
+(`askCardFrame`); naming's own vessel, hidden behind the card, dresses as the
+card's vessel for a moment (`cardVesselOf`: its glass, stain and room, no lake
+reflection; `dpr` set for the card's 1920 px frame, `CARD_FRAME_PX` 960 at
+`CARD_SCALE`), lets its canvas settle five frames and hands over its next
+complete frame (`capture` → `giveCardFrame`), then goes back to naming's dress.
+Only if none answers in `BORROW_WAIT_MS` (6 s) does the dialog render the
+vessel offscreen itself, as before.
+
+## Naming without its transcript; continue guides to the tip (2026-11-25)
+
+Naming no longer shows the memory's words under the fields
+(`PondNamingOverlay`'s `inlinePassage` is empty; a phone still opens them in
+`MemoryReadingPane` by pressing the vessel). The vessel takes the room they
+left, at its own seat, and the name and year come down toward it: their lift
+`NAMING_TUNE_DEFAULT.layout.textLift` is 3vh (was 6, when it lifted the words
+too), ~16 px above the glass on a 768 px window. The vessel also floats a
+little higher over the lake and the eye rises with it: its mirror plane sits
+`reflection.gap` .14 under the foot (was .03), naming's pond camera stands
+`layout.cameraLift` .5 higher than the pond's own (`pondCameraPose`'s new
+`lift`, passed by `MemoryPondPage` as `cameraLift` on naming only), and the
+vessel is seen from `layout.viewPitch` 7° (the gallery's 4°). Later the same
+day: the vessel and its fields came 3vh down together (`artifactLift` 3,
+`textLift` 0; were 6 and 3) and the pond further — the view tilts up
+(`layout.lookLift` 2.1, the look point raised, ~2.9°, ~6vh; `pondCameraPose`'s
+new `lookLift`, also eased out through the Back sink) — and the reflection is
+less fractured: the lake pass reads the water's slope averaged over
+`reflection.smooth` (.3 world units, five taps of `pondSurfaceNormal` —
+`uWaterSmooth`), so it breaks with the pond's broad swells rather than its
+finest wrinkles, at `ripple` 1.2 (was 1.66) and `soft` 1.8 (was 1.2). Later
+it was made a little more prominent: `reflection.strength` .6 (was .46), and
+the name and year went up 2vh (`layout.textLift` 2, was 0). The
+naming panel's key is now `nijimu-naming-6` (renamed five times that day),
+so a set kept before does not hold the old values.
+On the shape step, while continue is held for the camera (`continueHeld`), it
+no longer hides: the desktop pill wears the disabled look but takes a press
+(`PillButton`'s new `looksDisabled`: the dimmed text and fill, `aria-disabled`,
+no `disabled` attribute), and a press draws the way to the follow tip — a
+line down from the pill's foot and right to just short of the tip's first word,
+a soft 10 px corner (`showContinueGuide`, measured at the press), 0.75 px at
+.55 opacity (`GUIDE_WIDTH`, `GUIDE_OPACITY`; was 1.2 px, full) — drawn in over
+`GUIDE_DRAW_MS` (900), held, and from `GUIDE_ERASE_FROM_MS` (2 s after it
+began) trimmed away from its start toward its end (`pathLength` 1, a
+dash offset 1 → 0 → −1; gone at `GUIDE_TOTAL_MS` 2.9 s). The phone's round
+continue wears the same unavailable look; a press there does nothing.
+
+## A larger camera window, and a tip to follow its animation (2026-11-25)
+
+On desktop the handling steps' corner camera is 25% larger (`DESKTOP_CAMERA`
+160 × 120, was 128 × 96) and so is the gesture animation over it
+(`GESTURE_HINT_SCALE` 1.25, scaled from its foot so it keeps 12 px above the
+camera). The continue row is as tall as the camera and stands on
+the same foot (`DESKTOP_ACTION_ROW` = the camera's height; briefly 96), so the
+pill's top is level with the camera's top. On the shape step a
+one-line tip sits beside the camera, its foot on the camera's bottom edge and
+`FOLLOW_TIP_GAP` (28 px; briefly 16) from it, an arrow pointing to it:
+"follow the animation with your hands →", at the steps' instruction size
+(14 px) in the body ink (`UNDER_INK`, `CHROME_GRAY`; briefly the gallery tip's
+12 px and lighter ink), fading in and out with a blur. It shows while that
+animation does — the camera reading (`followTipShown`), coming `FOLLOW_TIP_DELAY_MS` (2 s) after it is due
+(`followTipDue`) and going at once. On the shape step, with the camera on and
+reading, continue is held (an unavailable look, see "continue guides to the
+tip" above; briefly it was faded out) until the camera has moved the form — a gesture applied there
+(`cameraMoved`, set in `takeGesture`; `continueHeld`); it comes at once with
+the camera off, or on but not reading, so a lost camera never traps the step.
+Neither the animation nor the tip gives way to the
+hands any more: they stay while the camera reads, with or without a valid
+gesture (`GestureHint` `active` false; briefly they held 20 s after a step's
+first valid gesture and then stepped aside while hands drove, and before that
+they hid at once). The animation over the camera is a touch darker
+(brightness .82 at .92 opacity; was .8, unfiltered), and its lines are
+thicker: the drawings are fine raster lines, so `GestureHint` thickens them in
+their own ink — an SVG filter on its stage that blurs the drawing slightly
+(`GESTURE_THICKEN` .17, in the hint's own px; briefly .3, then .22), firms that blur's alpha
+(`GESTURE_FIRM` × 1.2; briefly 1.7, then 1.35) and lays it under the drawing; every hint, phone and
+desktop, the GIF too. It was a `feMorphology` dilate (.45, .25, .12, .18 px),
+but Chrome rounds a dilate's radius to whole device pixels: under about half a
+device pixel it did nothing, and above it jumped to a full pixel. While the camera reads a
+valid gesture (`gestureLive`: enough hands for the step) a white ring widens
+round the camera window, 0 → `CAMERA_RING_PX` (3) over 720 ms
+(`cameraRing`, a box-shadow on its switch layer; the phone's capsule wears it
+too), and narrows away when the hands go. Phones' foot row is otherwise
+unchanged.
+
+## The steps' instructions ink in (2026-11-25)
+
+The instruction lines under each sculpting step's heading (shape, rhythm,
+distance, colour) now come in as the gallery's transcript does — line by line,
+a haloed wash in the paper's grain filled solid by a wet front from the left
+(`LINE_INK_MS` 1.6 s, `LINE_STEP_MS` .26 s apart) — in the design system's
+lighter ink, a step under the heading (`INSTRUCTION_INK` = `PANE_INK.secondary`
+#9b9ba3; briefly the heading's `CHROME_GRAY`). They start `INSTRUCTION_AFTER_MS` (1 s) after the rest of the
+step has come: arriving under the water, after the chrome's 900 ms fade; on a
+new step, after the heading's own entrance (`TEXT_ENTER_MS`)
+(`StepInstruction` in `DescentPrototype`, keyed by the step). On a phone the
+paragraph inks as one block. The entrance now lives in
+`components/InkLines.tsx` (`inkKeyframes(name, ink)`, `inkLineStyle`,
+`InkLines`); the gallery's `CaptionTranscript` takes its keyframes and timings
+from there, unchanged.
+
+## Under the water: the camera dialog springs in, then the chrome (2026-11-25)
+
+Arriving on the first handling step (the dive's end, or a load straight onto
+a step) only the vessel and the header are there: the camera dialog comes
+first, `DIALOG_AFTER_ARRIVAL_MS` (1.6 s) on (`dialogDue` gates
+`cameraDialogOpen`), and once it has been answered and closed (a camera
+running, or "maybe later": `cameraAnswered`) `DescentRun` fades the step's
+chrome in together — heading and copy, continue, slider, the gesture, the
+camera window and its switch, its tip, the colour field — over `CHROME_IN_MS`
+(900; `chromeIn`, `chromeFade`; leaving keeps its 700 ms). With nothing to ask
+(a choice already made, `?camera=off`) the chrome comes at once; once in it
+stays. (Briefly the order was the other way: chrome first, the dialog 150,
+then 700 ms after it.) The
+slider is not part of that fade: it waits for the camera's answer
+(`sliderShown`) — hidden while the dialog is to come or open and while a
+camera starts, shown once the dialog is closed without one ("maybe later",
+`?camera=off`) or whenever a camera that was on is not reading hands. The
+dialog reads "Enable camera access" / "We use camera to access hand-tracking,
+which allows you to sculpt this memory by hand. Please allow camera access
+from your browser." (was "Sculpt this memory by hand"). Its "Allow camera &
+Begin" wears the camera alone (the check that had been paired with it is
+gone), and the solid camera's lens ring is cut through its body (an SVG mask in
+`CameraIcon`) so the pane shows in it, the pane's own colour (it had been
+drawn white). Moving between
+steps does neither again. The dialog comes in with `GlassPane`'s new
+`entrance="spring"` (`HandTrackingDialog` passes it through): the card scales
+up from `SPRING_FROM` (.9) to its own size over `SPRING_MS` (640) on
+`SPRING_EASE` (cubic-bezier(.34, 1.56, .64, 1)), overshooting to ~1.01 and
+settling at 1, while it fades in over 360 ms. Every other pane keeps the
+"rise" (a little up into place); reduced motion keeps only the fade.
+
+## The pond fades in on a load; much-faceted pictures hang round (2026-11-25)
+
+A load or reload straight into any pond page (pond, recording, transcript,
+descent, naming) no longer shows the stage at once: `LandingPage`'s
+`loadFade` holds the stage clear over the ground until its scene has drawn
+(`pondReady`, `PondWater`'s first frame) or `POND_LOAD_WAIT_MS` (2.5 s), then
+fades it in over `POND_LOAD_FADE_MS` (1.4 s) — sky, water and everything over
+them. Arriving from the gallery is unchanged. The gallery mounted behind a
+settled pond is now hidden (it could show through the fade).
+The transcript's edit tip now sits above the words, `TIP_GAP_VH` (14.6vh)
+clear of the first line — ~112 px on a 768 px window, 146 on a 1000 px one
+(`calc(FLOW_PAGE.headingTop + 121px − 14.6vh)`: the words start 137 px under
+the heading row; briefly 25 px, 50, then 75; `QuietTip`'s new `top`), not
+under the wordmark.
+A vessel with many facets no longer folds its picture across them:
+`floatWall` counts the creases the wall has round its axis (`wallCreases`:
+corners, convex or concave, weighted by sharpness, over the body's middle
+heights), and past `CREASES_FROM` (5) the picture follows the facets in
+inverse proportion to them: its share (1 − float, .5) × 5 / creases (briefly
+a ramp to fully round at 10). The library: Y-07 ~1.8 and the diamond E-14 ~3.6
+follow 50% (as before), the lantern Y-17 ~5.6 45%, star/flower/gear ~7 about
+37%, Y-01/E-08/Y-04/E-02 9–10 about 25%.
+
+## A brighter, closer glow on the pond's dot; the transcript's edit tip (2026-11-25)
+
+The pond's cursor sphere glows brighter and closer: `POND_TUNE_DEFAULT.sphere`
+glow .7, halo .45, the halo's width a knob, `haloWidth` 3.2 radii (`uGlow.w`
+in `glowFragment`; a fixed 3.6 before the knob), reach 7 — ~1.5× as bright
+within two radii, gone by ~6 radii. The dot itself is out of focus:
+`sphereFragment` thins it toward its silhouette as the surface turns from the
+eye (`uSphereSoft` = `sphere.soft`: up to 1 the share of the way in from the
+rim it reaches, past 1 — to 3 — the fall-off raised to it, flatter still; 1.6,
+briefly .7; 0 is the old cut edge; a knob in the panel's sphere folder), and
+it is a touch larger so it does not read smaller for it (`radius` .05, was
+.045). (Earlier the same day it was widened
+instead: glow .42, halo .3 at 5 radii, reach 10; before that glow .3, halo .12,
+reach 6.) The "pond" panel's sphere folder has the new
+knob; a panel kept in this browser (`nijimu-pond-2`) still wins over these.
+The transcript screen has a tip under the wordmark once the words can be
+edited: "click on the transcript to edit" ("tap…" on a touch screen,
+`TranscriptEditHint`). It is the gallery's "keep scrolling" tip in every way —
+`useQuietTip` (5.5 s after it is due, steps aside while the pointer is near)
+and `QuietTip` (place, size, ink, tracking, breath, blurred fade), both now
+shared from `GalleryOnboarding` — and goes for good once the words are clicked
+into (or on continue).
+
+## The picture follows the facets, its edges effused (2026-11-25, later)
+
+The floating strip (below) now keeps some of its vessel's facets: it is
+settled halfway between the wall and the round cavity inside it (`float` .5,
+was 1 — round). To turn with the eye without passing through the glass it is
+no longer turned as a rigid body: `sheetVertex` turns each point by
+`uFloatTurn` and carries it in or out by the cavity where it now is over the
+cavity where it was settled (`uCavity`, a 96×48 half-float radius map built
+with the cloth, `cavityTexture`; `Sheet.cavity`, disposed with the build), so
+it takes the facets in front of the eye at every angle. `uFloatOn` is 1 for
+every draped sheet; at turn 0 nothing moves, so the opening view is as hung.
+`sheetFloatMatrix` is now only the turn, for the mirror's foot.
+The picture's edges are more effused, for every vessel
+(`VESSEL_TUNE_DEFAULT`): the photo thins into the stock over `edgeFade` 5.5 mm
+(was 2.5), the strip's outline feathers by `wear` 2.2 (was 1.16; the knob now
+reaches 3) and furs where it turns away by `softRim` .35 (was .2). E-14 (2024),
+which had its own wider fade (5), now has 8.
+
+## Naming's fields stand over the vessel (2026-11-25)
+
+A spiky form (small n) is given more canvas room (`vesselCanvasScale`), and in
+naming its canvas reached up over the name and year fields: the seat was
+`zIndex: 1` while the heading row had no layer of its own, so the vessel's
+drag took the fields' presses and caret. `PondNamingOverlay`'s heading row is
+now `position: relative; zIndex: 3` (and the inline passage 2), so the fields
+win wherever they overlap the canvas. The heading lets presses through outside
+the fields' rows, so the vessel can still be turned from anywhere else.
+
+## No short word ends a transcript line (2026-11-25)
+
+In the gallery's transcript under the year (`CaptionTranscript` in
+`PuddleDiveGallery`), a word of fewer than `SHORT_WORD_LETTERS` (3) letters or
+digits ("I", "a", "to", "is,") never ends a line: `bindShortWords` binds it to
+the word after it in the unseen measuring copy (one `nowrap` span per group,
+the space between groups outside it), so where it would have ended a line it
+starts the next. A run of short words binds on to the first longer word; short
+words at the very end ride with the word before them. The visible lines are
+read from that copy as before.
+
+## Sliders give way to the camera (2026-11-25)
+
+On the shape, rhythm and distance steps the slider fades out (700 ms, and
+`inert`) while the camera is reading hands (`tracking.isTracking` in
+`DescentRun`) and fades back whenever it is not — camera refused, failed,
+stopped or switched off. The full-screen drag stays either way. The camera
+can now be switched mid-step: the desktop corner window and the phone's foot
+capsule are buttons (`toggleCamera`; off shows a pale pane with a
+struck-through camera, `CameraOffGlyph`). Off lets go of the hands
+(`handsGone`, also the tracker's `onNoHands`) and sets `cameraChoice`
+"manual"; on again is "resuming", which starts the camera without reopening
+the dialog. The choice carries across steps as before, so a camera left on
+opens the next step with its slider already hidden.
+
+## The picture floats free in the vessel (2026-11-25)
+
+The draped strip is no longer fixed to a place on the wall: it hangs free in
+the glass and turns about the axis with the eye, so the picture keeps facing
+the viewer while the glass turns round it. To turn anywhere without passing
+through the glass it is settled against the round cavity inside the form
+(`floatWall` in `VesselPreview.tsx`: at each elevation the wall's least radius
+round the axis) instead of the wall itself. Each frame the strip (and its
+reflection) takes `sheetFloatMatrix` — a turn of (eye's azimuth − the azimuth
+it opened at) — in `VesselArtifact` (gallery, naming, studio) and the lab's
+`Stage`; the opening view is unturned. On round forms the opening view is as
+it was; on angular or lobed ones (the diamond) the strip sits further in than
+the facets it used to lie on, so the picture reads smaller. `float` (tune,
+"drape" group, "floats free"; 1 by default, in `vesselPartsKey`) is how far
+the cloth is drawn into that cavity; 0 is the old hang on the wall (it still
+turns, and may then pass through the glass on a non-round form). The descent
+builds and follows the same cavity (`followWall`), so the strip it hands to
+naming matches. The pressed sheet is unchanged (`Sheet.floats` false).
+
+## Vessels lift off their reflections (2026-11-25)
+
+Leaving the gallery for the pond, each vessel now rises faster than its
+reflection, so the reflections read as a ground the vessels leave behind.
+A vessel goes `POND_VESSEL_LEAD` (.5) further than its seat
+(`lib/pondTransition.ts`: `pondRimLead` on the rim, 1.2 × the height × the
+rim's lift × .5; in the field, its own lift × .5); its reflection keeps the
+seat's pace. `PuddleDiveGallery` sets that lead on each seat as
+`--vessel-lift` (px of the unscaled seat) and passes `departing`
+(`ArtifactSeat`) while `pondDeparture` > 0, not under reduced motion. The
+reflection is drawn in the vessel's own canvas, so `VesselArtifact` `split`
+renders one more frame, copies it into a 2D canvas (a still) and notes where
+the mirror plane under the foot falls on it; the still shows below that line
+(masked, a 1.2% feather), riding with the seat, and the live canvas shows
+above it, translated up by `--vessel-lift`. No canvas redraws during the
+move (the rim still holds its frames). The same plays backwards on the way
+back from the pond, the vessels landing on their reflections; the still is
+dropped at departure 0.
+The reflections thin as their vessels recede (same day, later): the seat also
+carries `--reflection-fade` (`pondReflectionFade`: 1 − an eased share of the
+gap over .01–.58 of the screen height; a rim vessel's lead reaches .6), which
+the still's host takes as its opacity — untouched until the vessels part (~.3
+of the departure), about half at .6, gone by .8; backwards on the return.
+
+## The transcript can be edited in place (2026-11-25)
+
+Once the transcript has printed (or a click skipped it), `PuddleTranscriptPage`
+swaps the word spans for one `contentEditable="plaintext-only"` block: a click
+puts the caret in the words and they change where they are. It looks exactly
+as the printout did — no outline, tint or spellcheck marks; only the caret
+shows (`caretColor` `CHROME_GRAY`, cursor text). The printout sets its words
+.3em apart as inline-blocks; the text keeps that gap with a measured
+`word-spacing` (`WORD_GAP_EM` less the face's space and letter-spacing) and
+`white-space: break-spaces`, so a line-end space takes its room as the
+printout's margin did and the lines break in the same places. Edits settle
+into the history draft `EDIT_SETTLE_MS` (400) after the last keystroke, on
+blur, and on continue, which carries the edited words to the descent (so its
+reading is of them). Enter adds no paragraph, Escape leaves the field, and
+keys stop there (the pond's window listener would take Escape/ArrowUp as
+back). An emptied field hides continue.
+
+## Longer memories keep their reading (2026-11-25)
+
+A memory told for longer than a minute often came out as a big plain sphere
+that Shape could not change. Three causes, three fixes:
+- The reading's quotes were checked verbatim (`isAssessment` needs every
+  `beat.quote` in the transcript), and on a long memory gpt-4.1-mini tidies
+  them — joins passages with "...", drops a leading "and"/"but" and
+  capitalises the next word. One such quote threw the whole reading away
+  ("did not pass validation"): a ~55 s English memory was rejected 7 of 9
+  times, short and Chinese ones passed. Now `server/assess-memory.mjs` runs
+  `repairAssessment` (`shared/memory-assessment.mjs`) first: each quote is
+  re-found in the transcript ignoring case, spacing and punctuation
+  (`findQuote`; an elided quote becomes the span it stands for, or its
+  longest part if that runs past 500 chars) and replaced by the transcript's
+  own words; a beat not found is dropped; summary/readings clip at 300,
+  scores clamp. Stored quotes stay verbatim, so the strict check still holds
+  in the browser. The prompt also asks for one continuous, unaltered passage
+  per quote. After: 7 of 7 accepted.
+- With no reading the form was `baseForm("sphere")`: Shape grew a sphere into
+  a sphere (nothing moved until Rhythm) and, filling its whole bound, it sat
+  far larger than any mapped form. It is now the map's middle,
+  `formAt(.5, .5, seed)` (`source` still "fallback", `family` null).
+- Recording stopped silently at 60 s. The cap is 180 s
+  (`MAX_RECORDING_SECONDS`), recorded at 64 kbps (`audioBitsPerSecond`, so
+  Safari's AAC stays ~1.5 MB under the 4 MB upload cap); the last 20 s show
+  "· 12s left" beside the timer (`secondsLeft`). `vercel.json` gives the
+  `api/*.mjs` functions `maxDuration` 60 so a slower transcription or reading
+  is not cut at an older 10 s default.
+`check-memory-shape.mjs` covers the repair and the new fallback.
+
 ## The gallery's words wait for its vessels (2026-11-11)
 
 The caption (name, year) and the transcript under the apex no longer show over
@@ -577,7 +983,7 @@ Reduced motion and the no-WebGL fallback keep the earlier dot entry.
 
 Gallery transcripts no longer follow the cursor. On wider screens,
 `PuddleDiveGallery` reveals the centered full transcript after the selected
-artifact has rested at the apex for `timing.transcriptDwellMs` in `galleryTune.ts` (1 s; 3 s until 2026-11-11). The transcript and the "keep scrolling" tip share one size, `GALLERY_TRANSCRIPT_SIZE` (0.9vw, 12–13px; the transcript was up to 14, the tip a fixed 12). The tip's leading is 1.5, the transcript's 1.45 (was 1.4); they share tracking `GALLERY_TEXT_TRACKING` (.006em; the transcript was +.012em at 1.4, the tip untracked). The memory's name (`CAPTION_TITLE_STYLE`, shared with naming) is clamp(12.5px, 1.015vw, 15.5px), was clamp(13px, 1.05vw, 16px).
+artifact has rested at the apex for `timing.transcriptDwellMs` in `galleryTune.ts` (1 s; 3 s until 2026-11-11). The transcript and the "keep scrolling" tip share one size, `GALLERY_TRANSCRIPT_SIZE` (0.9vw, 12–13px; the transcript was up to 14, the tip a fixed 12). The tip's leading is 1.5, the transcript's 1.45 (was 1.4); they share tracking `GALLERY_TEXT_TRACKING` (.01em since 2026-11-25 — briefly .015em — in em so each takes it in proportion to its own size — the tip sits at the wordmark's size, `PAGE_HEADER_MARK.fontSize`; was .006em, and the tip had lost it; the transcript was +.012em at 1.4, the tip untracked). The memory's name (`CAPTION_TITLE_STYLE`, shared with naming) is clamp(12.5px, 1.015vw, 15.5px), was clamp(13px, 1.05vw, 16px).
 Switching memories, entering constellation view, or leaving the gallery cancels
 and resets the delay. The existing word/line entrance remains; phones retain
 their tap-to-read pane. `TranscriptTrail.tsx` is no longer mounted by the gallery.
@@ -906,8 +1312,14 @@ is the body copy's `CHROME_GRAY`, and the secondary options share that ink
 and opacity; only weight sets them apart (primary 500, secondary 400).
 A way out may wear an icon with `ring` (camera dialog's “Maybe later”: Phosphor's
 clock, `ClockIcon`); on hover the icon fades and the grey ring opens from the
-clock face's size. `PANE_ACTION.paddingY` supplies 14px vertical
-button padding and reduces the pane's bottom inset by the same 14px. Reading's
+clock face's size. `PANE_ACTION.paddingY` supplies 18px vertical
+button padding (14 until 2026-11-25) and reduces the pane's bottom inset by
+the same amount. The hoped-for (primary) option's icon is
+drawn solid — mic, camera (its lens a white ring round a solid eye; a cut-out let the pane's grey
+through), with a check beside it in the camera dialog (`IconPair`, `CheckIcon`;
+the mark's box grows leftward so the check keeps the icons' column), download (a
+filled arrowhead) — through a `SolidIcon` context `PaneOption` provides; the
+way out's icons stay in outline. Reading's
 bottom anchoring belongs to the options wrapper (`atFoot`), never an inline
 margin on the button. Instruction-dialog titles and body copy are left-aligned;
 `PANE_CONTENT_GAP` sets title-to-copy spacing to 14px; copy-to-actions uses 1.5× (21px).
@@ -970,7 +1382,7 @@ after the camera has settled (`enabled`). The descent's floating phase — the
 photo landed on the water — wears the same heading, "Begin building a vessel
 for your memory."
 
-The transcription pulse sits at screen y=.81, with its floating label 96px
+The transcription pulse sits at screen y=.75 (.81 until 2026-11-25, a little further out now), with its floating label 96px
 above the origin. `VoiceRippleSpot.soft` selects a gentle water-wave envelope
 (encoded as negative strength in `uDrops`, with absolute strength for amplitude):
 650ms entrance, eased initial expansion, and a smooth release before expiry.
@@ -2262,7 +2674,7 @@ lowercase "nijimu" wordmark link). Prefer these over hand-rolling.
 
 | Hook | Purpose |
 |---|---|
-| `useVoiceRecorder.ts` | The recording session: `MediaRecorder` capture (60s cap), microphone errors, and a loudness meter. Hands the finished `Blob` to `onStop`; exposes `level` + `voicePulse` so the puddle can ripple with the voice. |
+| `useVoiceRecorder.ts` | The recording session: `MediaRecorder` capture (3 min cap, 64 kbps), microphone errors, and a loudness meter. Hands the finished `Blob` to `onStop`; exposes `level` + `voicePulse` so the puddle can ripple with the voice. |
 | `useHandTracking.ts` | Owns the MediaPipe camera + HandLandmarker **lifecycle** (init, stream, detect loop, teardown, GPU→CPU fallback). Hands raw landmarks back via `onLandmarks`; **each page does its own gesture math** using the exported helpers `landmarkDistance`, `handCenter`, `createGestureGate`. |
 | `useOscillatingEvolve.ts` | Shared 10s "breathing" animation cycle for the 3D shapes during the build steps. |
 
@@ -2292,7 +2704,7 @@ Browser: PondRecordingOverlay (mounted by MemoryPondPage)
   will accept.
 - Key: `OPENAI_API_KEY` (server-side only). Model default `gpt-4o-transcribe`,
   overridable via `TRANSCRIBE_MODEL`.
-- Guardrails: recordings cap at 60s, bodies at 4 MB (Vercel's limit is 4.5 MB).
+- Guardrails: recordings cap at 3 minutes at 64 kbps (~1.5 MB), bodies at 4 MB (Vercel's limit is 4.5 MB).
 - Unlike polish, transcription **is** a gate — there is no memory without words,
   so a failure shows the reason and a "record again" way back.
 

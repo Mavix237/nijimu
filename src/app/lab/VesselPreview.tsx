@@ -115,6 +115,9 @@ export interface VesselTune {
   sag: number; peel: number; curl: number; twist: number; gap: number; soft: number;
   /** The cloth gathers where the wall pushes it in rather than buckling (Drape.gather; 0 as built). */
   gather: number;
+  /** How far the draped strip is drawn off the wall toward the round cavity inside it (Drape.float): 1
+      round, 0 on the facets. Either way it turns with the eye and is fitted to the glass in front of it. */
+  float: number;
   // feel (the draped sheet's material: gauze or soaked paper rather than film)
   sheer: number; softRim: number; sheen: number; gloss: number; grain: number;
   // dye
@@ -189,12 +192,13 @@ export const VESSEL_TUNE_DEFAULT: VesselTune = {
   morph: MORPH,
   frostPatches: 2, frostSize: 1.25, frostStrength: unitParam("frost", GLASS_MODE === "refract" ? 0.15 : 0.4), rim: 0.38, thickness: 0.3,
   inset: 0.92, arc: 211, band: 1.2, lift: 0.048, foldScale: 1.7, stock: 0,
-  stockThick: 0.6, stockThin: 0.4, wear: 1.16, backFace: 0.44, holeRim: 0.55,
-  edgeFade: 2.5, tornDepth: 1,
+  // the picture's edges effused (2026-11-25; were wear 1.16, edgeFade 2.5, softRim .2)
+  stockThick: 0.6, stockThin: 0.4, wear: 2.2, backFace: 0.44, holeRim: 0.55,
+  edgeFade: 5.5, tornDepth: 1,
   holeSize: 1, holeWidth: 1, holeFade: 0,
   sheetSize: 2.26, anchorAngle: 180, anchorHeight: 1.0, tilt: 2, contact: 30.5,
-  sag: 21, peel: 69, curl: 0.35, twist: 15, gap: 0.03, soft: 0.7, gather: 0,
-  sheer: 0.92, softRim: 0.2, sheen: 0.31, gloss: 0.43, grain: 0.04,
+  sag: 21, peel: 69, curl: 0.35, twist: 15, gap: 0.03, soft: 0.7, gather: 0, float: 0.5,
+  sheer: 0.92, softRim: 0.35, sheen: 0.31, gloss: 0.43, grain: 0.04,
   dyeLift: 0.06, dyeContrast: 0.96, dyeShoulder: 0.5, dyeSaturation: 0.9, dyeGrain: 0.03,
   dyeSoft: 0.45, dyeExposure: 0.01, dyeLeak: 0.72, photoOpacity: 0.83, bleed: 0.53,
   mono: 0, negative: 0,
@@ -401,7 +405,139 @@ function liftAt(mx: number, my: number, foldScale: number, seed: number): number
   return Math.min(1, f * 0.55 + end * end * corner);
 }
 
-export interface Sheet { geometry: THREE.BufferGeometry; arc: number; yScale: number; mmAttr: boolean }
+export interface Sheet {
+  geometry: THREE.BufferGeometry; arc: number; yScale: number; mmAttr: boolean;
+  /** The draped strip floats free in the glass and turns with the eye (uFloatTurn). The pressed sheet is the wall's own relief and does not. */
+  floats?: boolean;
+  /** The cavity it was settled against, a radius per direction (azimuth across, elevation up), for the
+      shader to fit it to the glass in front of the eye as it turns (cavityTexture). */
+  cavity?: THREE.DataTexture;
+}
+
+/* ───────── the floating strip ─────────
+   The draped strip is not fixed to the wall. It is settled against a cavity
+   inside the glass: the wall drawn part way (`float`) toward the largest
+   round cavity within it (at each height, the wall's nearest reach round the
+   axis: floatWall), so it keeps some of the facets' shape without lying on
+   them. As the eye goes round, the strip turns about the axis with it, so the
+   picture keeps facing the viewer, and in the vertex shader each point is
+   carried in or out by the cavity where it now is over the cavity where it
+   was settled (uCavity, uFloatTurn): it takes the facets now in front of the
+   eye and never passes through the glass. In the opening view nothing has
+   turned, so the vessel looks as it was hung. */
+
+const CAVITY_LON = 96, CAVITY_LAT = 48;
+/** A cavity as a texture the sheet's vertex shader reads (cavityAt): a radius per bin, azimuth
+    atan2(x, z) across from −π, elevation up from −π/2, at the bins' centres. Half floats, so it filters. */
+function cavityTexture(radius: (x: number, y: number, z: number) => number): THREE.DataTexture {
+  const data = new Uint16Array(CAVITY_LON * CAVITY_LAT);
+  for (let j = 0; j < CAVITY_LAT; j++) {
+    const el = -Math.PI / 2 + ((j + 0.5) / CAVITY_LAT) * Math.PI;
+    const y = Math.sin(el), c = Math.cos(el);
+    for (let i = 0; i < CAVITY_LON; i++) {
+      const az = -Math.PI + ((i + 0.5) / CAVITY_LON) * Math.PI * 2;
+      data[i + j * CAVITY_LON] = THREE.DataUtils.toHalfFloat(radius(Math.sin(az) * c, y, Math.cos(az) * c));
+    }
+  }
+  const tex = new THREE.DataTexture(data, CAVITY_LON, CAVITY_LAT, THREE.RedFormat, THREE.HalfFloatType);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.magFilter = tex.minFilter = THREE.LinearFilter;
+  tex.generateMipmaps = false;
+  tex.needsUpdate = true;
+  return tex;
+}
+/** Stands in for a sheet with no cavity (uFloatOn 0 never reads it). */
+const NO_CAVITY = (() => {
+  const t = new THREE.DataTexture(new Uint16Array([THREE.DataUtils.toHalfFloat(1)]), 1, 1, THREE.RedFormat, THREE.HalfFloatType);
+  t.needsUpdate = true;
+  return t;
+})();
+
+/** The wall as `wallR` gives it, drawn in toward the round cavity inside it by `float` (0 the wall itself, 1 the
+    cavity: at each elevation the least radius round the axis), and further by how faceted it is (wallCreases):
+    a much-faceted body's picture hangs round. Both are radii per direction about the centre. */
+export function floatWall(wallR: (x: number, y: number, z: number) => number, float: number): (x: number, y: number, z: number) => number {
+  const asked = Math.min(1, Math.max(0, float));
+  // how much of the facets the picture follows (1 − float), past CREASES_FROM in inverse proportion to
+  // the creases: the more there are, the less of them it takes, so it stays legible
+  const follows = (1 - asked) * Math.min(1, CREASES_FROM / Math.max(1e-6, wallCreases(wallR)));
+  const f = 1 - follows;
+  if (f <= 0) return wallR;
+  const RING = 96, ROUND = 192;
+  const ring = new Float64Array(RING);
+  for (let j = 0; j < RING; j++) {
+    const el = -Math.PI / 2 + ((j + 0.5) / RING) * Math.PI;
+    const y = Math.sin(el), c = Math.cos(el);
+    let least = Infinity;
+    for (let i = 0; i < ROUND; i++) {
+      const az = (i / ROUND) * Math.PI * 2;
+      least = Math.min(least, wallR(Math.sin(az) * c, y, Math.cos(az) * c));
+    }
+    ring[j] = least;
+  }
+  return (x, y, z) => {
+    const w = wallR(x, y, z);
+    const r = Math.hypot(x, y, z) || 1;
+    const fj = Math.min(RING - 1, Math.max(0, ((Math.asin(Math.max(-1, Math.min(1, y / r))) + Math.PI / 2) / Math.PI) * RING - 0.5));
+    const j0 = Math.floor(fj), j1 = Math.min(RING - 1, j0 + 1);
+    const inner = Math.min(w, ring[j0] + (ring[j1] - ring[j0]) * (fj - j0));
+    return w + (inner - w) * f;
+  };
+}
+
+/** How many creases a wall has round its axis — its facets' corners, convex or concave, each counted by
+    how sharp it is (up to 1 for a 20° turn or more beyond a smooth curve's) — averaged over heights
+    through the body (−45°…45°). A smooth body has ~2, a four-faced diamond ~3.5, an octagonal lantern
+    ~5.5, a gear or a many-lobed body 7–10. */
+export function wallCreases(wallR: (x: number, y: number, z: number) => number): number {
+  const ROUND = 192, RINGS = 9, W = 3, step = (Math.PI * 2) / ROUND;
+  const raw = new Float64Array(ROUND), r = new Float64Array(ROUND), turn = new Float64Array(ROUND);
+  const px = new Float64Array(ROUND), pz = new Float64Array(ROUND);
+  let total = 0;
+  for (let j = 0; j < RINGS; j++) {
+    const el = (-0.25 + (j / (RINGS - 1)) * 0.5) * Math.PI;
+    const y = Math.sin(el), c = Math.cos(el);
+    for (let i = 0; i < ROUND; i++) {
+      const az = i * step;
+      raw[i] = wallR(Math.sin(az) * c, y, Math.cos(az) * c);
+    }
+    // a touch of smoothing, so the wall map's own bins are not taken for corners
+    for (let i = 0; i < ROUND; i++) r[i] = (raw[(i + ROUND - 1) % ROUND] + 2 * raw[i] + raw[(i + 1) % ROUND]) / 4;
+    for (let i = 0; i < ROUND; i++) { px[i] = r[i] * Math.sin(i * step); pz[i] = r[i] * Math.cos(i * step); }
+    for (let i = 0; i < ROUND; i++) {
+      const a = (i + ROUND - 1) % ROUND, b = (i + 1) % ROUND;
+      let t = Math.atan2(pz[b] - pz[i], px[b] - px[i]) - Math.atan2(pz[i] - pz[a], px[i] - px[a]);
+      while (t > Math.PI) t -= Math.PI * 2;
+      while (t < -Math.PI) t += Math.PI * 2;
+      turn[i] = Math.abs(t);
+    }
+    // the turning over a short window, so a corner spread over a few samples is one crease
+    const win = (i: number) => { let s = 0; for (let d = -W; d <= W; d++) s += turn[(i + d + ROUND) % ROUND]; return s; };
+    let n = 0;
+    for (let i = 0; i < ROUND; i++) {
+      const v = win(i);
+      if (v >= win((i + ROUND - 1) % ROUND) && v > win((i + 1) % ROUND)) {
+        n += Math.min(1, Math.max(0, (v - (2 * W + 1) * step) / (Math.PI / 9)));
+      }
+    }
+    total += n;
+  }
+  return total / RINGS;
+}
+/** Past this many creases (wallCreases) the strip follows its vessel's facets in inverse proportion to
+    them: twice the creases, half the following — so a much-faceted body's picture hangs rounder and
+    stays legible, while a diamond's (fewer) still takes its faces fully. */
+const CREASES_FROM = 5;
+
+const floatTurn = new THREE.Matrix4();
+/** The floating strip's turn once the eye has gone `turn` radians round the axis from where it opened
+    (positive the way atan2(x, z) grows), as a matrix, for asking where it now lies (the mirror's foot).
+    The shader also fits it to the cavity there (uFloatTurn), which this leaves out. Identity for a sheet that does not float. */
+export function sheetFloatMatrix(sheet: Sheet, turn: number, out: THREE.Matrix4): THREE.Matrix4 {
+  if (!sheet.floats || !Number.isFinite(turn)) return out.identity();
+  return out.copy(floatTurn.makeRotationY(turn));
+}
 
 /** The inner shell: the glass inset, mapped cylindrically to the strip's mm,
     displaced inward where the sheet lifts, with the rest position, the lift
@@ -533,6 +669,9 @@ export interface Drape {
       and buckle — the accordion pleats a strip fitted to a round form shows edge-on at its sides as
       teeth. 0 as built. */
   gather?: number;
+  /** How far the strip is drawn off the wall (floatWall): 1 settles it against the round cavity inside the
+      glass, 0 (as built) against the wall itself. */
+  float?: number;
 }
 
 /**
@@ -552,7 +691,9 @@ export interface Drape {
  * place on the strip, so the face is drawn as in the film lab.
  */
 export function buildDrapedSheet(glass: Glass, inset: number, d: Drape): Sheet {
-  const wallR = buildWallMap(glass);
+  // a floating strip is settled against the round cavity inside the glass, so it may turn anywhere in it
+  const float = Math.min(1, Math.max(0, d.float ?? 0));
+  const wallR = floatWall(buildWallMap(glass), float);
   const rIn = (x: number, y: number, z: number) => wallR(x, y, z) * inset;
   const k = d.sheetSize / STRIP_MM.length;
   const t = (d.tilt * Math.PI) / 180, ct = Math.cos(t), st = Math.sin(t);
@@ -756,7 +897,7 @@ export function buildDrapedSheet(glass: Glass, inset: number, d: Drape): Sheet {
   geometry.setAttribute("aCrease", new THREE.BufferAttribute(new Float32Array(count), 1));
   geometry.setAttribute("aMm", new THREE.BufferAttribute(mm, 2));
   geometry.boundingSphere = glass.geometry.boundingSphere;
-  return { geometry, arc: 1, yScale: 1, mmAttr: true };
+  return { geometry, arc: 1, yScale: 1, mmAttr: true, floats: true, cavity: cavityTexture(rIn) };
 }
 
 /* ───────── shaders ───────── */
@@ -783,6 +924,16 @@ const REFLECT_GLSL = /* glsl */ `
 `;
 
 export const sheetVertex = /* glsl */ `
+  /* the floating strip (see "the floating strip"): turned with the eye by uFloatTurn, then
+     fitted to the cavity where it now is */
+  uniform sampler2D uCavity;
+  uniform float uFloatTurn;
+  uniform float uFloatOn;
+  float cavityAt(vec3 p) {
+    float r = max(length(p), 1e-6);
+    vec2 uv = vec2((atan(p.x, p.z) + 3.14159265) / 6.2831853, (asin(clamp(p.y / r, -1.0, 1.0)) + 1.5707963) / 3.14159265);
+    return texture2D(uCavity, uv).r;
+  }
   attribute vec3 aRest;
   attribute float aLift;
   attribute float aCrease;
@@ -798,11 +949,19 @@ export const sheetVertex = /* glsl */ `
     vLift = aLift;
     vCrease = aCrease;
     vMm = aMm;
-    vec4 world = modelMatrix * vec4(position, 1.0);
+    vec3 p = position;
+    vec3 nrm = normal;
+    if (uFloatOn > .5 && uFloatTurn != 0.0) {
+      float c = cos(uFloatTurn), s = sin(uFloatTurn);
+      vec3 q = vec3(p.x * c + p.z * s, p.y, -p.x * s + p.z * c);
+      p = q * (cavityAt(q) / max(cavityAt(position), 1e-4));
+      nrm = vec3(nrm.x * c + nrm.z * s, nrm.y, -nrm.x * s + nrm.z * c);
+    }
+    vec4 world = modelMatrix * vec4(p, 1.0);
     vWorld = world.xyz;
     // a degenerate vertex (a pole, a collapsed fold) can carry a zero normal;
     // normalize() of it is NaN, which the post blurs spread into squares
-    vec3 normalW = mat3(modelMatrix) * normal;
+    vec3 normalW = mat3(modelMatrix) * nrm;
     vNormalW = dot(normalW, normalW) > 1e-20 ? normalize(normalW) : vec3(0.0, 1.0, 0.0);
     gl_Position = projectionMatrix * viewMatrix * world;
   }
@@ -1818,6 +1977,9 @@ export function createSheetUniformSet(edgePrint: THREE.Texture) {
     uYScale: { value: 1 },
     uWear: { value: 1 },
     uTorn: { value: 1 },
+    uCavity: { value: NO_CAVITY as THREE.Texture },
+    uFloatTurn: { value: 0 },
+    uFloatOn: { value: 0 },
     uTornOn: { value: 1 },
     uBackFace: { value: 1 },
     uBleed: { value: 0 },
@@ -1976,6 +2138,8 @@ export function writeSheetUniforms(u: SheetUniformSet, w: SheetWrite) {
   u.uBackFace.value = tune.backFace;
   u.uBleed.value = tune.bleed;
   u.uMmAttr.value = sheet.mmAttr ? 1 : 0;
+  u.uFloatOn.value = sheet.floats && sheet.cavity ? 1 : 0;
+  u.uCavity.value = sheet.cavity ?? NO_CAVITY;
   u.uFlip.value = w.face === "glass" ? 1 : 0;
   // the feel belongs to the draped sheet; the pressed film keeps its own look
   const draped = w.sheetMode === "draped";
@@ -2308,11 +2472,12 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
   useEffect(() => () => glass.geometry.dispose(), [glass]);
   const { inset, arc, band, lift, foldScale } = tune;
   const { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather } = tune;
+  const float = tune.float ?? 0.5;
   const sheet = useMemo(() => sheetMode === "draped"
-    ? buildDrapedSheet(glass, inset, { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather })
+    ? buildDrapedSheet(glass, inset, { sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather, float })
     : buildSheet(glass, inset, arc, band, lift, foldScale, seed),
-  [glass, sheetMode, inset, arc, band, lift, foldScale, seed, sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather]);
-  useEffect(() => () => sheet.geometry.dispose(), [sheet]);
+  [glass, sheetMode, inset, arc, band, lift, foldScale, seed, sheetSize, anchorAngle, anchorHeight, tilt, contact, sag, peel, curl, twist, gap, soft, gather, float]);
+  useEffect(() => () => { sheet.geometry.dispose(); sheet.cavity?.dispose(); }, [sheet]);
   const groundY = glass.lo - 0.02;
   const radius = (glass.hi - glass.lo) * 0.5;
 
@@ -2372,6 +2537,8 @@ function Stage({ tune, mode, sheetMode, face, show, backdrop, room, url, seed, f
     const p = (pitch * Math.PI) / 180;
     camera.position.set(-Math.sin(y) * Math.cos(p) * distance, LOOK_Y + Math.sin(p) * distance, Math.cos(y) * Math.cos(p) * distance);
     camera.lookAt(0, LOOK_Y, 0);
+    // the strip floats free: it has turned with the eye from where the eye opened
+    for (const u of sheetUniformSets) u.uFloatTurn.value = yaw0 - y;
     // under the table there is no table: its tone and the reflection in it go
     const fade = smooth01((camera.position.y - groundY + 0.45) / 0.7);
     if (fade !== tableFade.current) {
@@ -2499,7 +2666,7 @@ export const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "foldScale", label: "fold scale", min: 0.4, max: 3, step: 0.05, only: "pressed" },
     { key: "stockThick", label: "stock alpha  thick", min: 0.2, max: 1, step: 0.01 },
     { key: "stockThin", label: "stock alpha  thin", min: 0.1, max: 0.95, step: 0.01 },
-    { key: "wear", label: "edge wear  mm", min: 0.05, max: 1.6, step: 0.01 },
+    { key: "wear", label: "edge wear  mm", min: 0.05, max: 3, step: 0.01 },
     { key: "tornDepth", label: "torn ends  (× 1.4 mm; 0 is a clean cut)", min: 0, max: 4, step: 0.01 },
     { key: "edgeFade", label: "photo edge fade  mm  (the picture thins into the stock)", min: 0, max: 10, step: 0.1 },
     { key: "holeSize", label: "perforations  size  (0 is none)", min: 0, max: 1, step: 0.01 },
@@ -2522,6 +2689,7 @@ export const KNOBS: { group: string; knobs: Knob[]; only?: SheetMode }[] = [
     { key: "gap", label: "air from the wall", min: 0, max: 0.15, step: 0.002 },
     { key: "soft", label: "softness  (0 is crisp)", min: 0, max: 1, step: 0.01 },
     { key: "gather", label: "gathers, not pleats  (0 buckles where the wall narrows)", min: 0, max: 1, step: 0.01 },
+    { key: "float", label: "off the wall  (1 round, 0 on the facets)", min: 0, max: 1, step: 0.01 },
   ] },
   { group: "feel", only: "draped", knobs: [
     { key: "sheer", label: "sheer  (how much shows through)", min: 0.3, max: 1, step: 0.01 },

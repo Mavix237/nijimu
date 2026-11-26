@@ -270,7 +270,7 @@ export function PondRecordingOverlay({
             opacity: !buttonIn || leaving ? 0 : 1,
             transition: "opacity 0.4s ease", pointerEvents: "none",
             animation: reducedMotion ? "none" : "puddleRecIn 700ms ease backwards" }}>
-          {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}`}
+          {troubleMessage ?? `recording · ${Math.floor(recorder.duration / 60)}:${String(recorder.duration % 60).padStart(2, "0")}${recorder.secondsLeft !== null ? ` · ${recorder.secondsLeft}s left` : ""}`}
         </p>
       )}
     </div>

@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { CHROME_GRAY } from "../lib/colors";
-import { GALLERY_TRANSCRIPT, SERIF, TEXT_ENTER_MS } from "../lib/theme";
+import { GALLERY_TEXT_TRACKING, GALLERY_TRANSCRIPT, SERIF, TEXT_ENTER_MS } from "../lib/theme";
 import { INK_ENTRY, flowProgress } from "../lib/landingTransition";
 import { PAGE_HEADER_MARK } from "./PageHeader";
 
@@ -76,23 +76,11 @@ function PlusMark() {
   );
 }
 
-export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
-  /** The gallery's chrome is up (arrival finished, no pond on its way). */
-  visible: boolean;
-  /** The rim has come to rest on a memory. */
-  settled: boolean;
-  atNewest: boolean;
-  /** The pond is opening. */
-  leaving: boolean;
-}) {
-  const touch = useTouchFirst();
-  const kind = atNewest
-    ? touch ? "swipe-end" : "scroll-end"
-    : touch ? "swipe-mid" : "scroll-mid";
-  const ready = visible && settled && !leaving;
+/** A quiet tip's comings and goings: it shows HINT_DELAY_MS after `ready`, and steps aside while the
+    pointer (or a finger) is within HINT_NEAR_PX of its words, coming back once that zone is clear.
+    `ref` goes on the tip's paragraph (QuietTip). */
+export function useQuietTip(ready: boolean) {
   const [rested, setRested] = useState(false);
-  // the tip steps aside while the pointer (or a finger) is in its zone,
-  // and comes back once the zone is clear
   const [occupied, setOccupied] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
@@ -100,7 +88,6 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
     const t = window.setTimeout(() => setRested(true), HINT_DELAY_MS);
     return () => window.clearTimeout(t);
   }, [ready]);
-  const on = rested && !occupied;
   useEffect(() => {
     if (!rested) return;
     let pointer: { x: number; y: number } | null = null;
@@ -131,20 +118,27 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
       document.removeEventListener("mouseout", out);
     };
   }, [rested]);
-  const [shown, setShown] = useState(kind);
-  if (on && kind !== shown) setShown(kind);
-  const copy = shown === "swipe-end" ? "swipe once more to begin yours"
-    : shown === "scroll-end" ? "scroll once more to begin yours"
-    : shown === "swipe-mid" ? <>keep swiping or tap <PlusMark /><br />to leave a memory of your own</>
-    : <>keep scrolling or click <PlusMark /><br />to leave a memory of your own</>;
+  return { ref, on: rested && !occupied };
+}
 
+/** The tip itself, under the wordmark: the wordmark's size, the transcript's ink and tracking, a slow
+    breath, and a blurred fade in and out. Shared by the gallery's "keep scrolling" and the transcript's
+    "click on the transcript to edit". */
+export function QuietTip({ on, tipRef, top = "14.5vh", children }: {
+  on: boolean; tipRef: RefObject<HTMLParagraphElement | null>;
+  /** Where it sits; under the wordmark (the gallery's) unless given. */
+  top?: string;
+  children: ReactNode;
+}) {
   return (
-    <p ref={ref} className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE,
+    <p ref={tipRef} className="gallery-scroll-hint" aria-live="polite" style={{ ...LINE_STYLE,
       // a little higher than the landing lines, so a wide short window
       // keeps the vessel clear of the tip
-      top: "14.5vh",
+      top,
       // the size of the wordmark just above it
       fontSize: PAGE_HEADER_MARK.fontSize,
+      // the transcript's tracking, in proportion to this size
+      letterSpacing: GALLERY_TEXT_TRACKING,
       color: GALLERY_TRANSCRIPT.color,
       zIndex: 31, opacity: on ? 1 : 0,
       filter: on ? "none" : "blur(4px)", transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease` }}>
@@ -153,7 +147,38 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
         .gallery-hint-breathe { animation: galleryHintBreathe ${HINT_BREATHE_S}s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .gallery-hint-breathe { animation: none; } }
       `}</style>
-      <span className="gallery-hint-breathe">{copy}</span>
+      <span className="gallery-hint-breathe">{children}</span>
     </p>
   );
+}
+
+export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
+  /** The gallery's chrome is up (arrival finished, no pond on its way). */
+  visible: boolean;
+  /** The rim has come to rest on a memory. */
+  settled: boolean;
+  atNewest: boolean;
+  /** The pond is opening. */
+  leaving: boolean;
+}) {
+  const touch = useTouchFirst();
+  const kind = atNewest
+    ? touch ? "swipe-end" : "scroll-end"
+    : touch ? "swipe-mid" : "scroll-mid";
+  const { ref, on } = useQuietTip(visible && settled && !leaving);
+  const [shown, setShown] = useState(kind);
+  if (on && kind !== shown) setShown(kind);
+  const copy = shown === "swipe-end" ? "swipe once more to begin yours"
+    : shown === "scroll-end" ? "scroll once more to begin yours"
+    : shown === "swipe-mid" ? <>keep swiping or tap <PlusMark /><br />to leave a memory of your own</>
+    : <>keep scrolling or click <PlusMark /><br />to leave a memory of your own</>;
+  return <QuietTip on={on} tipRef={ref}>{copy}</QuietTip>;
+}
+
+/** On the transcript screen once the words can be edited: that a click puts the caret in them. It goes
+    for good once the words have been clicked into (`ready` false). */
+export function TranscriptEditHint({ ready, top }: { ready: boolean; top?: string }) {
+  const touch = useTouchFirst();
+  const { ref, on } = useQuietTip(ready);
+  return <QuietTip on={on} tipRef={ref} top={top}>{touch ? "tap on the transcript to edit" : "click on the transcript to edit"}</QuietTip>;
 }

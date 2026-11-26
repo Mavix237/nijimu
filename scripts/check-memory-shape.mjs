@@ -194,6 +194,28 @@ assert.ok(!contract.isAssessment({ ...assessment, comfort: NaN }));
 assert.ok(!contract.isAssessment({ ...assessment, intensity: "0.8" }));
 assert.ok(!contract.isAssessment({ ...assessment, beats: [{ ...assessment.beats[0], quote: "invented evidence" }] }, transcript));
 assert.ok(!contract.isAssessment({ ...assessment, beats: [] }, transcript));
+// Quotes tidied by the model on a long memory (seen live, 2026-11-25) are re-found, not fatal.
+{
+  const long = "And one morning she stopped in front of a stall that sold these tiny yellow flowers, I don't know what they were called, and she bought a whole bunch, and she said, these are for no reason. And then that winter she got sick. But now when I see those yellow flowers I buy them, for no reason.";
+  const beat = (quote) => ({ quote, reading: "r", orientation: 0, intensity: 0.5 });
+  const tidied = { ...assessment, summary: "s".repeat(340), beats: [
+    beat("And one morning she stopped in front of a stall that sold these tiny yellow flowers... she said, these are for no reason."),
+    beat("Then that winter she got sick."),
+    beat("Now when I see those yellow flowers I buy them, for no reason"),
+    beat("she was never there at all"),
+    beat("I buy them"),
+  ] };
+  assert.ok(!contract.isAssessment(tidied, long), "as returned, the tidied reading fails");
+  const mended = contract.repairAssessment(tidied, long);
+  assert.ok(contract.isAssessment(mended, long), "repaired, it passes the strict check");
+  assert.equal(mended.beats.length, 4, "the invented quote is dropped, the rest kept (at most four)");
+  assert.ok(mended.beats[0].quote.startsWith("And one morning") && mended.beats[0].quote.endsWith("for no reason"), "an elided quote becomes the transcript's own span");
+  assert.equal(mended.beats[1].quote, "then that winter she got sick", "case is taken from the transcript");
+  assert.ok(mended.summary.length <= 300);
+  assert.ok(!contract.isAssessment(contract.repairAssessment({ ...assessment, beats: [beat("made up entirely")] }, transcript), transcript), "nothing found → still rejected");
+  assert.equal(contract.findQuote("外婆我关了", "我说关了，我说外婆我关了，虽然"), "外婆我关了");
+  assert.equal(contract.findQuote("我说外婆 我关了", "我说关了，我说外婆，我关了，虽然"), "我说外婆，我关了");
+}
 const assigned = shape.assignMemoryShape(assessment, "one", "api", "test", transcript);
 assert.equal(assigned.family, "floral", "positive excitement remains sharp");
 assert.ok(assigned.coordinates.sharpness > 0.6);
@@ -208,8 +230,16 @@ assert.equal(shape.assignMemoryShape(null, "one").family, null);
 const tie = shape.assignMemoryShape({ ...assessment, orientation: 0, intensity: 0.5, comfort: 0 }, "one");
 assert.equal(tie.family, null, "a tie has no family label");
 assert.ok(tie.anchor && geometry.isArtifactForm(tie.form), "the map still gives a tie its form");
-assert.equal(shape.assignMemoryShape(null, "one").anchor, null, "no reading keeps the neutral sphere");
-assert.equal(geometry.formKey(shape.assignMemoryShape(null, "one").form), geometry.formKey(geometry.baseForm("sphere")));
+{
+  // No reading: the map's middle, not a plain sphere (which Shape could not grow and drew oversized).
+  const none = shape.assignMemoryShape(null, "one");
+  assert.ok(none.anchor && geometry.isArtifactForm(none.form), "no reading still gives a mapped form");
+  assert.notEqual(geometry.formKey(none.form), geometry.formKey(geometry.baseForm("sphere")), "no reading is no longer the plain sphere");
+  assert.equal(none.source, "fallback");
+  assert.equal(none.family, null);
+  assert.equal(geometry.formKey(none.form), geometry.formKey(shape.formAt(0.5, 0.5, "one").form), "it is the map's middle, seeded");
+  assert.equal(JSON.stringify(none), JSON.stringify(shape.assignMemoryShape(null, "one")), "and repeats exactly");
+}
 assert.equal(JSON.stringify(assigned), JSON.stringify(shape.assignMemoryShape(assessment, "one", "api", "test", transcript)), "saved mapping repeats exactly");
 assert.notEqual(geometry.formKey(shape.familyForm("shell", "one")), geometry.formKey(shape.familyForm("shell", "two")), "variation stays local");
 // The trends the map was drawn with: outward adds profile flares, sharp reaches farther.

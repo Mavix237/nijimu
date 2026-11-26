@@ -15,3 +15,5 @@ export const SCORE_KEYS: readonly ("orientation" | "comfort" | "intensity" | "di
 export const ASSESSMENT_SCHEMA: Record<string, unknown>;
 export function validTranscript(value: unknown): value is string;
 export function isAssessment(value: unknown, transcript?: string): value is MemoryAssessment;
+export function findQuote(quote: unknown, transcript: string): string | null;
+export function repairAssessment(value: unknown, transcript: string): unknown;

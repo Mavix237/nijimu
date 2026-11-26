@@ -168,7 +168,7 @@ export function MemoryMeaningLab() {
           <FormView form={assignment.form} large />
         </div>
         <p id="meaning-map-help" style={{ ...small, fontSize: 11 }}>click anywhere on the map to generate a form. arrow keys fine-tune its position; shift moves farther. the faint marks are the kept shapes: a point takes the nearest one and leans with the axes — more profile flares outward, deeper reach toward sharp.</p>
-        <p style={{ fontFamily: SERIF, fontSize: 25, margin: "4px 0 8px" }}>{assignment.family ? FAMILY_LABELS[assignment.family] : assignment.anchor ? "between the families" : "a quiet, unassigned form"}</p>
+        <p style={{ fontFamily: SERIF, fontSize: 25, margin: "4px 0 8px" }}>{assignment.family ? FAMILY_LABELS[assignment.family] : assignment.source === "fallback" ? "a quiet, unassigned form" : "between the families"}</p>
         <p style={small}>{manual ? "manual study — this form was not inferred from the transcript" : assignment.family ? "a starting form; your hands can still change how it grows" : "a neutral starting point until the memory has been read"}</p>
         <div style={{ ...small, display: "flex", flexWrap: "wrap", gap: 14 }}>{MEMORY_FAMILIES.map(family => <span key={family}>{family} {Math.round(assignment.weights[family]*100)}%</span>)}</div>
         <p style={{ ...small, fontSize: 10 }}>family weights express position, not certainty. drag the form to turn it.<br />{assignment.anchor ? `from ${assignment.anchor} · ` : ""}top ({params(assignment.form.top)}) · side ({params(assignment.form.side)})</p>

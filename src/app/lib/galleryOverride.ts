@@ -37,6 +37,9 @@ export interface ArtifactSeat {
   /** The seat that keeps the apex's pixel density. It follows the row only
       once the row has stopped, so a step does not resize a canvas mid-move. */
   sharp?: boolean;
+  /** Leaving for (or back from) the pond: the vessel rises off its reflection by
+      the seat's `--vessel-lift` (CSS px of the unscaled seat) while the reflection keeps the seat's pace. */
+  departing?: boolean;
   /** Called with the seat's canvas right after its first whole frame (the ink entry keeps its outline). */
   onFrame?: (canvas: HTMLCanvasElement) => void;
 }

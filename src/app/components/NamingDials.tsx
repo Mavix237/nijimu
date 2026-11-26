@@ -10,7 +10,8 @@ import { NAMING_TUNE_DEFAULT, setNamingTune, type NamingTune, type NamingLightTu
  * layout (the vessel's lift and size, the words' lift and gaps), the room the
  * glass reflects, its light near & clear / far & faded, its reflection on the
  * lake, and the memory's colour in the lake round it. Values persist in
- * localStorage (dialkit:nijimu-naming); "Copy" in the version menu puts a set
+ * localStorage (dialkit:nijimu-naming-6 — renamed on 2026-11-25 as its layout and reflection were reset,
+ * so a set kept before does not cover them); "Copy" puts a set
  * on the clipboard to write back into NAMING_TUNE_DEFAULT (lib/namingTune.ts).
  */
 
@@ -35,6 +36,9 @@ const CONFIG = {
     textLift: [D.layout.textLift, -10, 25, 0.1] as Range,
     fieldGap: [D.layout.fieldGap, 0, 120, 1] as Range,
     passageGap: [D.layout.passageGap, 0, 160, 1] as Range,
+    cameraLift: [D.layout.cameraLift, 0, 2, 0.01] as Range,
+    viewPitch: [D.layout.viewPitch, -10, 30, 0.5] as Range,
+    lookLift: [D.layout.lookLift, -4, 8, 0.05] as Range,
   },
   room: { _collapsed: true, above: D.room.above, below: D.room.below },
   light: lightFolder(D.light, true),
@@ -49,6 +53,7 @@ const CONFIG = {
     smear: [D.reflection.smear, 0, 5, 0.05] as Range,
     room: [D.reflection.room, 0, 1.2, 0.01] as Range,
     ripple: [D.reflection.ripple, 0, 4, 0.01] as Range,
+    smooth: [D.reflection.smooth, 0, 1.5, 0.01] as Range,
     stretch: [D.reflection.stretch, 0.2, 5, 0.05] as Range,
     fresnel: [D.reflection.fresnel, 0, 1, 0.01] as Range,
     tint: [D.reflection.tint, 0, 1, 0.01] as Range,
@@ -81,7 +86,7 @@ const CONFIG = {
 type Values = { [K in keyof NamingTune]: Partial<NamingTune[K]> };
 
 export default function NamingDials() {
-  const v = useDialKit("naming", CONFIG as never, { id: "nijimu-naming", persist: true }) as unknown as Values;
+  const v = useDialKit("naming", CONFIG as never, { id: "nijimu-naming-6", persist: true }) as unknown as Values;
   const key = JSON.stringify(v);
   const tune = useMemo<NamingTune>(() => ({
     layout: { ...D.layout, ...v.layout },

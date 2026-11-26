@@ -42,11 +42,16 @@ export function pondCameraPose(
   target: PondSinkTarget | null,
   position: THREE.Vector3,
   look: THREE.Vector3,
+  /** How much higher the eye stands than the pond's own (world units; naming's, with its vessel floating higher). */
+  lift = 0,
+  /** How much higher the eye looks than the pond's own look point (world units): the view tilts up, the pond sits lower. */
+  lookLift = 0,
 ): void {
-  const base = { x: 0, y: POND_CAMERA_HEIGHT - arrival * 0.15, z: POND_CAMERA_Z + (1 - arrival) * 0.4 };
+  const base = { x: 0, y: POND_CAMERA_HEIGHT - arrival * 0.15 + lift, z: POND_CAMERA_Z + (1 - arrival) * 0.4 };
   if (sink <= 0) {
     position.set(base.x, base.y, base.z);
     look.copy(POND_LOOK);
+    look.y += lookLift;
     return;
   }
   const s = easeInOut(sink);
@@ -57,9 +62,11 @@ export function pondCameraPose(
     base.y + (-0.55 - base.y) * s,
     base.z + (at.z + 2.6 - base.z) * s,
   );
+  // the sink leans from wherever the eye was looking, a raised look point included
+  const lookY = POND_LOOK.y + lookLift;
   look.set(
     POND_LOOK.x + (at.x - POND_LOOK.x) * s,
-    POND_LOOK.y + (-1.4 - POND_LOOK.y) * s,
+    lookY + (-1.4 - lookY) * s,
     POND_LOOK.z + (at.z - 1.0 - POND_LOOK.z) * s,
   );
 }

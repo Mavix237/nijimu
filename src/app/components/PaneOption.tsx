@@ -4,9 +4,10 @@
  * Medium, the way out in Regular. A dot mark opens from its centre on hover — filled with the given
  * colour for the hoped-for option, a bare ring for the way out. A way out may
  * wear an icon instead (`ring`): on hover it gives way to the same bare ring.
+ * The hoped-for option's icon is drawn solid (`SolidIcon`, read by each icon).
  */
 
-import type { CSSProperties, ReactNode } from "react";
+import { createContext, useContext, useId, type CSSProperties, type ReactNode } from "react";
 import { BUTTON_SIZE_SM, GALLERY_TRANSCRIPT, PANE_ACTION, SANS, SERIF, TITLE } from "../lib/theme";
 import { PANE_INK } from "../lib/colors";
 
@@ -46,6 +47,9 @@ const MARK_PX = 18;
 /** The ring's rest under an icon: the clock's face (r 9 of 24, through the
  * stroke's middle) against the ring's own 1.25 px border. */
 const CLOCK_FACE = (MARK_PX * 18 / 24) / (DOT_PX - 1.25);
+
+/** True inside the hoped-for option: its icon is drawn solid rather than in outline. */
+const SolidIcon = createContext(false);
 
 export function PaneOptions({ children, atFoot = false }: { children: ReactNode; atFoot?: boolean }) {
   return (
@@ -100,7 +104,7 @@ export function PaneOption({
           </>
         ) : (
           <>
-            <span className="nijimuPaneIcon">{mark}</span>
+            <span className="nijimuPaneIcon"><SolidIcon.Provider value={primary}>{mark}</SolidIcon.Provider></span>
             {iconRing && <span className="nijimuPaneRing" />}
           </>
         )}
@@ -119,22 +123,66 @@ function Icon({ children, size = MARK_PX }: { children: ReactNode; size?: number
 }
 
 export function MicIcon() {
+  const solid = useContext(SolidIcon);
   return (
     <Icon>
       <path d="M12 19v3" />
       <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-      <rect x="9" y="2" width="6" height="13" rx="3" />
+      <rect x="9" y="2" width="6" height="13" rx="3" fill={solid ? "currentColor" : "none"} />
     </Icon>
   );
 }
 
+const CAMERA_BODY = "M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z";
+
 export function CameraIcon() {
+  const solid = useContext(SolidIcon);
+  // an id the mask can be named by (useId's own characters are not all safe in url(#…))
+  const lens = `camera-lens-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
+  if (solid) {
+    // the body filled, the lens a ring cut through it round a solid eye, so the pane itself shows in
+    // the ring and it is the pane's own colour (it was drawn white, which never matched the frosted pane)
+    return (
+      <Icon>
+        <defs>
+          <mask id={lens} maskUnits="userSpaceOnUse" x="0" y="0" width="24" height="24">
+            <rect width="24" height="24" fill="#fff" />
+            <circle cx="12" cy="13" r="3.3" stroke="#000" strokeWidth={1.8} fill="none" />
+          </mask>
+        </defs>
+        <path d={CAMERA_BODY} fill="currentColor" mask={`url(#${lens})`} />
+      </Icon>
+    );
+  }
   return (
     <Icon>
-      <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
+      <path d={CAMERA_BODY} />
       <circle cx="12" cy="13" r="3" />
     </Icon>
   );
+}
+
+export function PhoneIcon() {
+  const solid = useContext(SolidIcon);
+  return (
+    <Icon>
+      <rect x="6" y="2" width="12" height="20" rx="2.5" fill={solid ? "currentColor" : "none"} />
+      <path d="M11 18.5h2" stroke={solid ? "#fff" : "currentColor"} />
+    </Icon>
+  );
+}
+
+export function CheckIcon() {
+  return (
+    <Icon>
+      <path d="M20 6 9 17l-5-5" />
+    </Icon>
+  );
+}
+
+/** Two icons side by side in one mark (the last in the column the others keep). */
+export function IconPair({ children }: { children: ReactNode }) {
+  return <span style={{ display: "flex", alignItems: "center", gap: 6 }}>{children}</span>;
 }
 
 /** Phosphor's clock, drawn in this set's stroke. */
@@ -148,10 +196,12 @@ export function ClockIcon() {
 }
 
 export function DownloadIcon() {
+  const solid = useContext(SolidIcon);
   return (
     <Icon>
-      <path d="M12 15V3" />
-      <path d="m7 10 5 5 5-5" />
+      <path d={solid ? "M12 11V3" : "M12 15V3"} />
+      {/* solid: the arrow's head a filled wedge */}
+      {solid ? <path d="M7 10h10l-5 5z" fill="currentColor" /> : <path d="m7 10 5 5 5-5" />}
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
     </Icon>
   );
@@ -223,7 +273,7 @@ const PANE_OPTION_CSS = `
 .nijimuPaneMark {
   position: relative;
   flex: none;
-  width: ${MARK_PX}px;
+  min-width: ${MARK_PX}px;
   height: ${MARK_PX}px;
   display: flex;
   align-items: center;

@@ -9,6 +9,14 @@ import rhythmStillUrl from "../../assets/gesture-rhythm-pinch-still.png";
 
 export type GestureHintKind = "shape" | "rhythm" | "feeling" | "distance" | "color";
 
+/** How much the drawings' lines are thickened: the spread of a slight blur (px, in the hint's own px, scaled
+    with it) whose edge is then firmed by `GESTURE_FIRM` and laid under the drawing. A blur, not a dilate:
+    Chrome rounds a dilate's radius to whole device pixels, so a fraction of a pixel (.12, .18) did nothing
+    at all and .25 jumped straight to a full pixel (2026-11-25). 0 leaves them as drawn. */
+const GESTURE_THICKEN = 0.17;
+/** × the blurred ink's alpha: how firm the thickened edge is (1 a soft halo; higher, a crisper, wider line). */
+const GESTURE_FIRM = 1.2;
+
 /** What each illustration actually covers, in its own px, centred in its stage —
     the drawn image plus the ground its animation travels over (the palms
     parting ±36px, the colour hand sweeping ±18px, the feeling hand lifting
@@ -53,8 +61,22 @@ export function GestureHint({
         ...style,
       }}
     >
+      {/* the drawings are fine raster lines: they are thickened in their own ink — spread a little
+          (GESTURE_THICKEN), firmed (GESTURE_FIRM) and laid under the drawing itself — the animated GIF included */}
+      {GESTURE_THICKEN > 0 && <svg width="0" height="0" aria-hidden style={{ position: "absolute" }}>
+        <filter id="nijimu-gesture-thicken" x="-10%" y="-10%" width="120%" height="120%" colorInterpolationFilters="sRGB">
+          <feGaussianBlur in="SourceGraphic" stdDeviation={GESTURE_THICKEN} result="spread" />
+          <feComponentTransfer in="spread" result="firm">
+            <feFuncA type="linear" slope={GESTURE_FIRM} />
+          </feComponentTransfer>
+          <feMerge>
+            <feMergeNode in="firm" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </svg>}
       {/* key remounts the frames so tab switches always restart a visible cycle */}
-      <div key={kind} className="nijimu-gesture-hint-stage">
+      <div key={kind} className="nijimu-gesture-hint-stage" style={{ filter: GESTURE_THICKEN > 0 ? "url(#nijimu-gesture-thicken)" : undefined }}>
         {kind === "shape" ? (
           <>
             <img className="nijimu-gesture-shape-prayer" src={shapePrayerUrl} alt="" />

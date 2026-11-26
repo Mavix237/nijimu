@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { formKey, type ArtifactForm } from "../lib/superformula";
@@ -13,7 +13,7 @@ import { createEdgePrint } from "./filmStrip";
 import {
   BLANK_PHOTO, FOV, FRONT_LAYER, LOOK_Y, Mist, PITCH_MAX, PITCH_MIN, airFor, backdropVertex, blitFragment, blurFragment, buildGlass,
   createGlassUniformSet, createSheetUniformSet, glassFragment, glassRefractFragment, glassVertex, hash2,
-  keyFrom, photoLoader, seedDirections, sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms,
+  keyFrom, photoLoader, seedDirections, sheetFloatMatrix, sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms,
   type Glass, type GlassMode, type Room, type Sheet, type SheetFace, type SheetMode, type VesselTune,
 } from "./VesselPreview";
 import { SHADER_CHECKS } from "../lib/deviceTier";
@@ -104,7 +104,15 @@ export interface VesselArtifactProps {
   /** Set to a function and the next complete frame (with its reflection) is copied and handed to it,
       then the slot is emptied: read in the same task as the render, before WebGL clears its buffer. */
   capture?: { current: ((frame: HTMLCanvasElement) => void) | null };
+  /** Leaving for the pond (gallery): the vessel lifts off its reflection. The next frame's reflection
+      is kept as a still below the mirror line, riding with the seat, while the live canvas above
+      that line rises by the seat's `--vessel-lift` (CSS px of the unscaled seat). */
+  split?: boolean;
 }
+
+/** Where the still reflection hands over to the live vessel, as a share of the canvas's height. */
+const SPLIT_FEATHER = 0.012;
+type SplitTake = { current: ((frame: HTMLCanvasElement, line: number) => void) | null };
 
 /** A lobe of light fixed to the eye, laid on the facing wall; the vessel turns under it. */
 export interface VesselSheen {
@@ -171,6 +179,9 @@ export interface VesselWaterReflection {
   smear: number;
   /** × the true bend of a reflected ray by the wave's slope (1 is physical). */
   ripple: number;
+  /** World units over which the water's slope is averaged before it bends the reflection (0 the surface as it
+      is): the reflection breaks with the broad swells rather than every fine wrinkle. */
+  smooth?: number;
   /** How much more the slope bends it down the screen than across (the view's foreshortening). */
   stretch: number;
   /** 0: even strength; 1: the water's Fresnel decides it. */
@@ -210,6 +221,8 @@ const mirrorDown = new THREE.Vector3();
 const mirrorFoot = new THREE.Vector3();
 const mirrorPlane = new THREE.Vector3();
 const mirrorScratch = new THREE.Vector3();
+const sheetFloat = new THREE.Matrix4();
+const sheetFloatInverse = new THREE.Matrix4();
 
 /** The vertex furthest along `dir` (a unit vector). */
 function supportToward(positions: ArrayLike<number>, dir: THREE.Vector3, out: THREE.Vector3) {
@@ -253,6 +266,7 @@ function waterReflectFragment(surfaceGlsl: string) {
   uniform vec4 uCanvasRect;   // this canvas on the pond's canvas: left, top, width, height (px of the pond's canvas)
   uniform vec2 uPondSize;     // the pond's canvas (css px)
   uniform vec4 uWater;        // ripple (uv per radian of slope, down the canvas), stretch, fresnel, canvas height / width
+  uniform float uWaterSmooth; // world units: the slope is read as an average over this far round each point
   uniform vec3 uWaterColor;
   uniform vec2 uTone;         // tint, darken
   varying vec2 vUv;
@@ -271,6 +285,17 @@ function waterReflectFragment(surfaceGlsl: string) {
     vec3 P = wa + dir * (-wa.y / min(dir.y, -1e-6));
     vec2 flow;
     vec3 n = pondSurfaceNormal(P.xz, flow);
+    // the reflection breaks with the water's broad swells, not its finest wrinkles: the slope is the
+    // average of the surface over uWaterSmooth round the point (a low-pass of the pond's own normal)
+    if (uWaterSmooth > 0.0) {
+      vec2 f2;
+      vec3 s = n;
+      s += pondSurfaceNormal(P.xz + vec2(uWaterSmooth, 0.0), f2);
+      s += pondSurfaceNormal(P.xz - vec2(uWaterSmooth, 0.0), f2);
+      s += pondSurfaceNormal(P.xz + vec2(0.0, uWaterSmooth), f2);
+      s += pondSurfaceNormal(P.xz - vec2(0.0, uWaterSmooth), f2);
+      n = normalize(s);
+    }
     vec3 e = normalize(uPondEye - P);
     float F = .02 + .98 * pow(1.0 - max(0.0, dot(n, e)), 5.0);
     // a slope tilts the reflected ray by twice itself: across, and (foreshortened) down
@@ -300,6 +325,7 @@ interface Soften {
 }
 const waterColor = new THREE.Color();
 const waterline = new THREE.Vector3();
+const splitLine = new THREE.Vector3();
 
 /** One separable pass of the lab's 13-tap kernel onto the screen. σ is in device pixels. */
 function spreadSoft(renderer: THREE.WebGLRenderer, s: Soften, sigma: number) {
@@ -372,8 +398,8 @@ export function vesselCanvasScale(form: ArtifactForm, morph: number): number {
 }
 
 function VesselObject({
-  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, rest, cacheKey, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen, capture,
-}: VesselArtifactProps & { parts: VesselParts }) {
+  parts, photoUrl, seed, tune, room, glassMode = "refract", sheetMode = "draped", face = "inside", focused, still, rest, cacheKey, facing, viewPitch, viewToken, locked = false, holdView = false, onView, onPick, onReady, blurPx = 0, maxViewportWidth, reflection, sheen, capture, split, splitTake,
+}: VesselArtifactProps & { parts: VesselParts; splitTake?: SplitTake }) {
   const { camera, gl, scene, size, invalidate } = useThree();
   // the film panel (lib/filmTune.ts) re-renders the seat, which rewrites its photo's look
   const film = useFilmTune();
@@ -559,7 +585,7 @@ function VesselObject({
         uPondWorld: { value: share.camera.matrixWorld },
         uPondEye: { value: share.camera.position },
         uCanvasRect: { value: new THREE.Vector4() }, uPondSize: { value: new THREE.Vector2(1, 1) },
-        uWater: { value: new THREE.Vector4() }, uWaterColor: { value: new THREE.Color() }, uTone: { value: new THREE.Vector2() },
+        uWater: { value: new THREE.Vector4() }, uWaterSmooth: { value: 0 }, uWaterColor: { value: new THREE.Color() }, uTone: { value: new THREE.Vector2() },
       },
       depthTest: false, depthWrite: false, blending: THREE.NoBlending,
     });
@@ -698,6 +724,19 @@ function VesselObject({
     }
   };
   const refract = glassMode === "refract";
+  // the pond departure keeps this seat's reflection as a still: one more frame, then held
+  useEffect(() => { if (split) invalidate(); }, [split, invalidate]);
+  const deliverSplit = (first: boolean) => {
+    const take = splitTake?.current;
+    if (!take || first || !didRender.current || !mirror || mirror.water) return;
+    splitTake.current = null;
+    // the mirror plane under the foot, on this canvas: above it the vessel, below it the reflection
+    splitLine.copy(mirrorPlane).project(camera);
+    const copy = document.createElement("canvas");
+    copy.width = gl.domElement.width; copy.height = gl.domElement.height;
+    copy.getContext("2d")?.drawImage(gl.domElement, 0, 0);
+    take(copy, Math.min(1, Math.max(0, 0.5 - splitLine.y * 0.5)));
+  };
   // a capture waits for a frame that has its reflection (the first is drawn without it)
   const deliver = (first: boolean) => {
     const take = capture?.current;
@@ -734,6 +773,11 @@ function VesselObject({
     const bob = HOVER_BOB * d * h.amount * Math.sin(h.phase);
     camera.position.set(-Math.sin(y) * Math.cos(p) * d, LOOK_Y - bob + Math.sin(p) * d, Math.cos(y) * Math.cos(p) * d);
     camera.lookAt(0, LOOK_Y - bob, 0);
+    // The strip floats free: it turns about the axis with the eye from where the eye opened (the
+    // eye's azimuth is −yaw), so the picture keeps facing the viewer and the glass goes round it.
+    const turn = -y - (faceAngle * Math.PI) / 180;
+    sheetU.uFloatTurn.value = sheetM.uFloatTurn.value = turn;
+    const floated = sheetFloatMatrix(built.sheet, turn, sheetFloat);
     // the seat is the top of a taller canvas: the lens keeps the seat's framing and the canvas shows on below it
     const lens = camera as THREE.PerspectiveCamera;
     if (extra > 0) {
@@ -758,8 +802,11 @@ function VesselObject({
         mirrorUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
         mirrorDown.copy(mirrorUp).negate();
         supportToward(built.glass.positions, mirrorDown, mirrorFoot);
+        // the strip's lowest point as it now floats: asked in its own frame, then brought out
         const sheetPos = built.sheet.geometry.getAttribute("position").array as ArrayLike<number>;
-        supportToward(sheetPos, mirrorDown, mirrorScratch);
+        sheetFloatInverse.copy(floated).invert();
+        supportToward(sheetPos, mirrorScratch.copy(mirrorDown).transformDirection(sheetFloatInverse), mirrorScratch);
+        mirrorScratch.applyMatrix4(floated);
         if (mirrorScratch.dot(mirrorDown) > mirrorFoot.dot(mirrorDown)) mirrorFoot.copy(mirrorScratch);
         mirrorPlane.copy(mirrorFoot).addScaledVector(mirrorUp, -mirror.gap);
         const level = mirrorUp.dot(mirrorPlane);
@@ -849,6 +896,7 @@ function VesselObject({
         const pondFov = (share.camera.fov * Math.PI) / 180 / Math.max(1e-3, share.camera.zoom);
         const perRadian = (pond.height / Math.max(1, mine.height)) / pondFov;
         (u.uWater.value as THREE.Vector4).set(w.ripple * perRadian, w.stretch, w.fresnel, mine.height / Math.max(1, mine.width));
+        u.uWaterSmooth.value = w.smooth ?? 0;
         (u.uWaterColor.value as THREE.Color).copy(waterColor.set(w.color));
         (u.uTone.value as THREE.Vector2).set(w.tint, w.darken);
         m.quad.material = water;
@@ -896,6 +944,7 @@ function VesselObject({
     // the outline has been kept: the next frame brings the reflection in
     if (first && didRender.current && mirror) invalidate();
     deliver(first);
+    deliverSplit(first);
   }, 1);
 
   return <>
@@ -979,6 +1028,21 @@ function seatDpr(pixelScale: number | undefined): number | [number, number] {
 
 export function VesselArtifact(props: VesselArtifactProps) {
   const glRef = useRef<THREE.WebGLRenderer | null>(null);
+  // the pond departure: a still of the reflection, and where the mirror line fell on it
+  const splitTake = useRef<SplitTake["current"]>(null);
+  const [mirrorStill, setMirrorStill] = useState<{ frame: HTMLCanvasElement; line: number } | null>(null);
+  const stillHost = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!props.split) { splitTake.current = null; setMirrorStill(null); return; }
+    splitTake.current = (frame, line) => setMirrorStill({ frame, line });
+    return () => { splitTake.current = null; };
+  }, [props.split]);
+  useLayoutEffect(() => {
+    const host = stillHost.current;
+    if (!host || !mirrorStill) return;
+    mirrorStill.frame.style.cssText = "display:block;width:100%;height:100%";
+    host.replaceChildren(mirrorStill.frame);
+  }, [mirrorStill]);
   const mounted = useRef(false);
   // A real unmount releases the context before the next frame, so a scrolling
   // rim stays under the browser's limit. The check after a microtask skips the
@@ -1018,16 +1082,32 @@ export function VesselArtifact(props: VesselArtifactProps) {
   }, [parts, props.priority, props.focused]);
   if (!parts || !canvasOn) return <div style={{ width: "100%", height: "100%" }} />;
   const extra = props.reflection && props.reflection.strength > 0 ? Math.max(0, props.reflection.room) : 0;
-  return (
-    // offsetSize: the seat is scaled by a CSS transform along the curve, and a resize observer does not see
-    // transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
-    // that tiny size and stretched when it reached the apex
+  const height = extra > 0 ? `${(1 + extra) * 100}%` : "100%";
+  const canvasStyle: CSSProperties = { width: "100%", height };
+  const kept = props.split && mirrorStill ? mirrorStill : null;
+  if (props.split) {
+    // the vessel goes on ahead of its seat; the still below keeps the seat's pace
+    canvasStyle.transform = "translate3d(0, calc(var(--vessel-lift, 0px) * -1), 0)";
+    canvasStyle.willChange = "transform";
+  }
+  if (kept) {
+    const above = `linear-gradient(to bottom, #000 ${((kept.line - SPLIT_FEATHER) * 100).toFixed(2)}%, transparent ${((kept.line + SPLIT_FEATHER) * 100).toFixed(2)}%)`;
+    canvasStyle.maskImage = canvasStyle.WebkitMaskImage = above;
+  }
+  const below = kept ? `linear-gradient(to bottom, transparent ${((kept.line - SPLIT_FEATHER) * 100).toFixed(2)}%, #000 ${((kept.line + SPLIT_FEATHER) * 100).toFixed(2)}%)` : undefined;
+  return (<>
+    {/* the reflection left behind, thinning as the vessel rises away (the gallery's --reflection-fade) */}
+    {kept && <div ref={stillHost} aria-hidden style={{ position: "absolute", left: 0, top: 0, width: "100%", height,
+      pointerEvents: "none", maskImage: below, WebkitMaskImage: below, opacity: "var(--reflection-fade, 1)" }} />}
+    {/* offsetSize: the seat is scaled by a CSS transform along the curve, and a resize observer does not see
+        transforms — measured by its bounds, a canvas first mounted far down the curve would be rendered at
+        that tiny size and stretched when it reached the apex */}
     <Canvas camera={{ position: [0, 0.6, 9], fov: FOV, near: 0.1, far: 50 }}
       dpr={props.dpr ?? seatDpr(props.pixelScale)} gl={{ antialias: true, alpha: true, premultipliedAlpha: true }} frameloop={props.frameloop}
       resize={{ offsetSize: true }}
       onCreated={({ gl }) => { glRef.current = gl; gl.debug.checkShaderErrors = SHADER_CHECKS; }}
-      style={extra > 0 ? { width: "100%", height: `${(1 + extra) * 100}%` } : { width: "100%", height: "100%" }}>
-      <VesselObject {...props} parts={parts} />
+      style={canvasStyle}>
+      <VesselObject {...props} parts={parts} splitTake={splitTake} />
     </Canvas>
-  );
+  </>);
 }

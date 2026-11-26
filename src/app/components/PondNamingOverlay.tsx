@@ -18,6 +18,9 @@ import { FlowPageGrid } from "./FlowPageGrid";
 import { MemoryReadingPane, type ReadableMemory } from "./MemoryReadingPane";
 import { useCompact } from "../hooks/useCompact";
 import { useNamingTune, withNamingLights, type NamingLightTune } from "../lib/namingTune";
+import { cardFrameWanted, giveCardFrame, onCardFrame } from "../lib/cardFrame";
+import { CARD_FRAME_PX, cardVesselOf } from "./SaveMemoryDialog";
+import { CARD_SCALE } from "../lib/memoryImage";
 
 const NamingDials = import.meta.env.DEV ? lazy(() => import("./NamingDials")) : null;
 const FilmDials = import.meta.env.DEV ? lazy(() => import("./FilmDials")) : null;
@@ -121,8 +124,9 @@ export function PondNamingOverlay({
   const passageRef = useRef<HTMLParagraphElement>(null);
   const passage = (state.transcript ?? "").trim();
   const compact = useCompact();
-  /** The words under the fields, on wider screens; a phone keeps them in the pane. */
-  const inlinePassage = compact ? "" : passage;
+  /** The words are not shown under the fields any more (2026-11-25): the name and year stand alone over the
+      vessel. A phone still opens them in its pane by pressing the vessel. */
+  const inlinePassage = "";
   const [reading, setReading] = useState(false);
   const readable = useMemo<ReadableMemory | null>(
     () => (reading ? { id: session.draftId, transcript: passage } : null),
@@ -140,7 +144,9 @@ export function PondNamingOverlay({
   const canvasRoom = useMemo(() => vesselCanvasScale(vessel.form, vessel.tune.morph), [vessel]);
   const namingLight = useMemo(() => namingLightAt(vessel.tune.haze, tune.light, tune.lightFar), [vessel, tune.light, tune.lightFar]);
   const room = tune.room;
-  const lit = useMemo(() => withNamingLights({ ...vessel.tune, ...namingLight }), [vessel, namingLight]);
+  // seen from the higher eye naming's pond stands at (layout.viewPitch; the gallery's 4°)
+  const viewPitch = tune.layout.viewPitch;
+  const lit = useMemo(() => withNamingLights({ ...vessel.tune, ...namingLight, pitch: viewPitch }), [vessel, namingLight, viewPitch]);
   /** The vessel mirrored on the lake: the gallery's mirror, laid on moving water in the pond's own colour. */
   // the pond under it lends its surface (lib/namingWater.ts); until it has, there is no reflection
   const surface = useSyncExternalStore(onPondSurface, pondSurfaceShare, pondSurfaceShare);
@@ -150,13 +156,34 @@ export function PondNamingOverlay({
     return {
       strength: r.strength, fall: r.fall, gap: r.gap, soft: r.soft, room: r.room,
       water: {
-        smear: r.smear, ripple: r.ripple, stretch: r.stretch, fresnel: r.fresnel,
+        smear: r.smear, ripple: r.ripple, stretch: r.stretch, fresnel: r.fresnel, smooth: r.smooth,
         tint: r.tint, darken: r.darken, color: pondTune().surface.paper, surface,
         contact: r.contact, contactSharp: r.contactSharp, contactStrength: r.contactStrength,
         onContact: (x, y) => { contactRef.current = { x, y }; },
       },
     };
   }, [tune.reflection, surface]);
+  /* "Keep a copy" asks for the card's frame (lib/cardFrame.ts): while it is wanted the vessel — hidden behind
+     the card then — dresses as the card's vessel (its glass, stain and room, no lake under it) at the density
+     that makes the card's 1920 px frame, lets its canvas settle at that size for a few frames, and hands over
+     its next complete frame. No second WebGL context, so the pond keeps its own. */
+  const cardWanted = useSyncExternalStore(onCardFrame, cardFrameWanted, cardFrameWanted);
+  const cardVessel = useMemo(() => (cardWanted ? cardVesselOf(session) : null), [cardWanted, session]);
+  const cardCapture = useRef<((frame: HTMLCanvasElement) => void) | null>(null);
+  const [cardDpr, setCardDpr] = useState<number | undefined>(undefined);
+  useEffect(() => {
+    if (!cardWanted) { cardCapture.current = null; setCardDpr(undefined); return; }
+    const width = seatRef.current?.offsetWidth || CARD_FRAME_PX;
+    setCardDpr(Math.min(8, (CARD_SCALE * CARD_FRAME_PX) / width));
+    let frames = 0;
+    let raf = 0;
+    const settle = () => {
+      if (++frames < 5) { raf = requestAnimationFrame(settle); return; }
+      cardCapture.current = giveCardFrame;
+    };
+    raf = requestAnimationFrame(settle);
+    return () => cancelAnimationFrame(raf);
+  }, [cardWanted]);
   /** Where the reflection lands on the screen, as the vessel reports it. */
   const contactRef = useRef<{ x: number; y: number } | null>(null);
   /** The memory's colour, if it was given one: it reaches the lake round the reflection (lib/namingWater.ts). */
@@ -354,7 +381,9 @@ export function PondNamingOverlay({
               opacity: rising ? 0 : 1,
               transform: `translateY(${-textLift}vh)`,
               pointerEvents: "auto",
-              zIndex: 1,
+              // over the vessel's canvas too, so its words can be scrolled and selected
+              position: "relative",
+              zIndex: 2,
             }}
           >
             {inlinePassage}
@@ -388,12 +417,13 @@ export function PondNamingOverlay({
             cacheKey={`${session.draftId}|naming|${formKey(vessel.form)}|${vessel.tune.morph}`}
             form={vessel.form} morph={vessel.tune.morph}
             photoUrl={vessel.url || undefined} seed={vessel.seed}
-            tune={lit} room={room}
+            tune={cardVessel ? cardVessel.tune : lit} room={cardVessel ? cardVessel.room : room}
             glassMode={vessel.mode} sheetMode={vessel.sheetMode} face={vessel.face}
             sheetSize={vessel.tune.sheetSize}
             onReady={() => { vesselReady.current = true; }}
             focused still={false} frameloop="always"
-            reflection={reflection}
+            reflection={cardVessel ? undefined : reflection}
+            dpr={cardDpr} capture={cardCapture}
             onPick={openWords}
           />
         </div>
@@ -404,10 +434,16 @@ export function PondNamingOverlay({
         // raised to the surface's action row; the scene keeps its rows, so the vessel stays put
         // over the vessel's canvas, whose room for the reflection reaches down past its seat
         actionsStyle={{ transform: `translateY(-${FLOW_PAGE.surfaceActionLift})`, position: "relative", zIndex: 2 }}
-        headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center",
+        // The fields stand over the vessel: a form with a small n is spiky, its canvas is given more
+        // room (vesselCanvasScale) and reaches up over the name and year, and its drag took their
+        // presses and caret. Only the fields' own rows take presses (the heading lets the rest
+        // through), so the vessel can still be turned from anywhere else.
+        headingStyle={{ opacity: rising ? 0 : 1, display: "flex", justifyContent: "center", position: "relative", zIndex: 3,
           transform: `translateY(calc(${fieldDrop}px - ${TEXT_LIFT}))`,
           ["--naming-field" as string]: "min(40em, calc(100vw - 40px))" }}
-        style={{ zIndex: 1 }} />
+        // "Keep a copy" shows the memory's card in the vessel's place: the fields, the vessel and save make way
+        style={{ zIndex: 1, opacity: rim.saveDialogOpen ? 0 : 1, pointerEvents: rim.saveDialogOpen ? "none" : undefined,
+          transition: reducedMotion ? undefined : "opacity 600ms ease" }} />
 
       {/* the overlay lets presses through to the water; the pane takes its own */}
       {compact && passage && <div style={{ pointerEvents: "auto" }}>

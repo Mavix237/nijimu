@@ -180,10 +180,11 @@ const TUNED: Tuned[] = [
   { key: "Y-08", morph: 0.41, size: 0.92, photoHeight: 0.9, photoAround: 1, photoSize: 1.171, photo: 0, view: { around: -14, pitch: -24.5 },
     form: { category: "hybrid", top: { m: 16.8, n1: 12.806, n2: 5.045, n3: 2.995, a: 1.45, b: 0.75 }, side: { m: 2.6, n1: 0.858, n2: 0.179, n3: 0.858, a: 0.85, b: 1.25 }, proportion: { radial: 0.95, vertical: 1.04 } } },
   // 2024 · My first audiovisual performance, tuned in /studio 2026-11-03: a diamond, morph .45, the picture a little lower,
-  // the strip larger (2.47 → 2.76) and its own: inset, a deeper tear, a wider edge fade, small perforations, hung flatter
+  // the strip larger (2.47 → 2.76) and its own: inset, a deeper tear, a wider edge fade (5, raised to 8 with
+  // everyone's 2.5 → 5.5 on 2026-11-25), small perforations, hung flatter
   { key: "E-14", morph: 0.45, size: 1.1, photoHeight: 0.96, photoAround: -1, photoSize: 1.302, photo: 7, view: { around: 14, pitch: -3 },
     form: { category: "diamond", top: { m: 4, n1: 1.026, n2: 1.026, n3: 1.026, a: 1, b: 1 }, side: { m: 4, n1: 0.878, n2: 0.878, n3: 0.878, a: 1, b: 1 } },
-    tune: { inset: 0.865, tornDepth: 3.2, edgeFade: 5, holeSize: 0.2, tilt: 0, contact: 29.5, sag: 17, peel: 10, gap: 0, flowSheer: 0.24 } },
+    tune: { inset: 0.865, tornDepth: 3.2, edgeFade: 8, holeSize: 0.2, tilt: 0, contact: 29.5, sag: 17, peel: 10, gap: 0, flowSheer: 0.24 } },
   { key: "E-02", morph: 0.67, size: 1.32, photoHeight: 1, photoAround: -2, photoSize: 1.03, photo: 8, view: { around: 0, pitch: 4 },
     form: { category: "hybrid", top: { m: 6, n1: 0.198, n2: 1.714, n3: 1.714 }, side: { m: 0, n1: 1.01, n2: 1.01, n3: 1.01 }, hybridOf: ["flower", "sphere"] } },
   // 2025 · tuned in /studio 2026-11-03: top m 20.9 → 13.65, n1 3.24 → 6.09, n2 4.44 → 3.11, morph .46 → .37, a kept view

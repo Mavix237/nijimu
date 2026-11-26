@@ -9,13 +9,13 @@ import { GalleryScrollHint } from "./GalleryOnboarding";
 import { setApexHover } from "../lib/apexHover";
 import { GalleryViewToggle } from "./GalleryViewToggle";
 import { CHROME_GRAY, COLOR_PALETTE } from "../lib/colors";
-import { grainMaskTile } from "../lib/paperFinish";
+import { LINE_INK_MS, LINE_LEAD_MS, LINE_STEP_MS, inkKeyframes } from "./InkLines";
 import { GALLERY_TEXT_TRACKING, GALLERY_TRANSCRIPT, SANS, SERIF, SERIF_CJK, SERIF_ITALIC_TRACKING, TEXT_ENTER_MS, textEnter } from "../lib/theme";
 import { DIVE_TUNING } from "../lib/puddle/dive";
 import type { ArchiveArtifact } from "../lib/archive";
 import { flowProgress, inkGrowth, inkWash, type InkArrival } from "../lib/landingTransition";
 import { INK_CUT_SCALE, captureInkMask, clearInkSeats, setInkSeat } from "../lib/inkCutouts";
-import { pondFieldSeat, pondRimPose, pondRimSeat } from "../lib/pondTransition";
+import { POND_VESSEL_LEAD, pondFieldSeat, pondReflectionFade, pondRimLead, pondRimPose, pondRimSeat } from "../lib/pondTransition";
 import { carouselFrame, carouselSeat, carouselContainsOffset, carouselLift, CAROUSEL_OLDER_SEATS, CAROUSEL_NEWER_SEATS } from "../lib/carouselLayout";
 import { useHeaderMenu } from "./HeaderMenu";
 import { useCompact } from "../hooks/useCompact";
@@ -172,20 +172,14 @@ const CAPTION_TRANSCRIPT_STYLE: CSSProperties = {
   textWrap: "pretty",
   transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease`,
 };
+/** A few memories' words read better a little wider than the 60ch above (by memory id). */
+const CAPTION_TRANSCRIPT_WIDTH: Record<string, string> = {
+  // "Started designing seriously": no orphaned "where it started." on a line of its own
+  "6": "64ch",
+};
 
-/** The words come back line by line as ink into wet paper. Each line fades in (ease in and
-    out, LINE_INK_MS, LINE_STEP_MS after the one above, LINE_LEAD_MS in) as a faint wash: a
-    soft halo of its ink (INK_HALO_EM) held in the paper's grain (grainMaskTile, one grain a
-    device pixel, as on the landing), barely blurred (INK_BLUR_PX). A wet front then runs
-    across it from the left (INK_FRONT, its soft width), filling the ink in solid while the
-    halo draws back into the letters. A settled line keeps no mask, shadow or filter. */
-const LINE_INK_MS = 1600;
-const LINE_STEP_MS = 260;
-const LINE_LEAD_MS = 150;
-const INK_HALO_EM = [0.32, 0.85] as const;
-const INK_BLUR_PX = 1.1;
-/** The front's solid share and its soft edge, as stops along a mask 2.2× the line's width. */
-const INK_FRONT = [50, 60] as const;
+/* The words come back line by line as ink into wet paper (InkLines: LINE_INK_MS, LINE_STEP_MS,
+   LINE_LEAD_MS in, the halo, the grain and the wet front). */
 /** One memory per 72px of wheel. A step spends the whole gesture: the surplus
     is not kept, so a slightly fast flick cannot pay for several more steps.
     The next step waits 350ms (was 140), so the fastest run is 40% of the old rate. */
@@ -193,15 +187,37 @@ const RIM_WHEEL_PX = 72;
 const RIM_STEP_GAP_MS = 350;
 const RIM_STEP_GAP_REDUCED_MS = 200;
 
+/** A word of fewer than this many letters never ends a line of the transcript. */
+const SHORT_WORD_LETTERS = 3;
+/** The words as the lines may break between them: a short word ("a", "I", "to", "is,") is bound to
+    the word after it, so where it would have ended a line it starts the next one instead. A run of
+    short words binds together, on to the first longer word after it. */
+function bindShortWords(words: string[]): string[] {
+  const out: string[] = [];
+  let held = "";
+  for (const word of words) {
+    const joined = held ? `${held} ${word}` : word;
+    const letters = word.match(/[\p{L}\p{N}]/gu)?.length ?? 0;
+    if (letters < SHORT_WORD_LETTERS) held = joined;
+    else { out.push(joined); held = ""; }
+  }
+  if (held) {
+    // the text ends on short words: they ride with the word before them
+    if (out.length) out[out.length - 1] += ` ${held}`;
+    else out.push(held);
+  }
+  return out;
+}
+
 /** The words stop above `floorY`; when they would run past it, the last lines fade out
     (measured on an unseen copy at rest). They come in line by line as ink (LINE_* and
     INK_* above); the lines are found by setting the words once, unseen, at the same
     width and reading where each one wraps. */
-function CaptionTranscript({ text, visible, floorY }: { text: string; visible: boolean; floorY: number }) {
+function CaptionTranscript({ text, visible, floorY, width }: { text: string; visible: boolean; floorY: number; width?: string }) {
   const ref = useRef<HTMLParagraphElement>(null);
   const measure = useRef<HTMLParagraphElement>(null);
   const [room, setRoom] = useState<number | null>(null);
-  const words = useMemo(() => text.split(/\s+/).filter(Boolean), [text]);
+  const words = useMemo(() => bindShortWords(text.split(/\s+/).filter(Boolean)), [text]);
   const [lines, setLines] = useState<string[]>([text]);
   useLayoutEffect(() => {
     const el = measure.current;
@@ -234,18 +250,20 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
   }, [lines, floorY, visible]);
   const fade = "linear-gradient(to bottom, #000 calc(100% - 3.2em), transparent)";
   const still = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const keyframes = useMemo(inkKeyframes, []);
+  const keyframes = useMemo(() => inkKeyframes("transcriptInkLine", GALLERY_TRANSCRIPT.color), []);
   return (
     <div data-trail-ignore style={{ position: "relative" }}>
       <style>{keyframes}</style>
       {/* the same words, unseen and at rest, to find where the lines break and their height */}
-      <p ref={measure} aria-hidden style={{ ...CAPTION_TRANSCRIPT_STYLE, position: "absolute", left: 0, right: 0, top: 0, visibility: "hidden", pointerEvents: "none" }}>
-        {words.map((word, i) => <span key={i}>{word}{i < words.length - 1 ? " " : ""}</span>)}
+      <p ref={measure} aria-hidden style={{ ...CAPTION_TRANSCRIPT_STYLE, ...(width ? { maxWidth: width } : {}), position: "absolute", left: 0, right: 0, top: 0, visibility: "hidden", pointerEvents: "none" }}>
+        {/* each group unbroken, the space between groups outside it, where the line may break */}
+        {words.map((word, i) => <Fragment key={i}><span style={{ whiteSpace: "nowrap" }}>{word}</span>{i < words.length - 1 ? " " : ""}</Fragment>)}
       </p>
       {/* flow-root, so the lines' negative margins (room for their halo inside the
           mask) stay inside the paragraph rather than collapsing through it */}
       <p ref={ref} style={{
         ...CAPTION_TRANSCRIPT_STYLE,
+        ...(width ? { maxWidth: width } : {}),
         display: "flow-root",
         opacity: visible ? 1 : 0,
         ...(room !== null ? { maxHeight: room, overflow: "hidden", maskImage: fade, WebkitMaskImage: fade } : {}),
@@ -267,43 +285,6 @@ function CaptionTranscript({ text, visible, floorY }: { text: string; visible: b
       </p>
     </div>
   );
-}
-
-/** The transcript's ink entrance (see LINE_INK_MS). Its mask holds through the animation and
-    is gone once a line has settled (fill backwards), so a settled line is plain text. */
-function inkKeyframes() {
-  const ink = GALLERY_TRANSCRIPT.color;
-  const rgb = [1, 3, 5].map((i) => parseInt(ink.slice(i, i + 2), 16)).join(", ");
-  const grain = grainMaskTile();
-  const dpr = typeof window === "undefined" ? 1 : Math.max(1, window.devicePixelRatio || 1);
-  const tile = `${(256 / dpr).toFixed(2)}px ${(256 / dpr).toFixed(2)}px`;
-  const front = `linear-gradient(90deg, #000 ${INK_FRONT[0]}%, transparent ${INK_FRONT[1]}%)`;
-  const mask = (x: string) => `
-    -webkit-mask-image: ${front}, url(${grain}); mask-image: ${front}, url(${grain});
-    -webkit-mask-size: 220% 100%, ${tile}; mask-size: 220% 100%, ${tile};
-    -webkit-mask-repeat: no-repeat, repeat; mask-repeat: no-repeat, repeat;
-    -webkit-mask-position: ${x} 0, 0 0; mask-position: ${x} 0, 0 0;
-    -webkit-mask-composite: source-over; mask-composite: add;`;
-  return `
-    @keyframes transcriptInkLine {
-      from {
-        opacity: 0; color: rgba(${rgb}, .45); filter: blur(${INK_BLUR_PX}px);
-        text-shadow: 0 0 ${INK_HALO_EM[0]}em rgba(${rgb}, .45), 0 0 ${INK_HALO_EM[1]}em rgba(${rgb}, .22);
-        ${mask("100%")}
-      }
-      35% { opacity: .9; }
-      /* the halo draws back into the letters ahead of the front, so the ink the front
-         fills reads as the word, not as a smudge round it */
-      55% {
-        color: rgba(${rgb}, .8); filter: blur(${(INK_BLUR_PX * 0.25).toFixed(2)}px);
-        text-shadow: 0 0 ${(INK_HALO_EM[0] * 0.35).toFixed(2)}em rgba(${rgb}, .18), 0 0 ${(INK_HALO_EM[1] * 0.35).toFixed(2)}em rgba(${rgb}, .06);
-      }
-      to {
-        opacity: 1; color: rgba(${rgb}, 1); filter: blur(0px);
-        text-shadow: 0 0 0 rgba(${rgb}, 0), 0 0 0 rgba(${rgb}, 0);
-        ${mask("0%")}
-      }
-    }`;
 }
 
 /** Gap between the title and the year, in the caption block's own em. */
@@ -356,7 +337,8 @@ export function PuddleDiveGallery({
   onExit?: () => void;
   /** Leave past the first or last memory — the dedicated carousel uses this
       to open the perspective pond; the G-gallery falls back to onExit. */
-  onOverscrollExit?: () => void;
+  /** Leave for the pond; `fromId` is the memory it was left from (the plus passes it). */
+  onOverscrollExit?: (fromId?: string) => void;
   /** Replace the default title / year caption (used by the naming step). */
   caption?: ReactNode;
   /** Explicit opt-in for an embedded gallery that can dismiss on its backdrop. */
@@ -516,38 +498,13 @@ export function PuddleDiveGallery({
      and the next wheel event would step at once. */
   const stepLockRef = useRef(0);
   const wheelLeftRef = useRef(0);
-  const pendingPondRef = useRef(false);
-  const pondTargetRef = useRef<number | null>(null);
-
+  /* The plus leaves for the pond from wherever the rim is: it no longer scrolls to the
+     newest memory first (2026-11-25). The memory in hand rides along, so the way back
+     from the pond opens on it. */
   const openPondFromPlus = () => {
-    if (pondDeparture > 0 || pendingPondRef.current) return;
-    if (inField) {
-      onOverscrollExit?.();
-      return;
-    }
-    const target = Math.max(0, items.length - 1);
-    if (target === activeIdx) {
-      onOverscrollExit?.();
-      return;
-    }
-    pendingPondRef.current = true;
-    pondTargetRef.current = target;
-    onNavigate(target - activeIdx);
+    if (pondDeparture > 0) return;
+    onOverscrollExit?.(inField ? undefined : items[activeIdx]?.id);
   };
-
-  useEffect(() => {
-    if (!pendingPondRef.current) return;
-    if (pondDeparture > 0 || (pondTargetRef.current !== null && activeIdx !== pondTargetRef.current)) {
-      pendingPondRef.current = false;
-      pondTargetRef.current = null;
-      return;
-    }
-    if (rimSettled) {
-      pendingPondRef.current = false;
-      pondTargetRef.current = null;
-      onOverscrollExit?.();
-    }
-  }, [activeIdx, rimSettled, pondDeparture, onOverscrollExit]);
 
   /* arrows — keyboard. Paced like the wheel, so a held key steps rather than
      racing the rim; leaving for the pond takes a fresh press once the rim is still. */
@@ -1125,6 +1082,11 @@ export function PuddleDiveGallery({
           const seat = inField
             ? pondFieldSeat(depth.x, depth.y, geo.size * depth.scale, depth.depth ?? 4 / Math.max(.01, depth.scale), viewport.h, pondDeparture, !!reducedMotion)
             : pondRimSeat(depth.x, depth.y, geo.cx, geo.apexY, viewport.h, pondDeparture, !!reducedMotion);
+          // the vessel rises ahead of its seat; its reflection (drawn in the same canvas) keeps the seat's pace
+          const departing = pondDeparture > 0 && !reducedMotion;
+          const vesselLead = !departing ? 0 : inField
+            ? Math.max(0, depth.y - seat.y) * POND_VESSEL_LEAD
+            : pondRimLead(viewport.h, pondDeparture, !!reducedMotion);
           const slotPalette =
             COLOR_PALETTE[slotItem.colorIndex % COLOR_PALETTE.length];
           /* handed over rather than arriving: it is already exactly here */
@@ -1187,6 +1149,11 @@ export function PuddleDiveGallery({
                 width: geo.size,
                 height: geo.size,
                 transform: `translate(-50%, -50%) translate(${seat.x.toFixed(2)}px, ${seat.y.toFixed(2)}px) scale(${depth.scale * seat.scale})${depth.rotate ? ` rotate(${depth.rotate.toFixed(2)}deg)` : ""}`,
+                ...(departing ? {
+                  "--vessel-lift": `${(vesselLead / Math.max(0.01, depth.scale * seat.scale)).toFixed(2)}px`,
+                  // the reflection left on the ground thins as its vessel rises away from it
+                  "--reflection-fade": pondReflectionFade(vesselLead, viewport.h).toFixed(3),
+                } as CSSProperties : null),
                 zIndex: 100000 + Math.round((depth.order ?? offset * 100) + seat.z),
                 cursor: focused ? "default" : "pointer",
                 pointerEvents: (!awaited || revealed) && chromeVisible && depth.opacity * bufferFade > 0.02 ? "auto" : "none",
@@ -1269,6 +1236,7 @@ export function PuddleDiveGallery({
                     haze: depth.haze,
                     blurPx: depth.blurPx,
                     offset,
+                    departing,
                     onFrame: onFrameFor(slotItem.id),
                   }) : <SceneViewer
                     measureUnscaled
@@ -1369,6 +1337,7 @@ export function PuddleDiveGallery({
           {caption ?? <StaticCaption title={shownCaption.event} year={shownCaption.year} />}
           {!caption && !field?.on && !compact && shownCaption.transcript && (
             <CaptionTranscript text={shownCaption.transcript} visible={transcriptReady && revealedId === shownCaption.id}
+              width={CAPTION_TRANSCRIPT_WIDTH[shownCaption.id]}
               floorY={viewport.h - (showTimeScale ? timeScaleInset(viewport) + TRANSCRIPT_CLEARANCE : TRANSCRIPT_CLEARANCE)} />
           )}
         </div>}

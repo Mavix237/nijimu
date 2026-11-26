@@ -11,6 +11,7 @@ import { pondBackdropCss, pondTune, usePondTune } from "../lib/pondTune";
 import { PondRecordingOverlay } from "./PondRecordingOverlay";
 import { PondNamingOverlay } from "./PondNamingOverlay";
 import type { NamingSession } from "./NamingRim";
+import { useNamingTune } from "../lib/namingTune";
 
 /** The pond's dev panel (DialKit), development only. */
 const PondDials = import.meta.env.DEV ? lazy(() => import("./PondDials")) : null;
@@ -32,6 +33,7 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
   const navigate = useNavigate();
   const location = useLocation();
   const tune = usePondTune();
+  const namingLayout = useNamingTune().layout;
   const overlaid = covered || recording || !!naming;
   const sinkRef = useRef(0);
   const [touch, setTouch] = useState<PondTouch | null>(null);
@@ -169,7 +171,11 @@ export function MemoryPondPage({ arrival = 1, active = true, reducedMotion = fal
 
   const pondProps: PondProps = { arrival, reducedMotion, touch, cursorRef, holdRef: holdProgress,
     hintRef, hintRevealRef: hintReveal, promptRefs, cueRef, onReady: ready, lifeReady,
-    promptRipples: !overlaid && active, sinkRef };
+    promptRipples: !overlaid && active, sinkRef,
+    // naming: the vessel floats a little higher over the water and the eye rises with it
+    cameraLift: naming ? namingLayout.cameraLift : 0,
+    // and the view tilts up, so the pond sits lower on the screen than the vessel does
+    lookLift: naming ? namingLayout.lookLift : 0 };
 
   return <section aria-label={naming ? "name your memory" : recording ? "record a memory" : "a pond for a new memory"} data-pond-page data-pond-ready={enabled}
     style={{ position: "absolute", inset: 0, overflow: "hidden", background: pondBackdropCss(tune.sky), WebkitTouchCallout: "none", WebkitUserSelect: "none", userSelect: "none" }}>

@@ -1,6 +1,6 @@
 import { FLOW_PAGE } from "../lib/theme";
 import { SAMPLE_TRANSCRIPT } from "../data/sampleMemory";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { CHROME_GRAY } from "../lib/colors";
 import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
@@ -8,6 +8,7 @@ import { NOTE_SIZE, SERIF, TRANSCRIPT, TRANSCRIPT_WIDTH } from "../lib/theme";
 import { getTranscription } from "../lib/transcribe";
 import type { ArtifactForm } from "../lib/superformula";
 import { PillButton } from "./PillButton";
+import { TranscriptEditHint } from "./GalleryOnboarding";
 import { TextButton } from "./TextButton";
 import { transcriptCharacters, transcriptTypingDelay, transcriptTypingPace } from "../lib/transcriptTyping";
 import type { VoiceRippleSpot } from "../lib/voicePeaks";
@@ -15,7 +16,15 @@ import type { VoiceRippleSpot } from "../lib/voicePeaks";
 /** Soft wash over the pond so long transcripts fade at the end of the passage. */
 /** The foot of a long transcript, thinned to nothing over the last 72–120px (20% of it already clear). */
 const TRANSCRIPT_FADE_MASK = "linear-gradient(to bottom, #000 calc(100% - clamp(72px, 12vh, 120px)), rgba(0,0,0,.12) calc(100% - clamp(72px, 12vh, 120px) * .2), transparent)";
-const TRANSCRIBING_SPOT = { x: .5, y: .81, strength: .7, soft: true };
+/** Where the water stirs while the words are coming: a little further out (y .75 of the screen, was .81; 2026-11-25). */
+const TRANSCRIBING_SPOT = { x: .5, y: .75, strength: .7, soft: true };
+/** Edits settle into the draft this long after the last keystroke (and at once on blur or continue). */
+const EDIT_SETTLE_MS = 400;
+/** The printout sets its words .3em apart; the editable text keeps that gap with word-spacing. */
+const WORD_GAP_EM = 0.3;
+/** The edit tip's distance above the first line of the words, in vh. */
+const TIP_GAP_VH = 14.6;
+const spoken = (text: string) => text.replace(/\s+/g, " ").trim();
 
 interface PuddleTranscriptState {
   transcript?: string;
@@ -203,13 +212,60 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
   };
 
   const handleContinue = () => {
-    if (fadeOutContent || !showContinue || awaitingTranscript || transcribeError || !transcript.trim()) return;
+    if (fadeOutContent || !showContinue || awaitingTranscript || transcribeError) return;
+    const text = editing ? settleEdit() : transcript;
+    if (!text.trim()) return;
+    editRef.current?.blur();
     setFadeOutContent(true);
     continueTimer.current = window.setTimeout(() => {
       navigate(DESCENT_PATH + location.search, {
-        state: { ...state, transcript, memoryId, transcriptReady: true, focus },
+        state: { ...state, transcript: text, memoryId, transcriptReady: true, focus },
       });
     }, reducedMotion ? 0 : 1000);
+  };
+
+  /* Once printed, the words are the text itself: a click puts the caret in
+     them and they can be changed in place. The field looks exactly as the
+     printout did (no outline, no tint); only the caret shows. */
+  const editing = !isTyping && !awaitingTranscript && !transcribeError;
+  const editRef = useRef<HTMLDivElement>(null);
+  const settleTimer = useRef<number | null>(null);
+  const [wordSpacing, setWordSpacing] = useState<string | undefined>(undefined);
+  const [emptied, setEmptied] = useState(false);
+  // once the words have been clicked into, the tip that says they can be has done its work
+  const [touched, setTouched] = useState(false);
+  // the words the field opens with, fixed when it opens: React never writes them again, so it keeps what is typed
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const openingText = useMemo(() => spoken(transcript), [editing]);
+  useLayoutEffect(() => {
+    const el = editRef.current;
+    if (!editing || !el) return;
+    // a space in this face, so the text keeps the printout's .3em between words
+    const css = getComputedStyle(el);
+    const ctx = document.createElement("canvas").getContext("2d");
+    const size = parseFloat(css.fontSize) || 16;
+    if (ctx) {
+      ctx.font = `${css.fontStyle} ${css.fontWeight} ${css.fontSize} ${css.fontFamily}`;
+      const space = ctx.measureText(" ").width / size;
+      const letter = (parseFloat(css.letterSpacing) || 0) / size;
+      setWordSpacing(`${(WORD_GAP_EM - space - letter).toFixed(4)}em`);
+    }
+  }, [editing]);
+  useEffect(() => () => {
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+  }, []);
+  const editedText = () => (editRef.current ? spoken(editRef.current.textContent ?? "") : spoken(transcript));
+  const settleEdit = () => {
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    settleTimer.current = null;
+    const text = editedText();
+    if (text && text !== transcript) setTranscript(text);
+    return text;
+  };
+  const onEdit = () => {
+    setEmptied(!editedText());
+    if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+    settleTimer.current = window.setTimeout(settleEdit, EDIT_SETTLE_MS);
   };
 
   const pairReady = showContinue && !transcribeError;
@@ -234,7 +290,9 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
       className="absolute inset-0"
       data-transcript-screen
       style={{
-        zIndex: 30,
+        /* no z-index: a stacking context here would isolate the screen from the pond under it, and
+           the actions' multiplied words would have nothing to darken. It comes after the water and
+           its grain in the stage, so it is drawn over them all the same (2026-11-25; was 30). */
         userSelect: "text",
         opacity: fadeOutContent ? 0 : 1,
         transition: "opacity 1s ease",
@@ -313,6 +371,40 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                 ...(showBottomFade ? { maskImage: TRANSCRIPT_FADE_MASK, WebkitMaskImage: TRANSCRIPT_FADE_MASK } : {}),
               }}
             >
+              {editing ? (
+                <div
+                  ref={editRef}
+                  contentEditable="plaintext-only"
+                  suppressContentEditableWarning
+                  role="textbox"
+                  aria-multiline="true"
+                  aria-label="your memory, in words"
+                  spellCheck={false}
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  onInput={onEdit}
+                  onFocus={() => setTouched(true)}
+                  onBlur={() => { settleEdit(); }}
+                  onKeyDown={(e) => {
+                    // the pond listens on the window (Escape / ArrowUp go back): typing stays here
+                    e.stopPropagation();
+                    if (e.key === "Escape") e.currentTarget.blur();
+                    // one passage: Enter does not start a new paragraph
+                    if (e.key === "Enter") e.preventDefault();
+                  }}
+                  style={{
+                    outline: "none",
+                    caretColor: CHROME_GRAY,
+                    cursor: "text",
+                    wordSpacing,
+                    // a space at a line's end takes its room, as the printout's gap after a word did,
+                    // so the lines break where they broke while printing
+                    whiteSpace: "break-spaces",
+                    overflowWrap: "break-word",
+                    minHeight: "1.45em",
+                  }}
+                >{openingText}</div>
+              ) : <>
               {isTyping && <span className="sr-only">{transcript}</span>}
               {words.map((word, index) => {
                 const printedWord = printing.parts[index];
@@ -336,18 +428,26 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                   </span>
                 );
               })}
+              </>}
             </div>
           </div>
         </div>
+        {/* as the gallery's "keep scrolling", above the words: they can be edited in place. TIP_GAP_VH of the
+            screen's height clear of the first line (~112px on a 768px-tall window; was ~75px) — the words start
+            137px under the heading row (96 + the error line's ~17 + its 24 gap), the tip's line ends 16px under its top */}
+        <TranscriptEditHint ready={editing && !touched && !fadeOutContent} top={`calc(${FLOW_PAGE.headingTop} + 121px - ${TIP_GAP_VH}vh)`} />
         {/* "record again" is there as soon as a recording's words are; continue waits for the printout (a click skips it).
             The sample (no recording behind it) shows the two together, once the printout is nearly through. */}
         {(!awaitingTranscript || transcribeError) && (
           <div
             style={{
-              /* the actions' row, as on the recording screen */
+              /* the actions' row, as on the recording screen; centred by its margins, not a
+                 transform, which would isolate it and leave the words' multiply nothing to darken */
               position: "absolute",
-              left: "50%",
-              transform: "translateX(-50%)",
+              left: 0,
+              right: 0,
+              marginInline: "auto",
+              width: "fit-content",
               bottom: FLOW_PAGE.surfaceActionBottom,
               minHeight: FLOW_PAGE.actionHeight,
               display: "flex",
@@ -358,20 +458,22 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
             }}
           >
             {transcribeError ? (
-              <TextButton label="record again" onClick={goToRecord} style={{ width: "9em", justifyContent: "center" }} />
+              <TextButton label="record again" onClick={goToRecord} style={{ width: "9em", justifyContent: "center", mixBlendMode: "multiply" }} />
             ) : (
               <>
                 <TextButton
                   label="record again"
                   onClick={goToRecord}
-                  style={{ width: "9em", justifyContent: "center", visibility: transcriptionId || pairReady ? "visible" : "hidden" }}
+                  style={{ width: "9em", justifyContent: "center", mixBlendMode: "multiply", visibility: transcriptionId || pairReady ? "visible" : "hidden" }}
                 />
                 <PillButton
                   label="continue"
                   trailing="›"
+                  surface="glass"
+                  textBlend="multiply"
                   onClick={handleContinue}
-                  disabled={fadeOutContent}
-                  style={{ visibility: pairReady ? "visible" : "hidden" }}
+                  disabled={fadeOutContent || emptied}
+                  style={{ visibility: pairReady && !emptied ? "visible" : "hidden" }}
                 />
               </>
             )}

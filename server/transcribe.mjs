@@ -4,7 +4,7 @@
 
 const OPENAI_URL = "https://api.openai.com/v1/audio/transcriptions";
 
-// Recordings cap at 60s of opus (~300 KB). The ceiling is really Vercel's 4.5 MB
+// Recordings cap at 3 minutes at 64 kbps (~1.5 MB). The ceiling is really Vercel's 4.5 MB
 // request body limit, so refuse anything approaching it rather than fail opaquely.
 const MAX_BYTES = 4 * 1024 * 1024;
 // A container header and little else — the microphone heard nothing.

@@ -37,7 +37,7 @@ export interface VesselRequest {
 export function vesselPartsKey(r: VesselRequest): string {
   const t = r.tune;
   const cloth = r.sheetMode === "draped"
-    ? [t.anchorAngle, t.anchorHeight, t.tilt, t.contact, t.sag, t.peel, t.curl, t.twist, t.gap, t.soft, t.gather ?? 0]
+    ? [t.anchorAngle, t.anchorHeight, t.tilt, t.contact, t.sag, t.peel, t.curl, t.twist, t.gap, t.soft, t.gather ?? 0, t.float ?? 0.5]
     : [r.seed, t.arc, t.band, t.lift, t.foldScale];
   return [formKey(r.form), r.morph, r.sheetMode, t.inset, r.sheetSize ?? "fit", ...cloth].join("|");
 }
@@ -53,6 +53,7 @@ function remember(key: string, parts: VesselParts) {
     cache.delete(oldest);
     old.glass.geometry.dispose();
     old.sheet.geometry.dispose();
+    old.sheet.cavity?.dispose();
   }
 }
 
@@ -64,7 +65,7 @@ function build(r: VesselRequest): VesselParts {
   const sheet = r.sheetMode === "draped"
     ? buildDrapedSheet(glass, t.inset, {
       sheetSize, anchorAngle: t.anchorAngle, anchorHeight: t.anchorHeight, tilt: t.tilt, contact: t.contact,
-      sag: t.sag, peel: t.peel, curl: t.curl, twist: t.twist, gap: t.gap, soft: t.soft, gather: t.gather,
+      sag: t.sag, peel: t.peel, curl: t.curl, twist: t.twist, gap: t.gap, soft: t.soft, gather: t.gather, float: t.float ?? 0.5,
     })
     : buildSheet(glass, t.inset, t.arc, t.band, t.lift, t.foldScale, r.seed);
   return { glass, sheet, sheetSize };

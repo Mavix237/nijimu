@@ -34,6 +34,24 @@ export function pondRimSeat(x: number, y: number, cx: number, apex: number, heig
     scale, z, tilt: pose.tilt };
 }
 
+/** Leaving for the pond, the vessels lift off their own reflections: a vessel
+ * rises this much more than its seat, while its reflection keeps the seat's
+ * pace, so the reflections read as a ground the vessels leave behind. */
+export const POND_VESSEL_LEAD = .5;
+
+/** How much of a departing vessel's reflection is left (1 all, 0 none) once the vessel has risen `gap`
+ * px past it, on a screen `height` px tall: it thins as they part, eased, over most of the rise (a rim
+ * vessel's lead reaches .6 of the height; gone by .58, as it nears that), so the ground lets the vessels
+ * go gradually as they recede. Returning from the pond, the same plays backwards as they land. */
+export function pondReflectionFade(gap: number, height: number) {
+  return 1 - smoothProgress(gap / Math.max(1, height), .01, .58);
+}
+
+/** How far (px) a rim vessel has risen past its seat, and so past its reflection. */
+export function pondRimLead(height: number, progress: number, reduced: boolean) {
+  return reduced ? 0 : pondRimTravel(height) * pondRimPose(progress, false).lift * POND_VESSEL_LEAD;
+}
+
 /** Lift the constellation in depth layers, keeping each memory's size and x.
  * Near memories leave sooner; every seat clears before the pond settles.
  * The same pose plays backwards when returning from the pond. */

@@ -1,4 +1,4 @@
-import { baseForm, isArtifactForm, superRadius, type ArtifactCategory, type ArtifactForm, type SuperParams } from "./superformula";
+import { isArtifactForm, superRadius, type ArtifactCategory, type ArtifactForm, type SuperParams } from "./superformula";
 import { ASSESSMENT_VERSION, isAssessment, type MemoryAssessment } from "../../../shared/memory-assessment.mjs";
 export type { MemoryAssessment } from "../../../shared/memory-assessment.mjs";
 export const MAPPING_VERSION = "memory-form-v4";
@@ -74,7 +74,7 @@ export interface MemoryAssignment {
   assessment: MemoryAssessment | null;
   coordinates: { outward: number; sharpness: number };
   weights: Record<MemoryShapeFamily, number>;
-  /** The map anchor the form was taken from; null for the neutral sphere. */
+  /** The map anchor the form was taken from. With no reading it is the map's middle's (was: null, a plain sphere). */
   anchor: string | null;
   form: ArtifactForm;
   model?: string;
@@ -206,11 +206,14 @@ export function assignMemoryShape(assessment: MemoryAssessment | null, seed: str
   const margin = weights[ranked[0]] - weights[ranked[1]];
   // The family is a label for the quadrant; near a tie there is none, though the map still gives a form.
   const family = usable && margin > 0.025 ? ranked[0] : null;
-  const mapped = usable ? formAt(coordinates.outward, coordinates.sharpness, seed) : null;
+  // With no reading the form is the map's middle (coordinates .5/.5), still seeded per memory.
+  // It used to be a plain sphere: Shape then grew a sphere into a sphere (nothing to see until
+  // Rhythm) and, filling all of its bound, it sat far larger than any mapped form.
+  const mapped = formAt(coordinates.outward, coordinates.sharpness, seed);
   return { version: MAPPING_VERSION, assessmentVersion: ASSESSMENT_VERSION, seed, transcriptKey: transcriptKey(transcript), source: usable ? source : "fallback", family,
     assessment: assessment && isAssessment(assessment) ? assessment : null, coordinates, weights,
-    anchor: mapped ? mapped.anchor : null,
-    form: mapped ? mapped.form : baseForm("sphere"), ...(model ? { model } : {}) };
+    anchor: mapped.anchor,
+    form: mapped.form, ...(model ? { model } : {}) };
 }
 export function isMemoryAssignment(value: unknown, transcript: string): value is MemoryAssignment {
   const a = value as MemoryAssignment | null;

@@ -118,6 +118,8 @@ const router = createBrowserRouter([
   { path: "/lab/vessel", HydrateFallback: () => null, lazy: () => import("./lab/VesselPreview").then((m) => ({ Component: m.VesselPreview })) },
   // the vessel alone, to tune its 3D look and export it — apart from the experience (no layout, no music)
   { path: "/studio", HydrateFallback: () => null, lazy: () => import("./studio/VesselStudio").then((m) => ({ Component: m.VesselStudio })) },
+  // what a phone opens from the save dialog's QR code — apart from the experience (no layout, no music)
+  { path: "/keep/:id", HydrateFallback: () => null, lazy: () => import("./components/KeepOnPhonePage").then((m) => ({ Component: m.KeepOnPhonePage })) },
   {
     Component: RootLayout,
     // a direct visit to a lazily loaded page shows the paper while its code arrives

@@ -6,11 +6,24 @@ import { PANE_ACTION, PANE_CONTENT_GAP } from "../lib/theme";
 import { onLanding, useFinishMode } from "../lib/paperFinish";
 import { PaperFinish } from "./PaperFinish";
 
+/** The pane's frosted fill and blur; a phone's is denser (it covers the gallery's vessels).
+    PillButton's `glass` surface wears the same. */
+export const GLASS_FILL = {
+  wide: "linear-gradient(165deg, rgba(240, 240, 238, 0.42), rgba(240, 240, 238, 0.32))",
+  compact: "linear-gradient(165deg, rgba(240, 240, 238, 0.50), rgba(240, 240, 238, 0.42))",
+} as const;
+export const GLASS_BLUR = { wide: "blur(16px) saturate(1.15)", compact: "blur(26px) saturate(1.1)" } as const;
+
 /** The landing's pane grain (past Enter a pane wears PaperFinish). */
 const GRAIN_URL = `url("data:image/svg+xml,%3Csvg viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch' result='noise'/%3E%3CfeColorMatrix in='noise' type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`;
 
 const LEAVE_MS = LANDING_RETURN.profileLeaveMs;
 const CARD_EASE = "cubic-bezier(0.22, 0.8, 0.28, 1)";
+/** The "spring" entrance: the size it starts from, its time, and an ease that passes 1 (by ~10% of the
+    way, so ~1% of the card's size) and settles back, so it swells a hair past its size before resting at it. */
+const SPRING_FROM = 0.9;
+const SPRING_MS = 640;
+const SPRING_EASE = "cubic-bezier(0.34, 1.56, 0.64, 1)";
 const PANEL_RADIUS = 12;
 const PANEL_SMOOTHING = 0.6;
 const PANEL_WIDTH = 480;
@@ -29,6 +42,7 @@ export function GlassPane({
   closeDisabled = false,
   align = "center",
   tall = false,
+  entrance = "rise",
   children,
 }: {
   open: boolean;
@@ -43,6 +57,9 @@ export function GlassPane({
   align?: "center" | "start";
   /** Taller, for reading a memory's whole text; it scrolls inside the pane. */
   tall?: boolean;
+  /** How the card comes in: "rise" (a little up into place, as every pane) or "spring" (scaled up from
+      SPRING_FROM to its own size with a slight overshoot past it — the camera dialog under the water). */
+  entrance?: "rise" | "spring";
   children: ReactNode;
 }) {
   const maxHeight = tall ? PANEL_MAX_HEIGHT_TALL : PANEL_MAX_HEIGHT;
@@ -168,6 +185,7 @@ export function GlassPane({
           aria-hidden
           className="nijimuProfileCard"
           data-state={paneState}
+          data-entrance={entrance}
           style={{
             position: "absolute",
             inset: 0,
@@ -180,6 +198,7 @@ export function GlassPane({
           ref={cardRef}
           className="nijimuProfileCard"
           data-state={paneState}
+          data-entrance={entrance}
           role="dialog"
           aria-modal="true"
           aria-label={labelledBy ? undefined : label}
@@ -195,11 +214,9 @@ export function GlassPane({
             height: tall ? maxHeight : undefined,
             borderRadius: PANEL_RADIUS,
             overflow: "hidden",
-            background: compact
-              ? "linear-gradient(165deg, rgba(240, 240, 238, 0.50), rgba(240, 240, 238, 0.42))"
-              : "linear-gradient(165deg, rgba(240, 240, 238, 0.42), rgba(240, 240, 238, 0.32))",
-            backdropFilter: compact ? "blur(26px) saturate(1.1)" : "blur(16px) saturate(1.15)",
-            WebkitBackdropFilter: compact ? "blur(26px) saturate(1.1)" : "blur(16px) saturate(1.15)",
+            background: compact ? GLASS_FILL.compact : GLASS_FILL.wide,
+            backdropFilter: compact ? GLASS_BLUR.compact : GLASS_BLUR.wide,
+            WebkitBackdropFilter: compact ? GLASS_BLUR.compact : GLASS_BLUR.wide,
           }}
         >
           {/* past Enter the pane wears the gallery's paper (its blur has taken
@@ -265,6 +282,11 @@ export function GlassPane({
         .nijimuProfileVeil:not([data-state="in"]) { opacity: 0; }
         .nijimuProfileCard[data-state="from"] { opacity: 0; transform: translateY(12px) scale(0.965); }
         .nijimuProfileCard[data-state="out"] { opacity: 0; transform: translateY(6px) scale(0.985); }
+        /* the spring: up from a little smaller, swelling a hair past its size and settling at it */
+        .nijimuProfileCard[data-entrance="spring"] {
+          transition: opacity 360ms ease, transform ${SPRING_MS}ms ${SPRING_EASE};
+        }
+        .nijimuProfileCard[data-entrance="spring"][data-state="from"] { opacity: 0; transform: scale(${SPRING_FROM}); }
         /* leaving is quicker than arriving */
         .nijimuProfileScrim[data-state="out"],
         .nijimuProfileVeil[data-state="out"],

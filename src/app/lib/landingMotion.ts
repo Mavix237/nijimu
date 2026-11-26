@@ -7,10 +7,10 @@
 export const LANDING_MOTION = {
   /** The washes arriving one after another (WatercolorField). */
   reveal: {
-    /** The second wash in view, after the first (ms). */
-    second: 650,
-    /** The rest begin from here (ms)… */
-    restFrom: 1500,
+    /** The second wash in view, after the first (ms). Was 650; 2026-11-25. */
+    second: 500,
+    /** The rest begin from here (ms)… Was 1500 (2026-11-25): less of a wait after the first. */
+    restFrom: 950,
     /** …the last at this (ms), at a quickening pace. */
     lastStart: 3800,
     jitter: 200,
@@ -24,8 +24,9 @@ export const LANDING_MOTION = {
     freeGrowLonger: 0.35,
     freeFadeLonger: 0.9,
     /** The share of the opening after which the centre copy and Enter come in, and the
-        captions after them (WatercolorField's onSettling). Was .8 (~6.8 s); 2026-11-11. */
-    copyAt: 0.45,
+        captions after them (WatercolorField's onSettling). Was .8 (~6.8 s); 2026-11-11.
+        .58 (~4.9 s; was .45, ~3.8 s) on 2026-11-25, more air after the washes begin. */
+    copyAt: 0.58,
   },
   /** How the opening washes come in: their order, rhythm, curve and shape (WatercolorField). */
   opening: {

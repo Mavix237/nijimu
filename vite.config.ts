@@ -6,6 +6,7 @@ import basicSsl from '@vitejs/plugin-basic-ssl'
 import { polishApiPlugin } from './server/vite-plugin-polish.mjs'
 import { assessmentApiPlugin } from './server/vite-plugin-assessment.mjs'
 import { transcribeApiPlugin } from './server/vite-plugin-transcribe.mjs'
+import { shareApiPlugin } from './server/vite-plugin-share.mjs'
 
 // GitHub Project Page: https://<user>.github.io/<repo>/
 // Put VITE_BASE_PATH=/repo-name/ in .env.production (leading and trailing slash)
@@ -27,6 +28,8 @@ export default defineConfig(({ mode }) => {
       polishApiPlugin({ apiKey: env.ANTHROPIC_API_KEY, model: env.POLISH_MODEL }),
       transcribeApiPlugin({ apiKey: env.OPENAI_API_KEY, model: env.TRANSCRIBE_MODEL }),
       assessmentApiPlugin({ apiKey: env.OPENAI_API_KEY, model: env.ASSESS_MODEL || undefined }),
+      // Save to phone: the real Blob store with a token, else kept in memory until restart
+      shareApiPlugin({ token: env.BLOB_READ_WRITE_TOKEN || undefined, access: env.SHARE_BLOB_ACCESS }),
       ...(phone ? [basicSsl()] : []),
     ],
     resolve: {

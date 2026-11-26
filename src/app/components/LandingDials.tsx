@@ -250,7 +250,7 @@ export default function LandingDials({
   }, [colorsKey]);
 
   const opening = useDialKit("landing opening", OPENING_CONFIG as never, {
-    id: "nijimu-landing-opening",
+    id: "nijimu-landing-opening-3", // -3: the shorter wait after the first washes, the copy later (2026-11-25)
     persist: true,
     onAction: (path: string) => { if (path === "replay") replayRef.current(); },
   }) as unknown as { order: Record<string, unknown>; rhythm: Record<string, number>; growth: Record<string, unknown>; shape: Record<string, number> };

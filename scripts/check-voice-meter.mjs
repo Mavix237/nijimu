@@ -54,20 +54,20 @@ for (const fps of [24, 60, 120]) {
     onVoicePeak: level => heard.push({ time: now, level }), onStop: () => stopped++,
   });
   await recorder.start();
-  for (let i = 1; i <= fps * 61; i++) {
+  for (let i = 1; i <= fps * 181; i++) {
     now = i * 1000 / fps;
     frame?.();
     if (now >= nextTimer) { timer?.(); nextTimer += 1000; }
   }
-  for (const [start, end] of [[0, 8], [10, 20], [30, 40], [50, 60]]) {
+  for (const [start, end] of [[0, 8], [10, 20], [30, 40], [50, 60], [100, 120], [160, 180]]) {
     assert.ok(heard.filter(p => p.time >= start * 1000 && p.time < end * 1000).length >= 6,
       `actual meter keeps emitting in seconds ${start}–${end} at ${fps}fps`);
   }
   assert.equal(heard.filter(p => p.time > 27000 && p.time < 29000).length, 0, "silence stays quiet");
   assert.ok(heard[0].time - 250 <= 160, "first ripple follows the actual volume crest promptly");
-  assert.equal(heard.filter(p => p.time > 60000).length, 0, "no peaks after auto-stop");
+  assert.equal(heard.filter(p => p.time > 180000).length, 0, "no peaks after auto-stop (3 min)");
   assert.equal(stopped, 1);
   assert.equal(released, 1);
   cleanups.forEach(fn => fn());
 }
-console.log("Recorder integration passed: 61s synthetic audio at 24/60/120fps, gain drop after 8s, pause/resume, 60s auto-stop and cleanup.");
+console.log("Recorder integration passed: 181s synthetic audio at 24/60/120fps, gain drop after 8s, pause/resume, capture past the old 60s, 180s auto-stop and cleanup.");

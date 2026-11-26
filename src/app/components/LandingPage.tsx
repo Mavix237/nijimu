@@ -41,7 +41,7 @@ const GalleryBehindInk = memo(function GalleryBehindInk({
   inkArrival?: InkArrival;
   galleryFocusId?: string;
   galleryCarried: boolean;
-  onPondEnter: () => void;
+  onPondEnter: (fromId?: string) => void;
   pondDeparture: number;
   hideHeader: boolean;
 }) {
@@ -72,6 +72,10 @@ const GalleryBehindInk = memo(function GalleryBehindInk({
  * ready before it rises into view; scrolling back keeps the gallery mounted
  * and plays the same clock in reverse.
  */
+/** A load straight into the pond: how long its stage takes to fade in, and the longest it waits for the scene's first frame. */
+const POND_LOAD_FADE_MS = 1400;
+const POND_LOAD_WAIT_MS = 2500;
+
 export function LandingPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -87,6 +91,8 @@ export function LandingPage() {
   const [pondReady, setPondReady] = useState(false);
   const [pondLeaving, setPondLeaving] = useState(false);
   const [pondReturnId, setPondReturnId] = useState<string>();
+  /** The memory the gallery was left from for the pond (the plus); back from the pond returns to it. */
+  const [pondFromId, setPondFromId] = useState<string>();
   /* Saving a memory remounts the gallery behind the pond, so the rim that is
      revealed when the water leaves already holds the new memory. */
   const [archiveVersion, setArchiveVersion] = useState(0);
@@ -101,12 +107,17 @@ export function LandingPage() {
   const inDescent = isDescentPath(pathname);
   const inCreate = inRecording || pathname === TRANSCRIPT_PATH || inDescent;
   const inPond = pathname === MEMORY_POND_PATH || inCreate || inNaming;
+  /* A load (or reload) straight into the pond has no rise from the gallery to bring the water in:
+     the stage — its sky, the water's shaders, everything over them — waits clear over the ground
+     and fades in once the scene has drawn its first frame (or POND_LOAD_WAIT_MS at most), over
+     POND_LOAD_FADE_MS. "waiting" → "in" → "none" (done, or never needed). */
+  const [loadFade, setLoadFade] = useState<"waiting" | "in" | "none">(() => (inPond && !reducedMotion ? "waiting" : "none"));
   if (seenPath !== pathname) {
     setSeenPath(pathname);
     if (!inGallery && !inPond) {
       setStartedAt(null); setArrival(null); setEntryFocus(null);
       setPondElapsed(null); setPondReady(false); setPondLeaving(false);
-      setPondReturnId(undefined); setPondReplace(false);
+      setPondReturnId(undefined); setPondReplace(false); setPondFromId(undefined);
     } else if (inGallery && pondLeaving) {
       setPondElapsed(null); setPondReady(false); setPondLeaving(false); setPondReplace(false);
     }
@@ -154,8 +165,9 @@ export function LandingPage() {
   const openingPond = pondElapsed !== null && !pondLeaving && inGallery;
   const pondOnStage = pondElapsed !== null || inPond;
   const markPondReady = useCallback(() => setPondReady(true), []);
-  const openPond = useCallback(() => {
+  const openPond = useCallback((fromId?: string) => {
     if (!inGallery || pondElapsed !== null || pondLeaving) return;
+    setPondFromId(fromId);
     setPondReady(false);
     setPondElapsed(0);
   }, [inGallery, pondElapsed, pondLeaving]);
@@ -171,8 +183,9 @@ export function LandingPage() {
   }, [inPond, pondElapsed, pondLeaving, reducedMotion]);
   const closePond = useCallback(() => {
     const archive = buildArchive();
-    leavePond(archive[archive.length - 1]?.id);
-  }, [leavePond]);
+    const from = pondFromId && archive.some((m) => m.id === pondFromId) ? pondFromId : undefined;
+    leavePond(from ?? archive[archive.length - 1]?.id);
+  }, [leavePond, pondFromId]);
   /* The named memory is in the store. Rebuild the gallery behind the water so
      the rim already holds it, then take the pond away onto that memory. The
      naming step is replaced in history: there is no draft to come back to. */
@@ -264,13 +277,25 @@ export function LandingPage() {
     if (inkHeld) return { elapsed: 0, reducedMotion: arrival.reducedMotion };
     return arrival;
   }, [!!arrival, inkHeld, arrival?.reducedMotion, inkHeld || !arrival ? 0 : arrival.elapsed]);
+  useEffect(() => {
+    if (loadFade === "waiting") {
+      if (pondReady) { setLoadFade("in"); return; }
+      const cap = window.setTimeout(() => setLoadFade("in"), POND_LOAD_WAIT_MS);
+      return () => window.clearTimeout(cap);
+    }
+    if (loadFade === "in") {
+      const done = window.setTimeout(() => setLoadFade("none"), POND_LOAD_FADE_MS + 50);
+      return () => window.clearTimeout(done);
+    }
+  }, [loadFade, pondReady]);
   const pond = pondTransition(pondElapsed ?? 0, reducedMotion);
   const pondArrival = inPond && pondElapsed === null ? 1 : pond.arrival;
   return (
     <main style={{ position: "relative", width: "100%", height: "100dvh", overflow: "hidden", background: GROUND }}>
       {showGallery && (
         <div key={archiveVersion} ref={galleryRef} tabIndex={-1} aria-label="memory gallery" inert={pondElapsed !== null || !inGallery}
-          style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : 1 }}>
+          // settled in the pond, the gallery behind it is not seen (nor through the pond's load fade)
+          style={{ position: "absolute", inset: 0, zIndex: 0, outline: "none", opacity: pondElapsed !== null ? pond.galleryOpacity : inPond ? 0 : 1 }}>
           <GalleryBehindInk
             active={inGallery && pondElapsed === null}
             panels={publishedGallery?.panels}
@@ -292,7 +317,8 @@ export function LandingPage() {
             transform: reducedMotion ? undefined : `translate3d(0, min(${(1 - pondArrival) * 16}vh, ${(1 - pondArrival) * 120}px), 0)`,
             maskImage: reducedMotion ? undefined : pondSurfaceMask(pondArrival),
             WebkitMaskImage: reducedMotion ? undefined : pondSurfaceMask(pondArrival),
-            opacity: pondArrival }}>
+            opacity: loadFade === "waiting" ? 0 : pondArrival,
+            transition: loadFade === "none" ? undefined : `opacity ${POND_LOAD_FADE_MS}ms ease-in-out` }}>
           <Suspense fallback={null}>
           {inNaming ? <MemoryPondPage active={inPond && !pondLeaving} arrival={pondArrival} reducedMotion={reducedMotion} naming={naming} onReady={markPondReady} onLeave={closePond} onNamingSaved={namingSaved} namingBackRef={namingBackRef} />
             : <DescentFlow active={inPond && !pondLeaving} arrival={pondArrival} onReady={markPondReady} onLeave={closePond} />}

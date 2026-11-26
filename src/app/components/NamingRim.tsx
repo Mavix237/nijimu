@@ -23,7 +23,7 @@ import {
   type ArtifactForm,
 } from "../lib/superformula";
 import { SERIF } from "../lib/theme";
-import { TextButton } from "./TextButton";
+import { PillButton } from "./PillButton";
 import { SaveMemoryDialog } from "./SaveMemoryDialog";
 import {
   CAPTION_TITLE_GAP,
@@ -237,6 +237,8 @@ export interface NamingRim {
   activeIdx: number;
   caption: ReactNode;
   actions: ReactNode;
+  /** "Keep a copy" is open: its card stands in the vessel's place, so the scene clears it. */
+  saveDialogOpen: boolean;
   /** The neighbours only gather once the memory has a year to stand in. */
   neighborsVisible: boolean;
   /** Back to the previous step. */
@@ -434,8 +436,12 @@ export function useNamingRim(
      shared gap below it, then the year — so when the fields become words
      nothing shifts. */
   const actions = fieldsVisible && memoryName.trim() !== "" && yearSettled && (
-        <><TextButton
+        <><PillButton
+          // the transcript's continue: the dialogs' glass, a trailing ›, its words multiplied into the glass
           label="save memory"
+          trailing="›"
+          surface="glass"
+          textBlend="multiply"
           onClick={() => setSaveDialog(true)}
           disabled={saving}
           style={{
@@ -563,6 +569,8 @@ export function useNamingRim(
     activeIdx,
     caption,
     actions,
+    /** "Keep a copy" is open: its card stands in the vessel's place, so the scene clears it. */
+    saveDialogOpen: saveDialog,
     neighborsVisible: yearSettled,
     exit: () => {
       if (saving) return;
@@ -583,7 +591,7 @@ export interface DiveGalleryProps {
   phase: DivePhase;
   onNavigate: (delta: number) => void;
   onExit?: () => void;
-  onOverscrollExit?: () => void;
+  onOverscrollExit?: (fromId?: string) => void;
   onToggleGrid?: () => void;
   toggleIcon?: "view" | "plus";
   arrival: DiveArrival;

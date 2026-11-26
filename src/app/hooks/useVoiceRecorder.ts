@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createVoicePeakDetector } from "../lib/voicePeaks";
 
-const MAX_RECORDING_SECONDS = 60;
+/** Long enough for a memory told slowly (was 60 s, which cut many off mid-sentence). */
+const MAX_RECORDING_SECONDS = 180;
+/** The last stretch of a recording shows how long is left. */
+const ENDING_SECONDS = 20;
+/** Speech needs little: at 64 kbps even Safari's AAC keeps 3 minutes near 1.5 MB, under the 4 MB upload cap. */
+const AUDIO_BITS_PER_SECOND = 64_000;
 /** The meter feeds React at a walking pace — the water animates on its own clock. */
 const LEVEL_UPDATE_MS = 100;
 const LEVEL_UPDATE_STEP = 0.04;
@@ -152,11 +157,15 @@ export function useVoiceRecorder({
     const mimeType = pickMimeType();
     let recorder: MediaRecorder;
     try {
-      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      recorder = new MediaRecorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: AUDIO_BITS_PER_SECOND });
     } catch {
-      teardown();
-      setError("failed");
-      return;
+      try {
+        recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      } catch {
+        teardown();
+        setError("failed");
+        return;
+      }
     }
 
     recorder.ondataavailable = (event) => {
@@ -225,6 +234,8 @@ export function useVoiceRecorder({
     isRecording,
     duration,
     maxDuration: MAX_RECORDING_SECONDS,
+    /** Seconds left once the recording is in its last stretch, else null. */
+    secondsLeft: isRecording && MAX_RECORDING_SECONDS - duration <= ENDING_SECONDS ? MAX_RECORDING_SECONDS - duration : null,
     /** 0–1 loudness of the voice right now. */
     level,
     /** Ticks up as the voice carries — the puddle sends a ring per tick. */

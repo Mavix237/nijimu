@@ -54,7 +54,8 @@ const WATER_CONFIG = {
   rings: folder(D.rings, { glow: [0, 2, 0.01], shade: [0, 0.6, 0.005], glints: [0, 2, 0.01], bloom: [0, 2, 0.01] }),
   sphere: folder(D.sphere, {
     radius: [0.01, 0.15, 0.001], sit: [-1, 1.5, 0.01], pressed: [-1.5, 1, 0.01],
-    glow: [0, 1.5, 0.01], halo: [0, 1, 0.01], reach: [2, 16, 0.1], pressedGlow: [0, 1, 0.01],
+    glow: [0, 1.5, 0.01], halo: [0, 1, 0.01], haloWidth: [1.5, 10, 0.1], reach: [2, 16, 0.1], pressedGlow: [0, 1, 0.01],
+    soft: [0, 3, 0.01],
   }, true),
   light: folder(D.light, {
     shoulder: [0, 1, 0.01], cap: [0.85, 1, 0.001], warmth: [0, 1.5, 0.01], coolness: [0, 1.5, 0.01], ringWarm: [0, 1, 0.01],

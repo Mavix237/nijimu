@@ -14,13 +14,13 @@ import { RHYTHM_MAX, withRhythm, rhythmValue, rhythmMorph, createRhythmPinch } f
 import { createDistancePush } from "../lib/memoryDistanceGesture";
 import { createGestureHold } from "../lib/gestureHold";
 import { advanceArtifactPose } from "../lib/artifactPose";
-import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { Suspense, lazy, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 /** The film look's dev panel (DialKit), development only. */
 const FilmDials = import.meta.env.DEV ? lazy(() => import("../components/FilmDials")) : null;
 import * as THREE from "three";
-import { CHROME_GRAY } from "../lib/colors";
+import { CHROME_GRAY, PANE_INK } from "../lib/colors";
 import { CAROUSEL_PATH, DESCENT_PATH as DESCENT_ROUTE, DESCENT_STEP_PATHS, descentStepForPath, isDescentPath, type DescentStep, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
 import { PuddleTranscriptPage } from "../components/PuddleTranscriptPage";
 import { MemoryPondPage, PondHeading } from "../components/MemoryPondPage";
@@ -39,7 +39,8 @@ import { ShutterCamera } from "../components/ShutterCamera";
 import { HandTrackingDialog } from "../components/HandTrackingDialog";
 import { MATERIAL_PRESETS } from "../components/SceneViewer";
 import { draftColorIndex } from "../components/NamingRim";
-import { INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TITLE, UNDERWATER_PHONE, textEnter } from "../lib/theme";
+import { GALLERY_TEXT_TRACKING, GALLERY_TRANSCRIPT, INSTRUCTION_SIZE, META, NOTE_SIZE, SANS, SERIF, SERIF_CJK, TEXT_ENTER_MS, TITLE, UNDERWATER_PHONE, textEnter } from "../lib/theme";
+import { InkLines } from "../components/InkLines";
 import { flowProgress, smoothProgress } from "../lib/landingTransition";
 import { POND_DROP_SLOTS, type VoiceRippleSpot } from "../lib/voicePeaks";
 import { POND_TRAIL_SLOTS } from "../lib/pondTrail";
@@ -67,7 +68,7 @@ import {
   setCloudUniforms, type CloudTune, type PhaseBlock, type TuneKnob,
 } from "./wrapCloud";
 import {
-  DISTANCE_FADE, DISTANCE_FAR, FOV, FRONT_LAYER, Mist, VESSEL_TUNE_DEFAULT, backdropVertex, blitFragment, buildDrapedSheet, buildGlass, buildWallMap,
+  DISTANCE_FADE, DISTANCE_FAR, FOV, FRONT_LAYER, Mist, VESSEL_TUNE_DEFAULT, backdropVertex, blitFragment, buildDrapedSheet, buildGlass, buildWallMap, floatWall,
   createGlassUniformSet, createSheetUniformSet, fitSheetSize, glassRefractFragment, glassVertex, keyFrom, seedDirections,
   sheetFragment, sheetVertex, writeGlassUniforms, writeSheetUniforms, type Room, type SheetUniformSet, type VesselTune,
 } from "./VesselPreview";
@@ -1012,15 +1013,16 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     const t = VESSEL_TUNE;
     const sheet = buildDrapedSheet(sphere, t.inset, {
       sheetSize, anchorAngle: t.anchorAngle, anchorHeight: t.anchorHeight, tilt: t.tilt, contact: t.contact,
-      sag: t.sag, peel: t.peel, curl: t.curl, twist: t.twist, gap: t.gap, soft: t.soft,
+      sag: t.sag, peel: t.peel, curl: t.curl, twist: t.twist, gap: t.gap, soft: t.soft, float: t.float ?? 0.5,
     });
     const rest = (sheet.geometry.getAttribute("position").array as Float32Array).slice();
-    const wall0 = buildWallMap(sphere);
+    // the cloth keeps its place against the cavity it floats in (floatWall), as the gallery's does
+    const wall0 = floatWall(buildWallMap(sphere), t.float ?? 0.5);
     const base = new Float32Array(rest.length / 3);
     for (let v = 0; v < base.length; v++) base[v] = wall0(rest[v * 3], rest[v * 3 + 1], rest[v * 3 + 2]);
     return { sheet, rest, base, normals: new Float32Array(rest.length), groundY: sphere.lo - 0.02, sphere };
   }, [bodyKey]);
-  useEffect(() => () => { vessel.sheet.geometry.dispose(); vessel.sphere.geometry.dispose(); }, [vessel]);
+  useEffect(() => () => { vessel.sheet.geometry.dispose(); vessel.sheet.cavity?.dispose(); vessel.sphere.geometry.dispose(); }, [vessel]);
   /** The glass's lowest and highest y as it is now: the stain rises from its foot to half-way. */
   const glassSpan = useRef({ lo: -1, hi: 1 });
   const followWall = () => {
@@ -1028,7 +1030,7 @@ function Stage({ pond, stage, form: artifactForm, from, tune, transport, crossin
     let lo = Infinity, hi = -Infinity;
     for (let k = 1; k < glassPositions.length; k += 3) { lo = Math.min(lo, glassPositions[k]); hi = Math.max(hi, glassPositions[k]); }
     glassSpan.current = { lo, hi };
-    const wall = buildWallMap({ positions: glassPositions });
+    const wall = floatWall(buildWallMap({ positions: glassPositions }), VESSEL_TUNE.float ?? 0.5);
     const { sheet, rest, base } = vessel;
     const pos = sheet.geometry.getAttribute("position") as THREE.BufferAttribute;
     const out = pos.array as Float32Array;
@@ -2034,10 +2036,78 @@ const easeMorph = (m: number) => m * m * (3 - 2 * m);
 
 /** Words set against the washed water, which is paper by then: the chrome grey. */
 const UNDER_INK = CHROME_GRAY;
+/** The steps' instructions under their heading: a step lighter than the heading, the design system's
+    lighter ink (PANE_INK.secondary, #9b9ba3; was the heading's CHROME_GRAY). */
+const INSTRUCTION_INK = PANE_INK.secondary;
 /** Signed shift of the handled vessel from the look point, as a fraction of the view. Negative sits higher. */
 const HANDLING_DROP = 0.01;
 /** Desktop camera window, bottom-right. Continue sits on its top edge. */
-const DESKTOP_CAMERA = { right: 28, bottom: 28, width: 128, height: 96 } as const;
+/** The desktop camera window in the corner (2026-11-25: 25% larger, was 128 × 96). */
+const DESKTOP_CAMERA = { right: 28, bottom: 28, width: 160, height: 120 } as const;
+/** The desktop continue row: as tall as the camera window, both standing on the same foot, so the pill
+    (held to the row's top) is level with the camera's top (briefly 96, the camera's former height). */
+const DESKTOP_ACTION_ROW = DESKTOP_CAMERA.height;
+/** The gesture animation over the desktop camera, 25% larger than drawn (grown from its foot). */
+const GESTURE_HINT_SCALE = 1.25;
+/** The guide a press on the held continue draws to the follow tip: drawn in over GUIDE_DRAW_MS, held, and
+    from GUIDE_ERASE_FROM_MS after it began trimmed away from its start (gone at GUIDE_TOTAL_MS); it keeps
+    GUIDE_GAP px clear of the pill and the tip and turns its corner on a GUIDE_CORNER px curve. */
+const GUIDE_DRAW_MS = 900;
+const GUIDE_ERASE_FROM_MS = 2000;
+const GUIDE_TOTAL_MS = 2900;
+const GUIDE_GAP = 10;
+const GUIDE_CORNER = 10;
+/** The guide's weight and how strongly it shows (was 1.2 px, full). */
+const GUIDE_WIDTH = 0.75;
+const GUIDE_OPACITY = 0.55;
+/** How long after it is due the follow tip comes in. */
+const FOLLOW_TIP_DELAY_MS = 2000;
+/** The air between the follow tip's arrow and the camera window (was 16). */
+const FOLLOW_TIP_GAP = 28;
+/** The white ring round the camera window while a valid gesture is read: its width, and how it widens in. */
+const CAMERA_RING_PX = 3;
+const CAMERA_RING_IN = "box-shadow 720ms cubic-bezier(0.22, 0.8, 0.28, 1)";
+/** motion.css's press give (.nijimu-press), kept when a button sets its own transition. */
+const PRESS_GIVE = "scale 160ms cubic-bezier(0.23, 1, 0.32, 1)";
+const cameraRing = (on: boolean) => on ? `0 0 0 ${CAMERA_RING_PX}px rgba(255, 255, 255, 0.95)` : "0 0 0 0 rgba(255, 255, 255, 0)";
+/** Under the water: the step's chrome fading in (once the camera dialog is closed), and how long after
+    arriving the camera dialog comes (with only the vessel and the header there; was after the chrome). */
+const CHROME_IN_MS = 900;
+const DIALOG_AFTER_ARRIVAL_MS = 1600;
+/** How long after the rest of a step has come in its instructions start to ink in. */
+const INSTRUCTION_AFTER_MS = 1000;
+
+/** A step's instructions, inked in line by line as the gallery's transcript is (InkLines), once the
+    rest of the step has come: the chrome's fade on arriving under the water (`chromeEnd`, when it is
+    done; null while it has not begun), or the heading's own entrance (TEXT_ENTER_MS) on a new step,
+    whichever ends later — then INSTRUCTION_AFTER_MS more. Keyed by the step, so each step inks anew. */
+function StepInstruction({ lines, chromeEnd, style }: { lines: string[]; chromeEnd: number | null; style: CSSProperties }) {
+  const [mountAt] = useState(() => performance.now());
+  const [delay, setDelay] = useState<number | null>(null);
+  useEffect(() => {
+    if (chromeEnd === null || delay !== null) return;
+    const settled = Math.max(chromeEnd, mountAt + TEXT_ENTER_MS);
+    setDelay(Math.max(0, settled - performance.now()) + INSTRUCTION_AFTER_MS);
+  }, [chromeEnd, delay, mountAt]);
+  return <p style={{ ...style, display: "flow-root" }}>
+    <InkLines lines={lines} ink={INSTRUCTION_INK} name="stepInstructionInk" play={delay !== null} delayMs={delay ?? 0} />
+  </p>;
+}
+/** The chrome's fade: slower coming in under the water than going (leaving keeps its 700ms). */
+const chromeFade = (shown: boolean) => `opacity ${shown ? CHROME_IN_MS : 700}ms ease`;
+/** The camera's off state: a struck-through camera, fading as the camera's own picture comes in. */
+function CameraOffGlyph({ shown }: { shown: boolean }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden
+      style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
+        opacity: shown ? 0.7 : 0, transition: "opacity 700ms ease", pointerEvents: "none" }}>
+      <path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.25-3.15a.5.5 0 0 1 .75.43v8.44a.5.5 0 0 1-.75.43L16 13.5" />
+      <path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" />
+      <path d="M2 2l20 20" />
+    </svg>
+  );
+}
 /** The gesture illustration in a phone's foot row sits in a square cell the
     size of the continue button across from it, so the camera capsule between
     them is centred on the screen whatever the step. Each illustration is scaled
@@ -2565,6 +2635,8 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const [colorUv, setColorUv] = useState(() => uvFromHomePalette(stage.current.oklch));
   const [colorHeld, setColorHeld] = useState(false);
   const [handsDetected, setHandsDetected] = useState(0);
+  /** The camera has moved the form on the first step (a gesture applied there): continue may come. */
+  const [cameraMoved, setCameraMoved] = useState(false);
   const [memoryName, setMemoryName] = useState("");
   const [year, setYear] = useState("");
   const drag = useRef<{ x: number; from: number } | null>(null);
@@ -2597,9 +2669,33 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
     void document.fonts.ready.then(measure);
     return () => { live = false; observer.disconnect(); window.removeEventListener("resize", measure); };
   }, [step]);
-  const [cameraChoice, setCameraChoice] = useState<"ask" | "starting" | "enabled" | "manual">(CAMERA_ENABLED ? "ask" : "manual");
+  // "resuming": turned back on from the camera window mid-step, without the dialog again
+  const [cameraChoice, setCameraChoice] = useState<"ask" | "starting" | "resuming" | "enabled" | "manual">(CAMERA_ENABLED ? "ask" : "manual");
   const [cameraError, setCameraError] = useState<string | null>(null);
-  const cameraDialogOpen = step !== null && (cameraChoice === "ask" || cameraChoice === "starting");
+  /* Arriving under the water (the dive's end, or a load straight onto a step) only the vessel and the
+     header are there. The camera dialog comes in first, DIALOG_AFTER_ARRIVAL_MS on (springing up in
+     GlassPane); once it has been answered and closed — a camera running, or "maybe later" — the step's
+     chrome (heading and instructions, continue, slider, the gesture, the camera window, its tip) fades in
+     together over CHROME_IN_MS. With nothing to ask (a choice already made, ?camera=off) the chrome comes
+     at once. Once in it stays (a failed camera reopens the dialog over it); moving between steps keeps it. */
+  const stepOn = step !== null;
+  const [chromeIn, setChromeIn] = useState(false);
+  /** When the chrome began to fade in (performance.now), so the instructions can wait for it. */
+  const chromeInAt = useRef(0);
+  const [dialogDue, setDialogDue] = useState(false);
+  const cameraAnswered = cameraChoice === "manual" || cameraChoice === "enabled" || cameraChoice === "resuming";
+  useEffect(() => {
+    if (!stepOn) { setChromeIn(false); setDialogDue(false); return; }
+    if (chromeIn || !cameraAnswered) return;
+    let frame = requestAnimationFrame(() => { frame = requestAnimationFrame(() => { chromeInAt.current = performance.now(); setChromeIn(true); }); });
+    return () => cancelAnimationFrame(frame);
+  }, [stepOn, cameraAnswered, chromeIn]);
+  useEffect(() => {
+    if (!stepOn || dialogDue) return;
+    const t = window.setTimeout(() => setDialogDue(true), DIALOG_AFTER_ARRIVAL_MS);
+    return () => window.clearTimeout(t);
+  }, [stepOn, dialogDue]);
+  const cameraDialogOpen = step !== null && dialogDue && (cameraChoice === "ask" || cameraChoice === "starting");
   stage.current.step = step;
   const stepRef = useRef(step);
   stepRef.current = step;
@@ -2625,7 +2721,11 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       stepRef.current === "shape" ? stage.current.morph
         : stepRef.current === "rhythm" ? m2Ref.current / RHYTHM_MAX
         : Math.min(1, stage.current.frost / DISTANCE_MAX));
-    if (result.apply !== null) setSignal(result.apply);
+    if (result.apply !== null) {
+      setSignal(result.apply);
+      // the camera has seen the hands move the form: continue may come (see continueHeld)
+      if (stepRef.current === "shape") setCameraMoved(true);
+    }
     if (result.locked) flashSettle();
   };
   const setSignal = (value: number) => {
@@ -2686,8 +2786,17 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   useEffect(() => {
     if (handsSoon) preloadHandTracking();
   }, [handsSoon]);
+  const handsGone = () => {
+    rhythmPinch.current.reset();
+    distancePush.current.reset();
+    setHandsDetected(0);
+    if (handsFrom.current === "camera") { handsFrom.current = null; stage.current.hands = []; }
+    pinchFrames.current = 0;
+    colorBreakSince.current = null;
+    gestureHold.current.idle();
+  };
   const tracking = useHandTracking({
-    enabled: CAMERA_ENABLED && step !== null && (cameraChoice === "starting" || cameraChoice === "enabled"),
+    enabled: CAMERA_ENABLED && step !== null && (cameraChoice === "starting" || cameraChoice === "resuming" || cameraChoice === "enabled"),
     prepare: CAMERA_ENABLED && step !== null && cameraChoice !== "manual",
     videoRef,
     numHands: step === "shape" ? 2 : 1,
@@ -2757,16 +2866,16 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         pickColor(current.u + (nextU - current.u) * 0.24, current.v + (nextV - current.v) * 0.24);
       }
     },
-    onNoHands: () => {
-      rhythmPinch.current.reset();
-      distancePush.current.reset();
-      setHandsDetected(0);
-      if (handsFrom.current === "camera") { handsFrom.current = null; stage.current.hands = []; }
-      pinchFrames.current = 0;
-      colorBreakSince.current = null;
-      gestureHold.current.idle();
-    },
+    onNoHands: () => handsGone(),
   });
+  /* The camera window toggles the camera mid-step: off lets go of the hands and
+     the slider fades back in; on again skips the dialog (the browser already
+     said yes) and the slider fades out once the hands are being read. */
+  const cameraLive = cameraChoice === "enabled" || cameraChoice === "resuming";
+  const toggleCamera = () => {
+    if (cameraLive) { handsGone(); setCameraChoice("manual"); }
+    else { setCameraError(null); setCameraChoice("resuming"); }
+  };
   useEffect(() => {
     if (tracking.isTracking) setCameraChoice("enabled");
   }, [tracking.isTracking]);
@@ -2779,6 +2888,51 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
   const gestureLive = tracking.isTracking && handsDetected >= handsNeeded;
 
   const [leaving, setLeaving] = useState(false);
+  /** The shape step's tip beside the camera: while its gesture animation shows there (the camera reading).
+      Neither gives way to the hands — they stay whether or not a valid gesture is being read. */
+  const followTipShown = step === "shape" && !compact && chromeIn && !leaving && tracking.isTracking;
+  // it comes FOLLOW_TIP_DELAY_MS after it is due, and goes at once
+  const [followTipDue, setFollowTipDue] = useState(false);
+  useEffect(() => {
+    if (!followTipShown) { setFollowTipDue(false); return; }
+    const t = window.setTimeout(() => setFollowTipDue(true), FOLLOW_TIP_DELAY_MS);
+    return () => window.clearTimeout(t);
+  }, [followTipShown]);
+  /* On the first step, with the camera on, continue waits until the camera has seen the hands move the
+     form (a gesture applied: cameraMoved), so the step is tried by hand before it is passed. It comes at
+     once if the camera is off, or on but not reading (a lost camera must not trap the step). */
+  const continueHeld = step === "shape" && !cameraMoved
+    && (cameraChoice === "resuming" || (cameraChoice === "enabled" && tracking.isTracking));
+  /* A press on the held continue draws the way to the follow tip: down from the pill's foot, then right to
+     just short of the tip's first word — drawn in over GUIDE_DRAW_MS, then from GUIDE_ERASE_FROM_MS after
+     it began trimmed away from its start toward its end (GUIDE_TOTAL_MS in all). Measured at the press. */
+  const continueWrapRef = useRef<HTMLSpanElement | null>(null);
+  const followTipRef = useRef<HTMLParagraphElement | null>(null);
+  const guideHostRef = useRef<HTMLDivElement | null>(null);
+  const [guide, setGuide] = useState<{ key: number; d: string } | null>(null);
+  const guideTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (guideTimer.current !== null) window.clearTimeout(guideTimer.current); }, []);
+  useEffect(() => { if (!continueHeld) setGuide(null); }, [continueHeld]);
+  const showContinueGuide = () => {
+    const host = guideHostRef.current?.getBoundingClientRect();
+    const pill = continueWrapRef.current?.getBoundingClientRect();
+    const words = followTipRef.current?.querySelector("span")?.getBoundingClientRect();
+    if (!host || !pill || !words || reducedMotion) return;
+    const x0 = pill.left + pill.width / 2 - host.left, y0 = pill.bottom + GUIDE_GAP - host.top;
+    const x1 = words.left - GUIDE_GAP - host.left, y1 = words.top + words.height / 2 - host.top;
+    // a soft corner, no larger than either leg allows
+    const r = Math.max(0, Math.min(GUIDE_CORNER, y1 - y0, x1 - x0));
+    const d = y1 > y0 && x1 > x0
+      ? `M ${x0.toFixed(1)} ${y0.toFixed(1)} V ${(y1 - r).toFixed(1)} Q ${x0.toFixed(1)} ${y1.toFixed(1)} ${(x0 + r).toFixed(1)} ${y1.toFixed(1)} H ${x1.toFixed(1)}`
+      : `M ${x0.toFixed(1)} ${y0.toFixed(1)} L ${x1.toFixed(1)} ${y1.toFixed(1)}`;
+    setGuide({ key: performance.now(), d });
+    if (guideTimer.current !== null) window.clearTimeout(guideTimer.current);
+    guideTimer.current = window.setTimeout(() => setGuide(null), GUIDE_TOTAL_MS + 50);
+  };
+  /* The slider stands in for the hands, so it waits for the camera's answer: hidden while the camera
+     dialog is still to come or open (and while a camera is starting), shown once it has been closed
+     without one ("maybe later", or ?camera=off) or whenever a camera that was on is not reading hands. */
+  const sliderShown = chromeIn && !leaving && !tracking.isTracking && (cameraChoice === "manual" || cameraChoice === "enabled");
   const exitRaf = useRef(0);
   const exitStarted = useRef(false);
   const navigatingStep = useRef(false);
@@ -3010,7 +3164,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
       {/* The light that takes the frame as the eye nears the surface: frame and glass whiten and blur. */}
 
       {!invitation && <PageHeader layout="absolute" carousel={lab ? false : undefined} />}
-      <HandTrackingDialog open={cameraDialogOpen} busy={cameraChoice === "starting"}
+      <HandTrackingDialog open={cameraDialogOpen} busy={cameraChoice === "starting"} entrance="spring"
         error={cameraError}
         onAllow={() => { setCameraError(null); setCameraChoice("starting"); }}
         onManual={() => setCameraChoice("manual")} />
@@ -3058,7 +3212,22 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         style={{ position: "absolute", right: DESKTOP_CAMERA.right, bottom: DESKTOP_CAMERA.bottom,
           width: DESKTOP_CAMERA.width, height: DESKTOP_CAMERA.height,
           borderRadius: 10, transform: "scaleX(-1)", zIndex: 20, pointerEvents: "none",
-          opacity: step && tracking.isTracking && !leaving ? 1 : 0, transition: "opacity 700ms ease" }} />}
+          opacity: step && tracking.isTracking && !leaving && chromeIn ? 1 : 0, transition: "opacity 700ms ease" }} />}
+      {/* over it, the camera's switch: the window itself while on, a pale pane with a struck-through camera while off */}
+      {!compact && CAMERA_ENABLED && step && !cameraDialogOpen && (
+        <button type="button" onClick={toggleCamera} className="nijimu-press"
+          aria-label={cameraLive ? "turn the camera off" : "turn the camera on"} aria-pressed={cameraLive}
+          style={{ position: "absolute", right: DESKTOP_CAMERA.right, bottom: DESKTOP_CAMERA.bottom,
+            width: DESKTOP_CAMERA.width, height: DESKTOP_CAMERA.height, borderRadius: 10, zIndex: 22,
+            border: "none", padding: 0, cursor: "pointer",
+            background: tracking.isTracking ? "rgba(123, 123, 135, 0)" : "rgba(123, 123, 135, 0.1)",
+            // a white ring widens round the window while the camera reads a valid gesture
+            boxShadow: cameraRing(gestureLive),
+            opacity: leaving || !chromeIn ? 0 : 1, pointerEvents: leaving ? "none" : "auto",
+            transition: `opacity 700ms ease, background-color 700ms ease, ${CAMERA_RING_IN}, ${PRESS_GIVE}` }}>
+          <CameraOffGlyph shown={!tracking.isTracking} />
+        </button>
+      )}
 
       {/* the photo has landed: the pond's heading, in its place and manner */}
       <PondHeading visible={!routeStep && phase === "floating"} reducedMotion={reducedMotion}>
@@ -3163,8 +3332,12 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           onPointerCancel={() => { drag.current = null; }}
           style={{ position: "absolute", inset: 0, zIndex: 5, touchAction: "none", cursor: "ew-resize" }} />
       )}
+      {/* the slider stands in for the hands: while the camera is reading them it fades away, and comes
+          back if the camera is turned off (or stops) on the step */}
       {step && step !== "color" && (
-        <div style={{ position: "absolute", zIndex: 10, opacity: leaving ? 0 : 1, transition: "opacity 700ms ease",
+        <div aria-hidden={!sliderShown || undefined} inert={!sliderShown || undefined}
+          style={{ position: "absolute", zIndex: 10, opacity: sliderShown ? 1 : 0, transition: chromeFade(sliderShown),
+          pointerEvents: sliderShown ? undefined : "none",
           // a phone: the header's side margin, just above the foot row
           ...(compact
             ? { left: "var(--chrome-inset)", right: "var(--chrome-inset)",
@@ -3179,7 +3352,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         </div>
       )}
       {step === "color" && (
-        <div style={{ opacity: leaving ? 0 : 1, transition: "opacity 1400ms ease" }}>
+        <div style={{ opacity: leaving || !chromeIn ? 0 : 1, transition: "opacity 1400ms ease" }}>
           {/* a pale veil under the wash, so the band reads as light on the paper rather than a strip */}
           <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: "30vh", zIndex: 9, pointerEvents: "none",
             background: "linear-gradient(to bottom, rgba(236,237,238,0) 0%, rgba(236,237,238,.55) 45%, rgba(236,237,238,.7) 100%)" }} />
@@ -3187,15 +3360,15 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
         </div>
       )}
       {step && <>
-        <FlowPageGrid headingRef={handlingHeadingRef} style={{ opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}
+        <FlowPageGrid headingRef={handlingHeadingRef} style={{ opacity: leaving || !chromeIn ? 0 : 1, transition: chromeFade(chromeIn) }}
           headingTop={compact ? UNDERWATER_PHONE.headingTop : undefined}
           actionBottom={compact ? undefined : `${DESKTOP_CAMERA.bottom}px`}
           headingStyle={{ marginTop: compact ? 0 : -28 }}
           actionsStyle={compact ? { pointerEvents: leaving ? "none" : "auto" } : {
             pointerEvents: leaving ? "none" : "auto",
             alignSelf: "start",
-            height: DESKTOP_CAMERA.height,
-            minHeight: DESKTOP_CAMERA.height,
+            height: DESKTOP_ACTION_ROW,
+            minHeight: DESKTOP_ACTION_ROW,
             alignItems: "flex-start",
           }}
           heading={<div key={step} className="nijimu-text-in" style={{ animation: textEnter() }}>
@@ -3203,61 +3376,102 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
               {STEP_COPY[step].name}
             </p>
-            {/* desktop: the two lines reach past the heading's column to the side margins, so each sentence keeps a line of its own */}
-            <p style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`,
+            {/* desktop: the two lines reach past the heading's column to the side margins, so each sentence keeps a line of its own;
+                a phone runs the two lines together as one paragraph, balanced, no word left alone. Inked in as the gallery's
+                transcript is, a beat after the rest of the step has come (StepInstruction). */}
+            <StepInstruction lines={compact ? [stepLines(step, transcript).join(" ")] : stepLines(step, transcript)}
+              chromeEnd={chromeIn ? chromeInAt.current + CHROME_IN_MS : null}
+              style={{ margin: `${compact ? UNDERWATER_PHONE.instructionGap : 28}px auto 0`,
               ...(compact ? { maxWidth: UNDERWATER_PHONE.instructionWidth } : { marginInline: "calc(50% - 50vw + var(--chrome-inset))" }),
-              fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: UNDER_INK, textWrap: "balance" }}>
-              {/* a phone runs the two lines together as one paragraph; balanced, no word is left alone */}
-              {compact
-                ? stepLines(step, transcript).join(" ")
-                : <>{stepLines(step, transcript)[0]}<br />{stepLines(step, transcript)[1]}</>}
-            </p>
+              fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.instructionSize : PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1.45, color: INSTRUCTION_INK, textWrap: "balance" }} />
           </div>}
-          actions={compact ? undefined : <PillButton label="continue" trailing="›" variant={step === "color" ? "dark" : "light"} onClick={continueStep} />} />
+          actions={compact ? undefined : <span ref={continueWrapRef} style={{ display: "inline-flex" }}>
+            {/* held on the first step until the camera has moved the form: it looks unavailable, and a press
+                draws the way to the tip beside the camera (showContinueGuide) instead of going on */}
+            <PillButton label="continue" trailing="›" variant={step === "color" ? "dark" : "light"}
+              looksDisabled={continueHeld} onClick={continueHeld ? showContinueGuide : continueStep} />
+          </span>} />
+        {/* the way from a held continue to the follow tip: drawn in, then trimmed away from its start */}
+        {!compact && <div ref={guideHostRef} aria-hidden style={{ position: "absolute", inset: 0, zIndex: 22, pointerEvents: "none" }}>
+          {guide && <svg key={guide.key} width="100%" height="100%" style={{ position: "absolute", inset: 0, overflow: "visible" }}>
+            <style>{`
+              @keyframes continueGuide {
+                0% { stroke-dashoffset: 1; animation-timing-function: cubic-bezier(0.22, 0.8, 0.28, 1); }
+                ${((GUIDE_DRAW_MS / GUIDE_TOTAL_MS) * 100).toFixed(2)}% { stroke-dashoffset: 0; }
+                ${((GUIDE_ERASE_FROM_MS / GUIDE_TOTAL_MS) * 100).toFixed(2)}% { stroke-dashoffset: 0; animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1); }
+                100% { stroke-dashoffset: -1; }
+              }
+            `}</style>
+            <path d={guide.d} pathLength={1} fill="none" stroke={UNDER_INK} strokeWidth={GUIDE_WIDTH} strokeOpacity={GUIDE_OPACITY}
+              strokeLinecap="round" strokeLinejoin="round"
+              style={{ strokeDasharray: "1 1", strokeDashoffset: 1, animation: `continueGuide ${GUIDE_TOTAL_MS}ms both` }} />
+          </svg>}
+        </div>}
         {!compact && <div style={{ position: "absolute", inset: 0, zIndex: 21, pointerEvents: "none",
-          opacity: (step === "distance" || tracking.isTracking) && !leaving ? 0.8 : 0, transition: "opacity 900ms ease" }}>
-          <GestureHint kind={step} active={gestureLive} style={{
+          // a touch darker than drawn (was .8 with no filter)
+          filter: "brightness(0.82)",
+          opacity: (step === "distance" || tracking.isTracking) && !leaving && chromeIn ? 0.92 : 0, transition: "opacity 900ms ease" }}>
+          <GestureHint kind={step} active={false} style={{
             top: "auto", left: "auto", right: DESKTOP_CAMERA.right + DESKTOP_CAMERA.width / 2,
-            bottom: DESKTOP_CAMERA.bottom + DESKTOP_CAMERA.height + 12, transform: "translateX(50%)",
+            bottom: DESKTOP_CAMERA.bottom + DESKTOP_CAMERA.height + 12,
+            transform: `translateX(50%) scale(${GESTURE_HINT_SCALE})`, transformOrigin: "50% 100%",
             // Keep the fist/open-palm reference available while adjusting distance,
             // including when the camera is off or a hand is already in frame.
-            ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),
+            ...(step === "distance" ? { opacity: 0.92 } : {}),
           }} />
         </div>}
+        {/* the first step, desktop: one line beside the camera, its foot on the camera's, pointing to it —
+            follow the animation over it. While the animation shows (the camera reading, no hand yet). */}
+        {!compact && <p ref={followTipRef} aria-live="polite" style={{ position: "absolute", margin: 0, zIndex: 21, pointerEvents: "none",
+          right: DESKTOP_CAMERA.right + DESKTOP_CAMERA.width + FOLLOW_TIP_GAP, bottom: DESKTOP_CAMERA.bottom,
+          display: "flex", alignItems: "flex-end", gap: "0.5em", whiteSpace: "nowrap",
+          // the steps' instructions' size and the body ink, so it reads as part of the step's copy
+          fontFamily: SERIF, fontSize: PAGE_HEADER_MARK.fontSize + 2, lineHeight: 1, letterSpacing: GALLERY_TEXT_TRACKING,
+          color: UNDER_INK,
+          opacity: followTipDue ? 1 : 0, filter: followTipDue ? "none" : "blur(4px)",
+          transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease` }}>
+          <span>follow the animation with your hands</span>
+          <svg width="1.1em" height="1.1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden style={{ flex: "none", marginBottom: "-0.12em" }}>
+            <path d="M4 12h15M14 7l5 5-5 5" />
+          </svg>
+        </p>}
         {/* a phone's foot row, at the header's side margin: the gesture to make,
             the camera seeing it (a capsule), and continue as a round button */}
         {compact && <div style={{ position: "absolute", left: "var(--chrome-inset)", right: "var(--chrome-inset)",
           bottom: UNDERWATER_PHONE.rowBottom, height: UNDERWATER_PHONE.rowHeight, zIndex: 21, pointerEvents: "none",
           // equal side columns: the capsule is centred on the screen
           display: "grid", gridTemplateColumns: `${HINT_ROW_CELL}px minmax(0, 1fr) ${HINT_ROW_CELL}px`, alignItems: "center", columnGap: 14,
-          opacity: leaving ? 0 : 1, transition: "opacity 700ms ease" }}>
+          opacity: leaving || !chromeIn ? 0 : 1, transition: chromeFade(chromeIn) }}>
           {/* the gesture stays shown here whether or not the camera is on */}
           <div style={{ position: "relative", height: HINT_ROW_CELL, width: HINT_ROW_CELL, opacity: 0.8 }}>
-            <GestureHint kind={step} active={gestureLive} style={{
+            <GestureHint kind={step} active={false} style={{
               top: "50%", left: "50%", transform: `translate(-50%, -50%) scale(${hintRowScale(step)})`,
-              ...(step === "distance" ? { opacity: gestureLive ? 0.5 : 0.92 } : {}),
+              ...(step === "distance" ? { opacity: 0.92 } : {}),
             }} />
           </div>
           {/* the capsule keeps its place with the camera off: a pale fill and a struck-through camera */}
-          <div style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight, borderRadius: UNDERWATER_PHONE.rowHeight / 2,
-            overflow: "hidden", background: "rgba(123, 123, 135, 0.1)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.5"
-              strokeLinecap="round" strokeLinejoin="round" aria-label="camera off" role="img"
-              style={{ position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -50%)",
-                opacity: tracking.isTracking ? 0 : 0.7, transition: "opacity 700ms ease" }}>
-              <path d="M10.66 6H14a2 2 0 0 1 2 2v2.5l5.25-3.15a.5.5 0 0 1 .75.43v8.44a.5.5 0 0 1-.75.43L16 13.5" />
-              <path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" />
-              <path d="M2 2l20 20" />
-            </svg>
+          <button type="button" onClick={CAMERA_ENABLED && !cameraDialogOpen ? toggleCamera : undefined}
+            aria-label={cameraLive ? "turn the camera off" : "turn the camera on"} aria-pressed={cameraLive}
+            className="nijimu-press"
+            style={{ position: "relative", height: UNDERWATER_PHONE.rowHeight, borderRadius: UNDERWATER_PHONE.rowHeight / 2,
+            overflow: "hidden", background: "rgba(123, 123, 135, 0.1)", border: "none", padding: 0, width: "100%",
+            boxShadow: cameraRing(gestureLive), transition: `${CAMERA_RING_IN}, ${PRESS_GIVE}`,
+            cursor: "pointer", pointerEvents: leaving || !CAMERA_ENABLED ? "none" : "auto" }}>
+            <CameraOffGlyph shown={!tracking.isTracking} />
             <ShutterCamera video={videoRef} active={tracking.isTracking}
               style={{ position: "absolute", inset: 0, width: "100%", height: "100%",
                 transform: "scaleX(-1)", pointerEvents: "none",
                 opacity: tracking.isTracking ? 1 : 0, transition: "opacity 700ms ease" }} />
-          </div>
-          <button type="button" aria-label="continue" onClick={continueStep} className="nijimu-press"
+          </button>
+          {/* held as the desktop pill is: an unavailable look (a press does nothing here: a phone has no tip to point to) */}
+          <button type="button" aria-label="continue" aria-disabled={continueHeld || undefined}
+            onClick={continueHeld ? undefined : continueStep} className="nijimu-press"
             style={{ width: UNDERWATER_PHONE.rowHeight, height: UNDERWATER_PHONE.rowHeight, borderRadius: "50%",
-              border: "none", padding: 0, background: "rgba(123, 123, 135, 0.16)", cursor: "pointer",
+              border: "none", padding: 0, background: continueHeld ? "rgba(123, 123, 135, 0.08)" : "rgba(123, 123, 135, 0.16)",
+              cursor: continueHeld ? "default" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
+              opacity: continueHeld ? 0.5 : 1, transition: `opacity 300ms ease, background-color 300ms ease, ${PRESS_GIVE}`,
               pointerEvents: leaving ? "none" : "auto" }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.5"
               strokeLinecap="round" strokeLinejoin="round" aria-hidden>

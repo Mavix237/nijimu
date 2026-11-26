@@ -693,6 +693,7 @@ export function VesselGalleryProvider({
         sheen={galleryTune().sheen}
         onPick={pickRef.current ? pick : undefined}
         onReady={seat.onFrame}
+        split={seat.departing}
       />
     );
   }, [tuneFor, field]);

@@ -51,9 +51,10 @@ export const TRANSCRIPT_WIDTH = "min(80ch, 100%)";
     gallery's scroll tip, 12px before, now wears the same size, so the two meet
     at 13); the trail measures its words with these numbers. */
 export const GALLERY_TRANSCRIPT_SIZE = { vw: 0.9, min: 12, max: 13 } as const;
-/** Tracking shared by the gallery's transcript and its "keep scrolling" tip (the
-    transcript was +.012em, the tip untracked). */
-export const GALLERY_TEXT_TRACKING = "0.006em";
+/** Tracking shared by the gallery's transcript and its "keep scrolling" tip, in em so each
+    takes it in proportion to its own size (.01em; briefly .015em, .006em before that; the
+    transcript was +.012em before that, the tip untracked). */
+export const GALLERY_TEXT_TRACKING = "0.01em";
 export const GALLERY_TRANSCRIPT = {
   color: "#a4a4ab",
   fontFamily: SERIF,
@@ -63,7 +64,7 @@ export const GALLERY_TRANSCRIPT = {
 /** Pill and text-button labels. Primary and secondary share this size. */
 export const BUTTON_SIZE_SM = "clamp(13px, 2.6vw, 14px)";
 /** Shared dialog action spacing, including the pane's compensating bottom inset. */
-export const PANE_ACTION = { paddingY: 14, borderOpacity: 25 } as const;
+export const PANE_ACTION = { paddingY: 18, borderOpacity: 25 } as const; // 18 was 14 (2026-11-25)
 /** Dialog title-to-instructions gap; instructions-to-actions uses 1.5× this. */
 export const PANE_CONTENT_GAP = 14;
 /** Exposure title — glass panes and pond overlay headings. */

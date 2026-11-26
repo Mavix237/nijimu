@@ -43,6 +43,37 @@
   transition: scale 160ms cubic-bezier(0.23, 1, 0.32, 1), opacity 200ms ease;
 }
 .nijimu-press:not(:disabled):active { scale: 0.97; }
+
+/* The handling steps' continue (desktop pill and the phone's round button).
+   The resting tint is the pill's own; a pointer only fills it a little
+   further, and a press a little further than that. No new colour. A phone
+   has no hover — the press is the answer there. The held continue keeps
+   its dim fill and does not lift. */
+.nijimu-continue {
+  background-color: rgba(123, 123, 135, 0.16);
+}
+.nijimu-continue.nijimu-continue-dark {
+  background-color: rgba(218, 218, 218, 0.25);
+}
+.nijimu-continue.nijimu-continue-held {
+  background-color: rgba(123, 123, 135, 0.08);
+}
+@media (hover: hover) and (pointer: fine) {
+  .nijimu-continue:not(:disabled):not(.nijimu-continue-held):hover {
+    background-color: rgba(123, 123, 135, 0.26);
+  }
+  /* the dark pill's own tint is nearly the water, so a higher alpha of it
+     barely shows; a press takes a slightly deeper grey so it still answers */
+  .nijimu-continue.nijimu-continue-dark:not(:disabled):not(.nijimu-continue-held):hover {
+    background-color: rgba(198, 198, 202, 0.4);
+  }
+}
+.nijimu-continue:not(:disabled):not(.nijimu-continue-held):active {
+  background-color: rgba(123, 123, 135, 0.36);
+}
+.nijimu-continue.nijimu-continue-dark:not(:disabled):not(.nijimu-continue-held):active {
+  background-color: rgba(176, 176, 182, 0.5);
+}
 /* A header icon: the glyph gives, not the button (its opacity and transition
    are the chrome's own). A 16px glyph needs a deeper give to be seen at all. */
 .nijimu-press-icon > svg { transition: scale 160ms cubic-bezier(0.23, 1, 0.32, 1); }

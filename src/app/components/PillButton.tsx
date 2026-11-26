@@ -26,6 +26,9 @@ interface PillButtonProps {
   /** Wears the disabled look (and is announced as unavailable) but still takes a press, for a button
       whose press explains why it is not ready rather than doing nothing. */
   looksDisabled?: boolean;
+  /** The handling steps' continue. Its fill is `.nijimu-continue` in motion.css — the resting tint,
+      a little fuller under a mouse, fuller again while pressed — so this leaves `background` unset. */
+  continuePill?: boolean;
 }
 
 const DIMMED = "rgba(140, 140, 140, 0.5)";
@@ -51,12 +54,16 @@ export function PillButton({
   surface = "fill",
   textBlend,
   looksDisabled = false,
+  continuePill = false,
 }: PillButtonProps) {
   const dim = disabled || looksDisabled;
   const compact = useCompact();
   const glass = surface === "glass" && !isOutlineVariant(variant);
   const isDark = variant === "dark";
   const isOutline = variant === "outline";
+  const continueClass = continuePill
+    ? ` nijimu-continue${isDark ? " nijimu-continue-dark" : ""}${dim && !isDark ? " nijimu-continue-held" : ""}`
+    : "";
   const textColor = isDark
     ? "white"
     : dim
@@ -78,7 +85,7 @@ export function PillButton({
       onClick={onClick}
       disabled={disabled}
       aria-disabled={looksDisabled || undefined}
-      className={className ? `nijimu-press ${className}` : "nijimu-press"}
+      className={(className ? `nijimu-press ${className}` : "nijimu-press") + continueClass}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -87,7 +94,8 @@ export function PillButton({
         padding: "12px 28px",
         borderRadius: 100,
         border: isOutline ? OUTLINE_BORDER : "none",
-        background,
+        // the continue pill's fill, hover and press live in motion.css
+        ...(continuePill ? {} : { background }),
         ...(glass ? {
           position: "relative",
           overflow: "hidden",
@@ -98,7 +106,9 @@ export function PillButton({
         } : {}),
         cursor: disabled ? "not-allowed" : looksDisabled ? "default" : "pointer",
         whiteSpace: "nowrap",
-        transition: "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, background-color 0.3s ease, scale 160ms cubic-bezier(0.23, 1, 0.32, 1)",
+        transition: continuePill
+          ? "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, background-color 140ms ease-out, scale 160ms cubic-bezier(0.23, 1, 0.32, 1)"
+          : "opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, background-color 0.3s ease, scale 160ms cubic-bezier(0.23, 1, 0.32, 1)",
         ...style,
       }}
     >

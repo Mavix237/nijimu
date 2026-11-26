@@ -328,6 +328,7 @@ const zh: Messages = {
   passThrough: "长按以穿过水面",
   findingForm: "正在寻找你记忆的形状…",
   findingFormWait: "正在寻找这段记忆的形状……准备好后，即可潜入水中。",
+  // Heard by a screen reader (the drag). The word under 形律間染 stays the English one.
   stepShape: "形状",
   stepRhythm: "韵律",
   stepDistance: "距离",

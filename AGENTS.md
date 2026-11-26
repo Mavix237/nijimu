@@ -4,6 +4,18 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## The handling continue answers the pointer (2026-11-25)
+
+The continue on the shape, rhythm, distance and colour steps — the desktop
+pill and the phone's round button — fills a little further under a mouse
+and a little further again while pressed (`.nijimu-continue` in `motion.css`;
+`PillButton` `continuePill`). The resting tint is unchanged (light
+`rgba(123, 123, 135, 0.16)`, the colour step's dark pill
+`rgba(218, 218, 218, 0.25)`), and the press still scales to .97. Hover is a
+mouse only. The shape step's held continue keeps its dim fill and does not
+lift. The colour step's pill, whose resting tint is nearly the water, answers in a
+slightly deeper grey so the change still reads.
+
 ## English / Chinese (2026-11-25)
 
 The interface reads in English or Simplified Chinese (Traditional at first,
@@ -37,8 +49,8 @@ words.)
 - **Translated:** the header and burger menu, the landing's line and Enter,
   the gallery's intro lines, tips and labels, the pond (heading, hold, the
   floating questions), "Before you begin" and recording, the transcript screen,
-  the photo step and the descent's steps (headings under 形律間染,
-  instructions, sliders, follow tip, camera), the camera dialog, naming (fields,
+  the photo step and the descent's steps (instructions, sliders, follow tip,
+  camera), the camera dialog, naming (fields,
   year hints, save), "Keep a copy" and Save to your phone, the `/keep/:id` page
   (the QR link carries `?lang=zh` when made in Chinese, so the phone opens it
   so), the reading pane and the profile. Chinese is set in a quiet register;
@@ -48,7 +60,12 @@ words.)
 - **Left in its own language:** the memories themselves — the curated names,
   years and transcripts in `data/`, the landing's floating captions, the
   vessels' and cards' names, a visitor's own words — and the 滲む nijimu
-  wordmark. The labs' knobs and dev panels stay English.
+  wordmark. The labs' knobs and dev panels stay English. So does the word
+  under each handling step's character (形 shape, 律 rhythm, 間 distance,
+  染 color): `STEP_COPY.name` in `DescentPrototype` is that English word in
+  both languages. The dictionary's `stepShape` and the rest are only what a
+  screen reader hears on the drag, so that name still follows the language.
+  The instructions under the word are translated.
 - **Fonts:** `SANS` and `SANS_UI` fall back to GenRyuMin2 TW, so Chinese in a
   sans line is the site's Ming; `html:lang(zh)` turns off font synthesis
   (no faux italic or bold on CJK). A third face, `GenRyuMin2TW-Regular-zh.woff`

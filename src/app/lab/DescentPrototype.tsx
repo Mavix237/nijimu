@@ -2120,26 +2120,33 @@ const hintRowScale = (kind: "shape" | "rhythm" | "distance" | "color") =>
 
 /* The gesture ranges, as ShapeGrowPage reads them. */
 /* On desktop each of the two lines starts on its own line; a phone runs them together as one paragraph. */
-/* Words from the dictionary (lib/i18n.ts); the mark is the same in both languages. */
-const STEP_COPY: Record<Step, { mark: string; name: (ui: Messages) => string; lines: (ui: Messages) => [string, string] }> = {
+/* The character is the heading in both languages. The word under it — shape,
+   rhythm, distance, color — stays English even when the rest of the step is
+   Chinese. The instructions still come from the dictionary. `spoken` is that
+   name for a screen reader, which does follow the language. */
+const STEP_COPY: Record<Step, { mark: string; name: string; spoken: (ui: Messages) => string; lines: (ui: Messages) => [string, string] }> = {
   shape: {
     mark: "形",
-    name: ui => ui.stepShape,
+    name: "shape",
+    spoken: ui => ui.stepShape,
     lines: ui => [ui.shapeLine1, ui.shapeLine2],
   },
   rhythm: {
     mark: "律",
-    name: ui => ui.stepRhythm,
+    name: "rhythm",
+    spoken: ui => ui.stepRhythm,
     lines: ui => [ui.rhythmLine1, ui.rhythmLine2],
   },
   distance: {
     mark: "間",
-    name: ui => ui.stepDistance,
+    name: "distance",
+    spoken: ui => ui.stepDistance,
     lines: ui => [ui.distanceLine1, ui.distanceLine2],
   },
   color: {
     mark: "染",
-    name: ui => ui.stepColor,
+    name: "color",
+    spoken: ui => ui.stepColor,
     lines: ui => [ui.colorLine1, ui.colorLine2],
   },
 };
@@ -3317,7 +3324,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
 
       {/* ── the four steps, under the water ── */}
       {step && step !== "color" && (
-        <div role="slider" tabIndex={0} aria-label={ui.dragAcross(STEP_COPY[step].name(ui))} aria-valuemin={0} aria-valuemax={100}
+        <div role="slider" tabIndex={0} aria-label={ui.dragAcross(STEP_COPY[step].spoken(ui))} aria-valuemin={0} aria-valuemax={100}
           aria-valuenow={Math.round((step === "shape" ? morph : step === "rhythm" ? m2 / RHYTHM_MAX : distanceShare) * 100)}
           aria-valuetext={step === "distance" ? ui.distanceValue(Math.round(distanceShare * 100)) : undefined}
           onKeyDown={(e) => {
@@ -3382,7 +3389,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           heading={<div key={step} className="nijimu-text-in" style={{ animation: textEnter() }}>
             <p style={{ ...TITLE, margin: 0, color: UNDER_INK, fontFamily: SERIF_CJK, lineHeight: 1 }}>{STEP_COPY[step].mark}</p>
             <p style={{ margin: "2px 0 0", fontFamily: SERIF, fontSize: compact ? UNDERWATER_PHONE.labelSize : PAGE_HEADER_MARK.fontSize, lineHeight: 1.45, color: UNDER_INK }}>
-              {STEP_COPY[step].name(ui)}
+              {STEP_COPY[step].name}
             </p>
             {/* desktop: the two lines reach past the heading's column to the side margins, so each sentence keeps a line of its own;
                 a phone runs the two lines together as one paragraph, balanced, no word left alone. Inked in as the gallery's
@@ -3396,7 +3403,7 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           actions={compact ? undefined : <span ref={continueWrapRef} style={{ display: "inline-flex" }}>
             {/* held on the first step until the camera has moved the form: it looks unavailable, and a press
                 draws the way to the tip beside the camera (showContinueGuide) instead of going on */}
-            <PillButton label={ui.continue} trailing="›" variant={step === "color" ? "dark" : "light"}
+            <PillButton label={ui.continue} trailing="›" variant={step === "color" ? "dark" : "light"} continuePill
               looksDisabled={continueHeld} onClick={continueHeld ? showContinueGuide : continueStep} />
           </span>} />
         {/* the way from a held continue to the follow tip: drawn in, then trimmed away from its start */}
@@ -3474,12 +3481,13 @@ function DescentRun({ lab, onAgain, tune, transport, pondEntry }: { lab: boolean
           </button>
           {/* held as the desktop pill is: an unavailable look (a press does nothing here: a phone has no tip to point to) */}
           <button type="button" aria-label={ui.continue} aria-disabled={continueHeld || undefined}
-            onClick={continueHeld ? undefined : continueStep} className="nijimu-press"
+            onClick={continueHeld ? undefined : continueStep}
+            className={continueHeld ? "nijimu-press nijimu-continue nijimu-continue-held" : "nijimu-press nijimu-continue"}
             style={{ width: UNDERWATER_PHONE.rowHeight, height: UNDERWATER_PHONE.rowHeight, borderRadius: "50%",
-              border: "none", padding: 0, background: continueHeld ? "rgba(123, 123, 135, 0.08)" : "rgba(123, 123, 135, 0.16)",
+              border: "none", padding: 0,
               cursor: continueHeld ? "default" : "pointer",
               display: "flex", alignItems: "center", justifyContent: "center",
-              opacity: continueHeld ? 0.5 : 1, transition: `opacity 300ms ease, background-color 300ms ease, ${PRESS_GIVE}`,
+              opacity: continueHeld ? 0.5 : 1, transition: `opacity 300ms ease, background-color 140ms ease-out, ${PRESS_GIVE}`,
               pointerEvents: leaving ? "none" : "auto" }}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={CHROME_GRAY} strokeWidth="1.5"
               strokeLinecap="round" strokeLinejoin="round" aria-hidden>

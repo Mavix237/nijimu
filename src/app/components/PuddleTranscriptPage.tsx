@@ -1,6 +1,6 @@
 import { FLOW_PAGE } from "../lib/theme";
 import { SAMPLE_TRANSCRIPT } from "../data/sampleMemory";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { CHROME_GRAY } from "../lib/colors";
 import { DESCENT_PATH, RECORD_START_PATH, TRANSCRIPT_PATH } from "../lib/routes";
@@ -17,9 +17,24 @@ import { useLang, useT } from "../lib/i18n";
 /** What went wrong with the words: lost on the way, or not heard (the service's own reason, in English). */
 type TranscribeTrouble = { kind: "lost" } | { kind: "failed"; detail: string | null };
 
-/** Soft wash over the pond so long transcripts fade at the end of the passage. */
-/** The foot of a long transcript, thinned to nothing over the last 72–120px (20% of it already clear). */
-const TRANSCRIPT_FADE_MASK = "linear-gradient(to bottom, #000 calc(100% - clamp(72px, 12vh, 120px)), rgba(0,0,0,.12) calc(100% - clamp(72px, 12vh, 120px) * .2), transparent)";
+/** How many lines stay in view. Past this the passage scrolls instead of growing. */
+const VISIBLE_LINES = 8;
+/** One line, in em, from the transcript's own line-height. */
+const LINE_EM = TRANSCRIPT.lineHeight;
+const VIEW_MAX = `calc(${VISIBLE_LINES} * ${LINE_EM}em)`;
+/** A short dissolve at a cut edge — the old full-height fade was for text that ran down into the water. */
+const EDGE_FADE = "0.9em";
+/** Near the latest line: still following. Farther: the reader has moved away. */
+const STICK_PX = 12;
+
+function edgeMask(top: boolean, bottom: boolean) {
+  if (!top && !bottom) return undefined;
+  if (top && bottom) {
+    return `linear-gradient(to bottom, transparent, #000 ${EDGE_FADE}, #000 calc(100% - ${EDGE_FADE}), transparent)`;
+  }
+  if (bottom) return `linear-gradient(to bottom, #000 calc(100% - ${EDGE_FADE}), transparent)`;
+  return `linear-gradient(to bottom, transparent, #000 ${EDGE_FADE})`;
+}
 /** Where the water stirs while the words are coming: a little further out (y .75 of the screen, was .81; 2026-11-25). */
 const TRANSCRIBING_SPOT = { x: .5, y: .75, strength: .7, soft: true };
 /** Edits settle into the draft this long after the last keystroke (and at once on blur or continue). */
@@ -119,7 +134,10 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     return () => window.clearTimeout(timer);
   }, [transcribing, reducedMotion]);
   const transcriptRef = useRef<HTMLDivElement>(null);
-  const [showBottomFade, setShowBottomFade] = useState(false);
+  /** While true, the latest line stays at the foot. A scroll away turns it off; returning turns it on. */
+  const stickRef = useRef(true);
+  const gapRef = useRef(0);
+  const [fadeEdges, setFadeEdges] = useState({ top: false, bottom: false });
 
   const typingDoneRef = useRef(restored);
 
@@ -161,6 +179,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     if (typingDoneRef.current || reducedMotion) {
       setVisibleCharacterCount(printing.characters.length);
       typingDoneRef.current = true;
+      stickRef.current = false;
       setIsTyping(false);
       setShowContinue(true);
       return;
@@ -194,12 +213,13 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
     const skip = (event: PointerEvent) => {
       if (event.button !== 0) return;
       const target = event.target;
-      if (target instanceof Element && target.closest("button, a, input, textarea")) return;
+      if (target instanceof Element && target.closest("button, a, input, textarea, [data-transcript-viewport]")) return;
       if (typingTimerRef.current !== null) {
         clearTimeout(typingTimerRef.current);
         typingTimerRef.current = null;
       }
       typingDoneRef.current = true;
+      stickRef.current = false;
       setVisibleCharacterCount(printing.characters.length);
       setIsTyping(false);
       setShowContinue(true);
@@ -238,8 +258,6 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
   const settleTimer = useRef<number | null>(null);
   const [wordSpacing, setWordSpacing] = useState<string | undefined>(undefined);
   const [emptied, setEmptied] = useState(false);
-  // once the words have been clicked into, the tip that says they can be has done its work
-  const [touched, setTouched] = useState(false);
   // the words the field opens with, fixed when it opens: React never writes them again, so it keeps what is typed
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const openingText = useMemo(() => spoken(transcript), [editing]);
@@ -275,21 +293,135 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
   };
 
   const pairReady = showContinue && !transcribeError;
+  const [bar, setBar] = useState<{ top: number; height: number } | null>(null);
+  const barDrag = useRef<{ y: number; top: number } | null>(null);
+
+  const syncScrollChrome = (el: HTMLDivElement) => {
+    const gap = el.scrollHeight - el.clientHeight - el.scrollTop;
+    const overflow = el.scrollHeight - el.clientHeight;
+    const top = el.scrollTop > 8;
+    const bottom = gap > STICK_PX;
+    setFadeEdges(prev => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }));
+    if (overflow <= 1) setBar(prev => (prev === null ? prev : null));
+    else {
+      const track = el.clientHeight;
+      const height = Math.max(16, track * (el.clientHeight / el.scrollHeight));
+      const travel = Math.max(1, track - height);
+      const thumbTop = (el.scrollTop / overflow) * travel;
+      setBar(prev => (prev && Math.abs(prev.top - thumbTop) < 0.5 && Math.abs(prev.height - height) < 0.5 ? prev : { top: thumbTop, height }));
+    }
+    return gap;
+  };
 
   useEffect(() => {
     const container = transcriptRef.current;
     if (!container) return;
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const scrollBottom = scrollHeight - clientHeight - scrollTop;
-      setShowBottomFade(scrollBottom > 10);
+    let user = false;
+    const markUser = () => {
+      user = true;
+      const top = container.scrollTop;
+      // Drop an in-flight follow so it does not pull the passage back down.
+      container.scrollTop = top;
+      // A wheel that could not move has nothing to do with following.
+      requestAnimationFrame(() => { if (container.scrollTop === top) user = false; });
     };
-
+    const handleScroll = () => {
+      const gap = syncScrollChrome(container);
+      if (user) {
+        stickRef.current = gap <= STICK_PX;
+        user = false;
+      }
+      gapRef.current = gap;
+    };
+    const watched = new Set<Element>();
+    const watch = () => {
+      const inner = container.firstElementChild;
+      if (inner && !watched.has(inner)) {
+        watched.add(inner);
+        ro.observe(inner);
+      }
+    };
+    const ro = new ResizeObserver(() => {
+      watch();
+      syncScrollChrome(container);
+      if (!stickRef.current) return;
+      const top = container.scrollHeight - container.clientHeight;
+      if (top - container.scrollTop <= 1) return;
+      gapRef.current = top - container.scrollTop;
+      container.scrollTo({ top, behavior: reducedMotion || !isTyping ? "auto" : "smooth" });
+    });
+    ro.observe(container);
+    watch();
     container.addEventListener("scroll", handleScroll);
+    container.addEventListener("wheel", markUser, { passive: true });
+    container.addEventListener("touchmove", markUser, { passive: true });
     handleScroll();
-    return () => container.removeEventListener("scroll", handleScroll);
-  }, [words.length, pairReady, transcribeError]);
+    return () => {
+      ro.disconnect();
+      container.removeEventListener("scroll", handleScroll);
+      container.removeEventListener("wheel", markUser);
+      container.removeEventListener("touchmove", markUser);
+    };
+  }, [words.length, pairReady, transcribeError, isTyping, editing, reducedMotion]);
+
+  const onBarDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const el = transcriptRef.current;
+    const track = event.currentTarget;
+    if (!el) return;
+    event.preventDefault();
+    event.stopPropagation();
+    stickRef.current = false;
+    const overflow = el.scrollHeight - el.clientHeight;
+    const rect = track.getBoundingClientRect();
+    const thumb = bar?.height ?? 16;
+    const travel = Math.max(1, rect.height - thumb);
+    const local = event.clientY - rect.top - thumb / 2;
+    const jump = (local / travel) * overflow;
+    if (event.target === track) el.scrollTop = jump;
+    barDrag.current = { y: event.clientY, top: el.scrollTop };
+    track.setPointerCapture(event.pointerId);
+  };
+  const onBarMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = barDrag.current;
+    const el = transcriptRef.current;
+    if (!drag || !el) return;
+    const overflow = el.scrollHeight - el.clientHeight;
+    const track = event.currentTarget.getBoundingClientRect().height;
+    const thumb = bar?.height ?? 16;
+    const travel = Math.max(1, track - thumb);
+    el.scrollTop = drag.top + ((event.clientY - drag.y) / travel) * overflow;
+  };
+  const onBarUp = () => {
+    barDrag.current = null;
+    const el = transcriptRef.current;
+    if (!el) return;
+    stickRef.current = el.scrollHeight - el.clientHeight - el.scrollTop <= STICK_PX;
+  };
+
+  // While the printout is running and the reader is still at the latest line, keep that line at the foot.
+  useLayoutEffect(() => {
+    const el = transcriptRef.current;
+    if (!el || !isTyping || !stickRef.current) return;
+    const top = el.scrollHeight - el.clientHeight;
+    const gap = top - el.scrollTop;
+    if (gap <= 1) return;
+    gapRef.current = gap;
+    el.scrollTo({ top, behavior: reducedMotion ? "auto" : "smooth" });
+  }, [visibleCharacterCount, isTyping, reducedMotion]);
+
+  const wasTypingRef = useRef(isTyping);
+  // The printed words are replaced by the field. Stay with the end only if the reader was already there.
+  useLayoutEffect(() => {
+    const wasTyping = wasTypingRef.current;
+    wasTypingRef.current = isTyping;
+    const el = transcriptRef.current;
+    if (!el || !wasTyping || isTyping || !stickRef.current) return;
+    const top = el.scrollHeight - el.clientHeight;
+    if (top <= 1) return;
+    gapRef.current = 0;
+    el.scrollTop = top;
+    syncScrollChrome(el);
+  }, [isTyping]);
 
   return (
     <div
@@ -360,23 +492,33 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
               cursor: isTyping && !awaitingTranscript ? "pointer" : undefined,
             }}
           >
+            <style>{`
+              .nijimu-transcript-scroll { scrollbar-width: none; }
+              .nijimu-transcript-scroll::-webkit-scrollbar { width: 0; height: 0; display: none; }
+            `}</style>
+            <div
+              data-transcript-viewport
+              style={{ position: "relative", width: "100%", maxWidth: "80ch", flex: "0 1 auto", minHeight: 0, maxHeight: VIEW_MAX }}
+            >
             <div
               ref={transcriptRef}
-              className="overflow-y-auto overflow-x-hidden"
+              className="nijimu-transcript-scroll overflow-y-auto overflow-x-hidden"
               style={{
                 ...TRANSCRIPT,
                 width: "100%",
-                maxWidth: "80ch",
-                /* Long passages scroll; the actions sit just under the last line. */
+                /* Eight lines at most; a shorter passage stays its own height. */
                 minHeight: 0,
-                flex: "1 1 auto",
+                maxHeight: VIEW_MAX,
                 color: CHROME_GRAY,
                 textAlign: "center",
                 position: "relative",
                 zIndex: 0,
-                /* The words thin out at the foot themselves, over whatever
-                   water is behind them (no colour laid over it to match). */
-                ...(showBottomFade ? { maskImage: TRANSCRIPT_FADE_MASK, WebkitMaskImage: TRANSCRIPT_FADE_MASK } : {}),
+                overflowAnchor: "none",
+                paddingRight: bar ? 12 : 0,
+                /* A cut edge thins into the water. The latest line, at the foot, stays whole. */
+                ...(edgeMask(fadeEdges.top, fadeEdges.bottom)
+                  ? { maskImage: edgeMask(fadeEdges.top, fadeEdges.bottom), WebkitMaskImage: edgeMask(fadeEdges.top, fadeEdges.bottom) }
+                  : {}),
               }}
             >
               {editing ? (
@@ -391,7 +533,6 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
                   autoCorrect="off"
                   autoCapitalize="off"
                   onInput={onEdit}
-                  onFocus={() => setTouched(true)}
                   onBlur={() => { settleEdit(); }}
                   onKeyDown={(e) => {
                     // the pond listens on the window (Escape / ArrowUp go back): typing stays here
@@ -416,6 +557,7 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
               {isTyping && <span className="sr-only">{transcript}</span>}
               {words.map((word, index) => {
                 const printedWord = printing.parts[index];
+                if (!printedWord || (isTyping && visibleCharacterCount <= printedWord.start)) return null;
                 const isVisible = visibleCharacterCount > printedWord.start;
 
                 return (
@@ -438,12 +580,42 @@ export function PuddleTranscriptPage({ reducedMotion = false, onTranscribingPuls
               })}
               </>}
             </div>
+            {bar && (
+              <div
+                aria-hidden
+                onPointerDown={onBarDown}
+                onPointerMove={onBarMove}
+                onPointerUp={onBarUp}
+                onPointerCancel={onBarUp}
+                style={{
+                  position: "absolute",
+                  top: 3,
+                  bottom: 3,
+                  right: 1,
+                  width: 4,
+                  borderRadius: 999,
+                  background: "rgba(126, 126, 134, .16)",
+                  touchAction: "none",
+                }}
+              >
+                <div style={{
+                  position: "absolute",
+                  left: 0,
+                  right: 0,
+                  top: bar.top,
+                  height: bar.height,
+                  borderRadius: 999,
+                  background: "rgba(126, 126, 134, .55)",
+                }} />
+              </div>
+            )}
+            </div>
           </div>
         </div>
         {/* as the gallery's "keep scrolling", above the words: they can be edited in place. TIP_GAP_VH of the
             screen's height clear of the first line (~112px on a 768px-tall window; was ~75px) — the words start
             137px under the heading row (96 + the error line's ~17 + its 24 gap), the tip's line ends 16px under its top */}
-        <TranscriptEditHint ready={editing && !touched && !fadeOutContent} top={`calc(${FLOW_PAGE.headingTop} + 121px - ${TIP_GAP_VH}vh)`} />
+        <TranscriptEditHint ready={editing && !fadeOutContent} top={`calc(${FLOW_PAGE.headingTop} + 121px - ${TIP_GAP_VH}vh)`} />
         {/* "record again" is there as soon as a recording's words are; continue waits for the printout (a click skips it).
             The sample (no recording behind it) shows the two together, once the printout is nearly through. */}
         {(!awaitingTranscript || transcribeError) && (

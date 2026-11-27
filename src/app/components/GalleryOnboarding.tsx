@@ -76,18 +76,20 @@ function PlusMark() {
   );
 }
 
-/** A quiet tip's comings and goings: it shows HINT_DELAY_MS after `ready`, and steps aside while the
-    pointer (or a finger) is within HINT_NEAR_PX of its words, coming back once that zone is clear.
+/** A quiet tip's comings and goings: it shows `delayMs` after `ready` (the gallery waits
+    HINT_DELAY_MS; none waits not at all), and steps aside while the pointer (or a finger) is within
+    HINT_NEAR_PX of its words, coming back once that zone is clear.
     `ref` goes on the tip's paragraph (QuietTip). */
-export function useQuietTip(ready: boolean) {
+export function useQuietTip(ready: boolean, delayMs = HINT_DELAY_MS) {
   const [rested, setRested] = useState(false);
   const [occupied, setOccupied] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
   useEffect(() => {
     if (!ready) { setRested(false); setOccupied(false); return; }
-    const t = window.setTimeout(() => setRested(true), HINT_DELAY_MS);
+    if (delayMs <= 0) { setRested(true); return; }
+    const t = window.setTimeout(() => setRested(true), delayMs);
     return () => window.clearTimeout(t);
-  }, [ready]);
+  }, [ready, delayMs]);
   useEffect(() => {
     if (!rested) return;
     let pointer: { x: number; y: number } | null = null;
@@ -124,10 +126,12 @@ export function useQuietTip(ready: boolean) {
 /** The tip itself, under the wordmark: the wordmark's size, the transcript's ink and tracking, a slow
     breath, and a blurred fade in and out. Shared by the gallery's "keep scrolling" and the transcript's
     "click on the transcript to edit". */
-export function QuietTip({ on, tipRef, top = "14.5vh", children }: {
+export function QuietTip({ on, tipRef, top = "14.5vh", breath = .566, children }: {
   on: boolean; tipRef: RefObject<HTMLParagraphElement | null>;
   /** Where it sits; under the wordmark (the gallery's) unless given. */
   top?: string;
+  /** Opacity at the middle of the breath. The gallery dips to .566; the transcript goes clear. */
+  breath?: number;
   children: ReactNode;
 }) {
   return (
@@ -143,11 +147,11 @@ export function QuietTip({ on, tipRef, top = "14.5vh", children }: {
       zIndex: 31, opacity: on ? 1 : 0,
       filter: on ? "none" : "blur(4px)", transition: `opacity ${TEXT_ENTER_MS}ms ease, filter ${TEXT_ENTER_MS}ms ease` }}>
       <style>{`
-        @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: .566; } }
+        @keyframes galleryHintBreathe { 0%, 100% { opacity: 1; } 50% { opacity: var(--hint-breath, .566); } }
         .gallery-hint-breathe { animation: galleryHintBreathe ${HINT_BREATHE_S}s ease-in-out infinite; }
         @media (prefers-reduced-motion: reduce) { .gallery-hint-breathe { animation: none; } }
       `}</style>
-      <span className="gallery-hint-breathe">{children}</span>
+      <span key={breath === 0 ? (on ? "shown" : "hidden") : "steady"} className="gallery-hint-breathe" style={{ ["--hint-breath" as string]: breath }}>{children}</span>
     </p>
   );
 }
@@ -175,11 +179,12 @@ export function GalleryScrollHint({ visible, settled, atNewest, leaving }: {
   return <QuietTip on={on} tipRef={ref}>{copy}</QuietTip>;
 }
 
-/** On the transcript screen once the words can be edited: that a click puts the caret in them. It goes
-    for good once the words have been clicked into (`ready` false). */
+/** On the transcript screen once the words can be edited: that a click puts the caret in them. The breath
+    runs from full ink to clear on the same clock, starting as soon as the words are there, and keeps
+    cycling after they are clicked into. */
 export function TranscriptEditHint({ ready, top }: { ready: boolean; top?: string }) {
   const touch = useTouchFirst();
   const ui = useT();
-  const { ref, on } = useQuietTip(ready);
-  return <QuietTip on={on} tipRef={ref} top={top}>{touch ? ui.editTipTap : ui.editTipClick}</QuietTip>;
+  const { ref, on } = useQuietTip(ready, 0);
+  return <QuietTip on={on} tipRef={ref} top={top} breath={0}>{touch ? ui.editTipTap : ui.editTipClick}</QuietTip>;
 }

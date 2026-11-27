@@ -343,11 +343,12 @@ reach 6.) The "pond" panel's sphere folder has the new
 knob; a panel kept in this browser (`nijimu-pond-2`) still wins over these.
 The transcript screen has a tip under the wordmark once the words can be
 edited: "click on the transcript to edit" ("tap…" on a touch screen,
-`TranscriptEditHint`). It is the gallery's "keep scrolling" tip in every way —
-`useQuietTip` (5.5 s after it is due, steps aside while the pointer is near)
-and `QuietTip` (place, size, ink, tracking, breath, blurred fade), both now
-shared from `GalleryOnboarding` — and goes for good once the words are clicked
-into (or on continue).
+`TranscriptEditHint`). It is the gallery's "keep scrolling" tip in place, size,
+ink, tracking and the 5.4 s breath, but the breath goes clear (opacity 0 at
+mid-cycle, was .566) and it does not wait the gallery's 5.5 s: it begins the
+moment the words have finished printing, and keeps cycling after they are
+clicked into (it leaves with the screen on continue). The gallery tip still
+waits 5.5 s and still only dips to .566.
 
 ## The picture follows the facets, its edges effused (2026-11-25, later)
 

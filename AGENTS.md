@@ -64,14 +64,19 @@ GA4's enhanced measurement (history events); a patched
 `pushState`/`replaceState` keeps the `page_location` GA reads clean.
 Access is given in GA itself (Admin → Property access management).
 
-## Favicon: 滲 from the wordmark (2026-11-26)
+## Favicon: the 2022 vessel in the landing's washes (2026-11-27)
 
-`public/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` (180, full
-bleed) are the wordmark's 滲 in GenRyuMin2 TW, `LANDING_TEXT` #45454a on the
-gallery's ground #edecec, a plain square; the glyph's ink is centred and
-fills .78 of it. The outline is the font's own (Core Text read from
-`GenRyuMin2TW-Regular-ui.woff2`), baked into the SVG as a path, so the icon
-needs no font.
+`public/favicon.svg`, `favicon-32.png` (transparent) and `apple-touch-icon.png`
+(180, full bleed on the gallery's ground #edecec, the vessel at .74) are the
+silhouette of "Left a place I thought I'd stay longer" (id 8, the pointed 2022
+vessel) — traced from the gallery's own render of it (its canvas alpha, row by
+row, cropped to the seat so the reflection is left out) — washed with the
+landing's tones (`LANDING_TONES`: purple, sky, rose, sand, a pale mist pool)
+as soft radial gradients, a little pigment pooled at the rim, and a fine
+grain (an feTurbulence filter in the SVG; in the PNGs, noise added per pixel,
+since AppKit, which rasterised them, draws no SVG filters). The washes need no
+filter, so any renderer draws them. It replaced, the same day, a 滲 in
+GenRyuMin2 TW on the page's grey.
 The link-preview image, `public/og-image.jpg` (1200 × 630, `og:image` and
 `twitter:image`), is the user's photo of the gallery on a laptop
 (`embed thumbnail.png` at the repo root, kept out of `public/` so it is not deployed; 2378 × 1326) scaled to 1200 wide and cropped

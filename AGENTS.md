@@ -81,8 +81,8 @@ its pale centre wider with a long, even falloff (rx 27, five stops). Then
 retoned to the landing as it is seen, not its palette's hexes: the washes are
 the landing's own pale mauve-grey, blue-grey, rose and warm white (sampled from
 screenshots: ~#d7d3d8, #cad5d8, #dac1c2, #e5dedd), each a step deeper and then
-more saturated (twice the HSL saturation at the same lightness: #c2bbd2,
-#b3ced8, #df9fa7, #dac2be; the ground 1.5×), the glow a faint lift (.45 at its centre), the rim
+more saturated (about 2.6× the HSL saturation at the same lightness: #c0b7d6,
+#add1de, #debfba; the rose held softer, #d9afb4; the ground ~1.9×), the glow a faint lift (.45 at its centre), the rim
 in the same grey-mauve, the grain softened (the SVG's dark-only grain .12 —
 briefly .08 —, the PNGs' ±2.2–2.6%). It replaced, the same day, a 滲 in
 GenRyuMin2 TW on the page's grey.

@@ -75,7 +75,15 @@ landing's tones (`LANDING_TONES`: purple, sky, rose, sand, a pale mist pool)
 as soft radial gradients, a little pigment pooled at the rim, and a fine
 grain (an feTurbulence filter in the SVG; in the PNGs, noise added per pixel,
 since AppKit, which rasterised them, draws no SVG filters). The washes need no
-filter, so any renderer draws them. It replaced, the same day, a 滲 in
+filter, so any renderer draws them. Later that day it was made lighter (a paler
+ground, the coloured washes at ~.8 of their first strength, a lighter rim) and
+its pale centre wider with a long, even falloff (rx 27, five stops). Then
+retoned to the landing as it is seen, not its palette's hexes: the washes are
+the landing's own pale mauve-grey, blue-grey, rose and warm white (sampled from
+screenshots: ~#d7d3d8, #cad5d8, #dac1c2, #e5dedd), each a step deeper (#c4c1cc,
+#bccacf, #cfafb3, #d3c7c5), the glow a faint lift (.45 at its centre), the rim
+in the same grey-mauve, the grain halved (the SVG's dark-only grain .08, the
+PNGs' ±1.5–1.8%). It replaced, the same day, a 滲 in
 GenRyuMin2 TW on the page's grey.
 The link-preview image, `public/og-image.jpg` (1200 × 630, `og:image` and
 `twitter:image`), is the user's photo of the gallery on a laptop

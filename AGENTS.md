@@ -69,12 +69,25 @@ Access is given in GA itself (Admin → Property access management).
 Every absolute URL — canonical, `og:url`, `og:image`, `twitter:image`, the
 JSON-LD, `sitemap.xml`, `robots.txt`'s sitemap line, `SITE` in
 `scripts/route-heads.mjs` and `SITE_ORIGIN` in `lib/pageHead.ts` — is
-`https://www.nijimu.space`. The bare `nijimu.space` serves an expired
-certificate (Nov 9 2026): its DNS has a stray Namecheap A record
-(162.255.119.108) beside Vercel's (216.198.79.1), likely why Vercel could not
-renew it, so link previewers failed to fetch `og:image` there ("fetch failed").
-Removing that record in Namecheap's Advanced DNS should let Vercel renew the
-bare domain; the addresses can stay www either way.
+`https://www.nijimu.space`. The bare `nijimu.space` 308s there over a valid
+certificate; it stays www either way.
+
+It did not always. The bare domain served a certificate expired since Nov 9
+2026, so link previewers failed to fetch `og:image` there ("fetch failed"), and
+its DNS answered with a Namecheap address (162.255.119.108) beside Vercel's
+(216.198.79.1). That second address was not a record of its own: Namecheap held
+a URL Redirect Record on `@` pointing at `http://www.nijimu.space/`, and it
+implements those by resolving the host to its own redirect server — so the A
+record was that record's shadow and deleting the A row alone did nothing. The
+redirect server has no certificate for the domain, and it answered half the
+ACME challenges, which is why Vercel could not renew. Vercel's own setting
+(Settings -> Domains, `nijimu.space`, "Redirect to Another Domain", 308 ->
+`www.nijimu.space`) had been right all along and was never the cause. Deleting
+the URL Redirect Record in Namecheap's Advanced DNS settled it: `@` resolves to
+Vercel alone, Let's Encrypt re-issued within minutes (Nov 27 2026). Namecheap's
+Host Records now hold three rows — A `@` 216.198.79.1, CNAME `www`
+444aa8196cb22406.vercel-dns-017.com, TXT `@` google-site-verification — beside
+the mail SPF; a URL Redirect Record on `@` must not come back.
 
 ## Favicon: the 2022 vessel in the landing's washes (2026-11-27)
 

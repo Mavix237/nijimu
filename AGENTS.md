@@ -82,8 +82,8 @@ retoned to the landing as it is seen, not its palette's hexes: the washes are
 the landing's own pale mauve-grey, blue-grey, rose and warm white (sampled from
 screenshots: ~#d7d3d8, #cad5d8, #dac1c2, #e5dedd), each a step deeper (#c4c1cc,
 #bccacf, #cfafb3, #d3c7c5), the glow a faint lift (.45 at its centre), the rim
-in the same grey-mauve, the grain halved (the SVG's dark-only grain .08, the
-PNGs' ±1.5–1.8%). It replaced, the same day, a 滲 in
+in the same grey-mauve, the grain softened (the SVG's dark-only grain .12 —
+briefly .08 —, the PNGs' ±2.2–2.6%). It replaced, the same day, a 滲 in
 GenRyuMin2 TW on the page's grey.
 The link-preview image, `public/og-image.jpg` (1200 × 630, `og:image` and
 `twitter:image`), is the user's photo of the gallery on a laptop

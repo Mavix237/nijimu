@@ -480,6 +480,9 @@ function subscribe(listener: () => void) {
   return () => { listeners.delete(listener); };
 }
 
+/** Called after each change of language, outside render (the page's head follows it, lib/pageHead.ts). */
+export const onLangChange = subscribe;
+
 /** The chosen language; re-renders when it changes. */
 export function useLang(): Lang {
   return useSyncExternalStore(subscribe, getLang, () => "en" as Lang);

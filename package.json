@@ -5,7 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.5.2",
   "scripts": {
-    "build": "vite build && node scripts/copy-404.mjs",
+    "build": "vite build && node scripts/route-heads.mjs && node scripts/copy-404.mjs",
     "dev": "vite",
     "dev:phone": "NIJIMU_PHONE=1 vite",
     "typecheck": "tsc --noEmit"

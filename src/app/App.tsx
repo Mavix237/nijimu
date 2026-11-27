@@ -26,6 +26,7 @@ import { useCompact } from "./hooks/useCompact";
 import { setSoundtrackMuted, useSoundtrack } from "./lib/soundtrack";
 import { startFinishWatchdog } from "./lib/paperFinish";
 import { setLang, useLang, useT } from "./lib/i18n";
+import { startPageHead } from "./lib/pageHead";
 
 /** The language toggle's word (中 / EN): Switzer for the Latin, the system's
     Chinese sans for 中 — never GenRyuMin2 TW. */
@@ -165,6 +166,9 @@ const router = createBrowserRouter([
     ],
   },
 ], { basename: routerBasename });
+
+// <title>, description, canonical and noindex follow the route and the language (lib/pageHead.ts)
+startPageHead(router);
 
 function GlobalControls({
   profileOpen,

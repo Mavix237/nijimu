@@ -1,0 +1,11 @@
+# nijimu.space — the landing and the memory gallery are public; the rest is the
+# create flow, labs and private links (those routes also answer "noindex").
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /keep/
+Disallow: /lab/
+Disallow: /studio
+Disallow: /style
+
+Sitemap: https://nijimu.space/sitemap.xml

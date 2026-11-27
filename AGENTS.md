@@ -4,6 +4,79 @@
 > codebase: what it is, how it's built, where things live, and the non-obvious
 > rules. Read it before making changes.
 
+## Search and link previews (2026-11-26)
+
+The site is a client-rendered SPA, so crawlers and link previews read
+`index.html` first: it now carries the English landing's head — title
+"nijimu 滲む — an interactive memory sculpting tool", a description,
+canonical `https://nijimu.space/`, Open Graph and Twitter (`summary_large_image`)
+tags, `og:locale` en_US with zh_CN as alternate, the icons, and JSON-LD (a
+`WebSite` and a `CreativeWork`, both `inLanguage` en / zh-Hans, the
+CreativeWork's description in both languages). A `<noscript>` gives the line
+in both languages too.
+- **Per route, at runtime** (`lib/pageHead.ts`, `startPageHead(router)` in
+  `App.tsx`): title, description, og/twitter words and `og:locale` follow the
+  route and the language (`onLangChange`, new in `i18n.ts`). Only `/` and
+  `/memory` are public: they get a canonical to themselves; every other route
+  (pond, recording, transcript, descent, naming — "a new memory — nijimu 滲む" —
+  the labs, `/studio`, `/style`, `/ripple`, the revisit editors, unknown paths)
+  loses the canonical and gets `<meta name="robots" content="noindex">`.
+  `/keep/:id` is left to `KeepOnPhonePage`, which sets its own. The head's
+  words live in `pageHead.ts`, not the i18n dictionary, because they are never
+  drawn on the page and must not grow the `-zh` font subset.
+- **/memory's own static head:** `scripts/route-heads.mjs` (in `pnpm build`,
+  before `copy-404.mjs`) writes `dist/memory.html` from the built index with
+  the gallery's title, description, canonical and og/twitter words, and
+  `vercel.json` rewrites `/memory` to it (before the SPA catch-all). Keep its
+  words in step with `HEADS` in `pageHead.ts`.
+- **public/** (it already held `.nojekyll`): `robots.txt` (allows all;
+  disallows `/api/`, `/keep/`, `/lab/`, `/studio`, `/style`; names the
+  sitemap), `sitemap.xml` (`/` and `/memory` only), `og-image.jpg` (1200 × 630,
+  the preview card: the user's photo, see the favicon section below; a first
+  card of the landing's washes with 滲む nijimu set over them was replaced the
+  same day), and the icons `favicon.svg`, `favicon-32.png`,
+  `apple-touch-icon.png` (180, full bleed). Vercel serves files before rewrites, so these are not swallowed by
+  the SPA rewrite.
+- **Headers** (`vercel.json`): `X-Robots-Tag: noindex` on `/record/*`,
+  `/memory/*` (not `/memory` itself), `/lab/*`, `/studio`, `/style`, `/ripple`;
+  `/keep/*` keeps its noindex, nofollow and no-referrer.
+- **Deliberately not done:** no hreflang or separate Chinese URLs (one URL
+  serves both languages, chosen by the browser or `?lang=`; Googlebot renders
+  in English), no prerendering of other routes, no author/person in the
+  JSON-LD (not chosen by the user), no `keywords` meta (ignored by engines),
+  no new dependencies. `theme-color` is unchanged (#e4e4e6).
+- **For the user:** verify nijimu.space in Google Search Console (a DNS TXT
+  record at the domain registrar) and Bing Webmaster Tools (can import from
+  Google), submit `https://nijimu.space/sitemap.xml`, then check a preview
+  with a link-preview debugger (e.g. opengraph.xyz or the platforms' own).
+
+## Google Analytics (2026-11-26)
+
+GA4 (`G-KJ4XS9DK9M`) is loaded from code, `lib/analytics.ts` (`startAnalytics()`
+in `main.tsx`), not from `index.html`. Page views only: nothing of a memory
+(words, names, photos, recordings) is sent. It runs on nijimu.space and
+www.nijimu.space alone, so local work and Vercel previews stay out of the
+numbers; `?analytics=debug` loads it anywhere for the visit with `debug_mode`
+(GA's Admin → DebugView). The `/keep/:id` phone page never loads it (its id
+opens a saved card for a day), and every location sent passes `cleanPath`,
+which writes `/keep/<id>` as `/keep`. In-app page changes are counted by
+GA4's enhanced measurement (history events); a patched
+`pushState`/`replaceState` keeps the `page_location` GA reads clean.
+Access is given in GA itself (Admin → Property access management).
+
+## Favicon: 滲 from the wordmark (2026-11-26)
+
+`public/favicon.svg`, `favicon-32.png` and `apple-touch-icon.png` (180, full
+bleed) are the wordmark's 滲 in GenRyuMin2 TW, `LANDING_TEXT` #45454a on the
+gallery's ground #edecec, a plain square; the glyph's ink is centred and
+fills .78 of it. The outline is the font's own (Core Text read from
+`GenRyuMin2TW-Regular-ui.woff2`), baked into the SVG as a path, so the icon
+needs no font.
+The link-preview image, `public/og-image.jpg` (1200 × 630, `og:image` and
+`twitter:image`), is the user's photo of the gallery on a laptop
+(`embed thumbnail.png` at the repo root, kept out of `public/` so it is not deployed; 2378 × 1326) scaled to 1200 wide and cropped
+~20 px top and bottom; `og:image:alt` describes it.
+
 ## The handling continue answers the pointer (2026-11-25)
 
 The continue on the shape, rhythm, distance and colour steps — the desktop

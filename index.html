@@ -4,10 +4,67 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#e4e4e6" />
-    <title>nijimu</title>
+    <!-- route-head: the landing's; scripts/route-heads.mjs writes /memory's from these, lib/pageHead.ts follows the route at runtime -->
+    <title>nijimu 滲む — an interactive memory sculpting tool</title>
+    <meta name="description" content="nijimu (滲む, to blur and bleed into) is an interactive memory sculpting tool to trace how memory evolves: speak a memory, then shape it by hand into a glass vessel." />
+    <link rel="canonical" href="https://nijimu.space/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="nijimu 滲む" />
+    <meta property="og:url" content="https://nijimu.space/" />
+    <meta property="og:title" content="nijimu 滲む — an interactive memory sculpting tool" />
+    <meta property="og:description" content="nijimu (滲む, to blur and bleed into) is an interactive memory sculpting tool to trace how memory evolves: speak a memory, then shape it by hand into a glass vessel." />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="zh_CN" />
+    <meta property="og:image" content="https://nijimu.space/og-image.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="a hand at a laptop in a dark room, its screen showing nijimu's gallery: memories as glass vessels, each holding a photograph, along a timeline." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="nijimu 滲む — an interactive memory sculpting tool" />
+    <meta name="twitter:description" content="nijimu (滲む, to blur and bleed into) is an interactive memory sculpting tool to trace how memory evolves: speak a memory, then shape it by hand into a glass vessel." />
+    <meta name="twitter:image" content="https://nijimu.space/og-image.jpg" />
+    <!-- /route-head -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "@id": "https://nijimu.space/#website",
+            "url": "https://nijimu.space/",
+            "name": "nijimu",
+            "alternateName": ["滲む", "nijimu 滲む"],
+            "description": "An interactive memory sculpting tool to trace how memory evolves.",
+            "inLanguage": ["en", "zh-Hans"]
+          },
+          {
+            "@type": "CreativeWork",
+            "@id": "https://nijimu.space/#work",
+            "url": "https://nijimu.space/",
+            "name": "nijimu 滲む",
+            "headline": "an interactive memory sculpting tool",
+            "description": "nijimu (滲む, to blur and bleed into) is an interactive memory sculpting tool to trace how memory evolves: speak a memory, then shape it by hand into a glass vessel. 滲む nijimu 是一个互动的记忆雕塑工具，追溯记忆如何流转。",
+            "genre": "interactive art",
+            "keywords": "memory, interactive art, sculpting, watercolour, glass vessel, 记忆, 互动艺术",
+            "inLanguage": ["en", "zh-Hans"],
+            "isAccessibleForFree": true,
+            "image": "https://nijimu.space/og-image.jpg",
+            "isPartOf": { "@id": "https://nijimu.space/#website" }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <p>nijimu 滲む — an interactive memory sculpting tool to trace how memory evolves: speak a memory, then shape it by hand into a glass vessel. It needs JavaScript and WebGL.</p>
+      <p lang="zh-Hans">滲む nijimu 是一个互动的记忆雕塑工具，追溯记忆如何流转。需要 JavaScript 与 WebGL。</p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

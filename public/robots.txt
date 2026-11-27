@@ -8,4 +8,4 @@ Disallow: /lab/
 Disallow: /studio
 Disallow: /style
 
-Sitemap: https://nijimu.space/sitemap.xml
+Sitemap: https://www.nijimu.space/sitemap.xml

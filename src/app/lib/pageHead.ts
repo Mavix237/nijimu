@@ -12,7 +12,7 @@
 import { getLang, onLangChange, type Lang } from "./i18n";
 import { CAROUSEL_PATH, MEMORY_POND_PATH, NAMING_PATH, RECORD_START_PATH, TRANSCRIPT_PATH, isDescentPath } from "./routes";
 
-export const SITE_ORIGIN = "https://nijimu.space";
+export const SITE_ORIGIN = "https://www.nijimu.space";
 
 /** The routes a search engine may index; the sitemap lists the same two (public/sitemap.xml). */
 export const INDEXABLE_PATHS = ["/", CAROUSEL_PATH] as const;

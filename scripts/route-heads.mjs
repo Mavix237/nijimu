@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const indexHtml = join(root, "dist", "index.html");
 
-const SITE = "https://nijimu.space";
+const SITE = "https://www.nijimu.space";
 const ROUTES = [
   {
     file: "memory.html",

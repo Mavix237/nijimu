@@ -64,6 +64,18 @@ GA4's enhanced measurement (history events); a patched
 `pushState`/`replaceState` keeps the `page_location` GA reads clean.
 Access is given in GA itself (Admin → Property access management).
 
+## The site's addresses are www (2026-11-27)
+
+Every absolute URL — canonical, `og:url`, `og:image`, `twitter:image`, the
+JSON-LD, `sitemap.xml`, `robots.txt`'s sitemap line, `SITE` in
+`scripts/route-heads.mjs` and `SITE_ORIGIN` in `lib/pageHead.ts` — is
+`https://www.nijimu.space`. The bare `nijimu.space` serves an expired
+certificate (Nov 9 2026): its DNS has a stray Namecheap A record
+(162.255.119.108) beside Vercel's (216.198.79.1), likely why Vercel could not
+renew it, so link previewers failed to fetch `og:image` there ("fetch failed").
+Removing that record in Namecheap's Advanced DNS should let Vercel renew the
+bare domain; the addresses can stay www either way.
+
 ## Favicon: the 2022 vessel in the landing's washes (2026-11-27)
 
 `public/favicon.svg`, `favicon-32.png` (transparent) and `apple-touch-icon.png`

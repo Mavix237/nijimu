@@ -1,12 +1,22 @@
-# nijimu
+# nijimu 滲む
 
-This is a code bundle for nijimu. 
+**[www.nijimu.space](https://www.nijimu.space)**
+
+nijimu (滲む, to blur and bleed into) is an interactive memory sculpting tool
+to trace how memory evolves: speak a memory aloud, and shape it by hand into a
+glass vessel that keeps its words and a photograph. The vessels gather in a
+[gallery](https://www.nijimu.space/memory) you move through in time.
+
+Built with React, three.js and WebGL shaders; speech is transcribed
+server-side, and the handling steps read your hands through the camera with
+MediaPipe. The interface reads in English or Simplified Chinese.
 
 ## Running the code
 
-Run `npm i` to install the dependencies.
+Run `pnpm install` to install the dependencies (pnpm, not npm: npm fails on
+React 19's peer dependencies).
 
-Run `npm run dev` to start the development server.
+Run `pnpm dev` to start the development server.
 
 ## Pages
 

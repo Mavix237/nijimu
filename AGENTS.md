@@ -9,7 +9,7 @@
 The site is a client-rendered SPA, so crawlers and link previews read
 `index.html` first: it now carries the English landing's head — title
 "nijimu 滲む — an interactive memory sculpting tool", a description,
-canonical `https://nijimu.space/`, Open Graph and Twitter (`summary_large_image`)
+canonical `https://www.nijimu.space/`, Open Graph and Twitter (`summary_large_image`)
 tags, `og:locale` en_US with zh_CN as alternate, the icons, and JSON-LD (a
 `WebSite` and a `CreativeWork`, both `inLanguage` en / zh-Hans, the
 CreativeWork's description in both languages). A `<noscript>` gives the line
@@ -45,10 +45,16 @@ in both languages too.
   in English), no prerendering of other routes, no author/person in the
   JSON-LD (not chosen by the user), no `keywords` meta (ignored by engines),
   no new dependencies. `theme-color` is unchanged (#e4e4e6).
-- **For the user:** verify nijimu.space in Google Search Console (a DNS TXT
-  record at the domain registrar) and Bing Webmaster Tools (can import from
-  Google), submit `https://nijimu.space/sitemap.xml`, then check a preview
-  with a link-preview debugger (e.g. opengraph.xyz or the platforms' own).
+- **Done (2026-11-27):** `nijimu.space` is verified in Google Search Console
+  as a Domain property (a TXT record at Namecheap, which covers the bare
+  domain and www over both protocols), `https://www.nijimu.space/sitemap.xml`
+  is submitted there, and `/` and `/memory` were each put through URL
+  Inspection's live test and Request indexing. Still open, whenever wanted:
+  Bing Webmaster Tools (it imports a verified site straight from Search
+  Console) and inbound links — a plain link from a portfolio or an article
+  carries weight, while GitHub, Instagram and LinkedIn are `nofollow` and only
+  bring visitors. Little else moves the needle from here: the site renders in
+  the browser, so beyond the static head there is hardly any text to index.
 
 ## Google Analytics (2026-11-26)
 
